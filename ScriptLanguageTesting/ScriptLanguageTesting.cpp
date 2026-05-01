@@ -16737,7 +16737,6 @@ namespace GL {
 
 			public:		
 				GL::Proxy_Function make_callable_from_node(AbstractSyntaxTreeNode& node, GL::scope::impl::BasicScope& current_scope) {
-#if 0
 					if (node.identifier == GL::Engine::AST_Node_Type::FunctionDecl
 						&& node.children.size() == 4
 						&& node.children[0].identifier == GL::Engine::AST_Node_Type::Id // Return TypeName
@@ -16746,77 +16745,434 @@ namespace GL {
 					) {
 						auto& function_name = node.children[1].text;
 						auto num_arguments = node.children[2].children.size();
+						auto return_type = current_scope.DetermineType(node.children[0].text);
 
-						auto eval_node_function = [this, this_node = node.children[3]](std::vector<std::pair<GL::string, GL::any::fast_any>> const& inputs) -> GL::any::fast_any {
+						auto eval_node_function = [this, this_node = node.children[3], return_type](std::vector<std::pair<GL::string, GL::any::fast_any>> const& inputs) -> GL::any::fast_any {
 							auto Node = this_node;
 							eval_state state;
 							auto this_scope = GL::scope::GetCurrentCaller()->make_scope();
-
+							for (auto& input : inputs) this_scope.insert_object_here(input.first, input.second);							
 							GL::any::fast_any result = evaluate(Node, state, this_scope);
 							if (state.throwing != throwing::Nothing) {
 								if (state.throwing == throwing::Return) {
-									return state.to_return;
+									if (return_type != GL::type_of<void>()) {
+										return this_scope.cast(state.to_return, return_type);
+									}
+									else {
+										return state.to_return;
+									}
 								}
 								throw except::eval_error("Error inside of script function", Node.location);
 							}
-							return result;
+							if (return_type != GL::type_of<void>()) {
+								return this_scope.cast(result, return_type);
+							}
+							else {
+								return result;
+							}							
 						};
 
-
-
-
+						std::vector<std::pair<GL::string, GL::type>> type_list;
+						for (auto& input : node.children[2].children) {
+							if (input.identifier == GL::Engine::AST_Node_Type::Arg) {
+								if (input.children.size() == 1) {
+									// type unspecified
+									type_list.push_back({ input.children[0].text, GL::type_of<GL::any::fast_any>() });
+									continue;
+								}
+								else if (input.children.size() == 2) {
+									// type specified
+									type_list.push_back({ input.children[1].text, current_scope.DetermineType(input.children[0].text) });
+									continue;
+								}
+							}
+							throw except::eval_error("argument type not handled", input.location);							
+						}
 
 						if (node.children[0].text == "void") {
-
-							return GL::make_callable(function_name, []() -> void {
-
-							}, 0, {}, {}, GL::type_of<void>());
+							switch (type_list.size()) {
+							case 0:
+								return GL::make_callable(function_name, [eval_node_function, type_list]() -> void {
+										(void)eval_node_function({});
+									}, 0, {}, type_list, GL::type_of<void>());
+							case 1:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0
+									) -> void {
+										(void)eval_node_function({
+											{ type_list[0].first, arg0 }
+										});
+									}, 0, {}, type_list, GL::type_of<void>());
+							case 2:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1
+									) -> void {
+										(void)eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }
+										});
+									}, 0, {}, type_list, GL::type_of<void>());
+							case 3:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2
+									) -> void {
+										(void)eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }
+										});
+									}, 0, {}, type_list, GL::type_of<void>());
+							case 4:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3
+									) -> void {
+										(void)eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 }
+										});
+									}, 0, {}, type_list, GL::type_of<void>());
+							case 5:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4
+									) -> void {
+										(void)eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }
+										});
+									}, 0, {}, type_list, GL::type_of<void>());
+							case 6:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4, GL::any::fast_any arg5
+									) -> void {
+										(void)eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }
+										});
+									}, 0, {}, type_list, GL::type_of<void>());
+							case 7:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4, GL::any::fast_any arg5, GL::any::fast_any arg6
+									) -> void {
+										(void)eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }, { type_list[6].first, arg6 }
+										});
+									}, 0, {}, type_list, GL::type_of<void>());
+							case 8:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4, GL::any::fast_any arg5, GL::any::fast_any arg6, GL::any::fast_any arg7
+									) -> void {
+										(void)eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }, { type_list[6].first, arg6 }, { type_list[7].first, arg7 }
+										});
+									}, 0, {}, type_list, GL::type_of<void>());
+							case 9:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4, GL::any::fast_any arg5, GL::any::fast_any arg6, GL::any::fast_any arg7,
+									GL::any::fast_any arg8
+									) -> void {
+										(void)eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }, { type_list[6].first, arg6 }, { type_list[7].first, arg7 },
+											{ type_list[8].first, arg8 }
+										});
+									}, 0, {}, type_list, GL::type_of<void>());
+							case 10:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4, GL::any::fast_any arg5, GL::any::fast_any arg6, GL::any::fast_any arg7,
+									GL::any::fast_any arg8, GL::any::fast_any arg9
+									) -> void {
+										(void)eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }, { type_list[6].first, arg6 }, { type_list[7].first, arg7 },
+											{ type_list[8].first, arg8 }, { type_list[9].first, arg9 }
+										});
+									}, 0, {}, type_list, GL::type_of<void>());
+							case 11:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4, GL::any::fast_any arg5, GL::any::fast_any arg6, GL::any::fast_any arg7,
+									GL::any::fast_any arg8, GL::any::fast_any arg9, GL::any::fast_any arg10
+									) -> void {
+										(void)eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }, { type_list[6].first, arg6 }, { type_list[7].first, arg7 },
+											{ type_list[8].first, arg8 }, { type_list[9].first, arg9 }, { type_list[10].first, arg10 }
+										});
+									}, 0, {}, type_list, GL::type_of<void>());
+							case 12:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4, GL::any::fast_any arg5, GL::any::fast_any arg6, GL::any::fast_any arg7,
+									GL::any::fast_any arg8, GL::any::fast_any arg9, GL::any::fast_any arg10, GL::any::fast_any arg11
+									) -> void {
+										(void)eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }, { type_list[6].first, arg6 }, { type_list[7].first, arg7 },
+											{ type_list[8].first, arg8 }, { type_list[9].first, arg9 }, { type_list[10].first, arg10 }, { type_list[11].first, arg11 }
+										});
+									}, 0, {}, type_list, GL::type_of<void>());
+							case 13:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4, GL::any::fast_any arg5, GL::any::fast_any arg6, GL::any::fast_any arg7,
+									GL::any::fast_any arg8, GL::any::fast_any arg9, GL::any::fast_any arg10, GL::any::fast_any arg11,
+									GL::any::fast_any arg12
+									) -> void {
+										(void)eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }, { type_list[6].first, arg6 }, { type_list[7].first, arg7 },
+											{ type_list[8].first, arg8 }, { type_list[9].first, arg9 }, { type_list[10].first, arg10 }, { type_list[11].first, arg11 },
+											{ type_list[12].first, arg12 }
+										});
+									}, 0, {}, type_list, GL::type_of<void>());
+							case 14:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4, GL::any::fast_any arg5, GL::any::fast_any arg6, GL::any::fast_any arg7,
+									GL::any::fast_any arg8, GL::any::fast_any arg9, GL::any::fast_any arg10, GL::any::fast_any arg11,
+									GL::any::fast_any arg12, GL::any::fast_any arg13
+									) -> void {
+										(void)eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }, { type_list[6].first, arg6 }, { type_list[7].first, arg7 },
+											{ type_list[8].first, arg8 }, { type_list[9].first, arg9 }, { type_list[10].first, arg10 }, { type_list[11].first, arg11 },
+											{ type_list[12].first, arg12 }, { type_list[13].first, arg13 }
+										});
+									}, 0, {}, type_list, GL::type_of<void>());
+							case 15:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4, GL::any::fast_any arg5, GL::any::fast_any arg6, GL::any::fast_any arg7,
+									GL::any::fast_any arg8, GL::any::fast_any arg9, GL::any::fast_any arg10, GL::any::fast_any arg11,
+									GL::any::fast_any arg12, GL::any::fast_any arg13, GL::any::fast_any arg14
+									) -> void {
+										(void)eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }, { type_list[6].first, arg6 }, { type_list[7].first, arg7 },
+											{ type_list[8].first, arg8 }, { type_list[9].first, arg9 }, { type_list[10].first, arg10 }, { type_list[11].first, arg11 },
+											{ type_list[12].first, arg12 }, { type_list[13].first, arg13 }, { type_list[14].first, arg14 }
+										});
+									}, 0, {}, type_list, GL::type_of<void>());
+							case 16:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3, 
+									GL::any::fast_any arg4, GL::any::fast_any arg5, GL::any::fast_any arg6, GL::any::fast_any arg7, 
+									GL::any::fast_any arg8, GL::any::fast_any arg9, GL::any::fast_any arg10, GL::any::fast_any arg11, 
+									GL::any::fast_any arg12, GL::any::fast_any arg13, GL::any::fast_any arg14, GL::any::fast_any arg15
+								) -> void {
+									(void)eval_node_function({
+										{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+										{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }, { type_list[6].first, arg6 }, { type_list[7].first, arg7 },
+										{ type_list[8].first, arg8 }, { type_list[9].first, arg9 }, { type_list[10].first, arg10 }, { type_list[11].first, arg11 },
+										{ type_list[12].first, arg12 }, { type_list[13].first, arg13 }, { type_list[14].first, arg14 }, { type_list[15].first, arg15 }
+									});
+								}, 0, {}, type_list, GL::type_of<void>());
+							default: throw except::eval_error("Too many function parameters in function declaration -- limit of 15 arguments allowed", node.location);
+							}
 						}
-						else {
-							auto return_type = current_scope.DetermineType(node.children[0].text);
-
-
-
-
-
+						else {							
+							switch (type_list.size()) {
+							case 0:
+								return GL::make_callable(function_name, [eval_node_function, type_list]() -> GL::any::fast_any {
+									return eval_node_function({});
+									}, 0, {}, type_list, return_type);
+							case 1:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0
+									) -> GL::any::fast_any {
+										return eval_node_function({
+											{ type_list[0].first, arg0 }
+											});
+									}, 0, {}, type_list, return_type);
+							case 2:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1
+									) -> GL::any::fast_any {
+										return eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }
+											});
+									}, 0, {}, type_list, return_type);
+							case 3:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2
+									) -> GL::any::fast_any {
+										return eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }
+											});
+									}, 0, {}, type_list, return_type);
+							case 4:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3
+									) -> GL::any::fast_any {
+										return eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 }
+											});
+									}, 0, {}, type_list, return_type);
+							case 5:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4
+									) -> GL::any::fast_any {
+										return eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }
+											});
+									}, 0, {}, type_list, return_type);
+							case 6:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4, GL::any::fast_any arg5
+									) -> GL::any::fast_any {
+										return eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }
+											});
+									}, 0, {}, type_list, return_type);
+							case 7:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4, GL::any::fast_any arg5, GL::any::fast_any arg6
+									) -> GL::any::fast_any {
+										return eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }, { type_list[6].first, arg6 }
+											});
+									}, 0, {}, type_list, return_type);
+							case 8:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4, GL::any::fast_any arg5, GL::any::fast_any arg6, GL::any::fast_any arg7
+									) -> GL::any::fast_any {
+										return eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }, { type_list[6].first, arg6 }, { type_list[7].first, arg7 }
+											});
+									}, 0, {}, type_list, return_type);
+							case 9:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4, GL::any::fast_any arg5, GL::any::fast_any arg6, GL::any::fast_any arg7,
+									GL::any::fast_any arg8
+									) -> GL::any::fast_any {
+										return eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }, { type_list[6].first, arg6 }, { type_list[7].first, arg7 },
+											{ type_list[8].first, arg8 }
+											});
+									}, 0, {}, type_list, return_type);
+							case 10:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4, GL::any::fast_any arg5, GL::any::fast_any arg6, GL::any::fast_any arg7,
+									GL::any::fast_any arg8, GL::any::fast_any arg9
+									) -> GL::any::fast_any {
+										return eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }, { type_list[6].first, arg6 }, { type_list[7].first, arg7 },
+											{ type_list[8].first, arg8 }, { type_list[9].first, arg9 }
+											});
+									}, 0, {}, type_list, return_type);
+							case 11:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4, GL::any::fast_any arg5, GL::any::fast_any arg6, GL::any::fast_any arg7,
+									GL::any::fast_any arg8, GL::any::fast_any arg9, GL::any::fast_any arg10
+									) -> GL::any::fast_any {
+										return eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }, { type_list[6].first, arg6 }, { type_list[7].first, arg7 },
+											{ type_list[8].first, arg8 }, { type_list[9].first, arg9 }, { type_list[10].first, arg10 }
+											});
+									}, 0, {}, type_list, return_type);
+							case 12:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4, GL::any::fast_any arg5, GL::any::fast_any arg6, GL::any::fast_any arg7,
+									GL::any::fast_any arg8, GL::any::fast_any arg9, GL::any::fast_any arg10, GL::any::fast_any arg11
+									) -> GL::any::fast_any {
+										return eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }, { type_list[6].first, arg6 }, { type_list[7].first, arg7 },
+											{ type_list[8].first, arg8 }, { type_list[9].first, arg9 }, { type_list[10].first, arg10 }, { type_list[11].first, arg11 }
+											});
+									}, 0, {}, type_list, return_type);
+							case 13:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4, GL::any::fast_any arg5, GL::any::fast_any arg6, GL::any::fast_any arg7,
+									GL::any::fast_any arg8, GL::any::fast_any arg9, GL::any::fast_any arg10, GL::any::fast_any arg11,
+									GL::any::fast_any arg12
+									) -> GL::any::fast_any {
+										return eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }, { type_list[6].first, arg6 }, { type_list[7].first, arg7 },
+											{ type_list[8].first, arg8 }, { type_list[9].first, arg9 }, { type_list[10].first, arg10 }, { type_list[11].first, arg11 },
+											{ type_list[12].first, arg12 }
+											});
+									}, 0, {}, type_list, return_type);
+							case 14:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4, GL::any::fast_any arg5, GL::any::fast_any arg6, GL::any::fast_any arg7,
+									GL::any::fast_any arg8, GL::any::fast_any arg9, GL::any::fast_any arg10, GL::any::fast_any arg11,
+									GL::any::fast_any arg12, GL::any::fast_any arg13
+									) -> GL::any::fast_any {
+										return eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }, { type_list[6].first, arg6 }, { type_list[7].first, arg7 },
+											{ type_list[8].first, arg8 }, { type_list[9].first, arg9 }, { type_list[10].first, arg10 }, { type_list[11].first, arg11 },
+											{ type_list[12].first, arg12 }, { type_list[13].first, arg13 }
+											});
+									}, 0, {}, type_list, return_type);
+							case 15:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4, GL::any::fast_any arg5, GL::any::fast_any arg6, GL::any::fast_any arg7,
+									GL::any::fast_any arg8, GL::any::fast_any arg9, GL::any::fast_any arg10, GL::any::fast_any arg11,
+									GL::any::fast_any arg12, GL::any::fast_any arg13, GL::any::fast_any arg14
+									) -> GL::any::fast_any {
+										return eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }, { type_list[6].first, arg6 }, { type_list[7].first, arg7 },
+											{ type_list[8].first, arg8 }, { type_list[9].first, arg9 }, { type_list[10].first, arg10 }, { type_list[11].first, arg11 },
+											{ type_list[12].first, arg12 }, { type_list[13].first, arg13 }, { type_list[14].first, arg14 }
+											});
+									}, 0, {}, type_list, return_type);
+							case 16:
+								return GL::make_callable(function_name, [eval_node_function, type_list](
+									GL::any::fast_any arg0, GL::any::fast_any arg1, GL::any::fast_any arg2, GL::any::fast_any arg3,
+									GL::any::fast_any arg4, GL::any::fast_any arg5, GL::any::fast_any arg6, GL::any::fast_any arg7,
+									GL::any::fast_any arg8, GL::any::fast_any arg9, GL::any::fast_any arg10, GL::any::fast_any arg11,
+									GL::any::fast_any arg12, GL::any::fast_any arg13, GL::any::fast_any arg14, GL::any::fast_any arg15
+									) -> GL::any::fast_any {
+										return eval_node_function({
+											{ type_list[0].first, arg0 }, { type_list[1].first, arg1 }, { type_list[2].first, arg2 }, { type_list[3].first, arg3 },
+											{ type_list[4].first, arg4 }, { type_list[5].first, arg5 }, { type_list[6].first, arg6 }, { type_list[7].first, arg7 },
+											{ type_list[8].first, arg8 }, { type_list[9].first, arg9 }, { type_list[10].first, arg10 }, { type_list[11].first, arg11 },
+											{ type_list[12].first, arg12 }, { type_list[13].first, arg13 }, { type_list[14].first, arg14 }, { type_list[15].first, arg15 }
+											});
+									}, 0, {}, type_list, return_type);
+							default: throw except::eval_error("Too many function parameters in function declaration -- limit of 15 arguments allowed", node.location);
+							}
 						}
 					}
-
-
-
-
-					GL::make_callable(node.children[1].text, [this, return_type, this_node = node.children[3]]()->GL::any::fast_any {
-						auto Node = this_node;
-						eval_state state;
-						GL::any::fast_any result = evaluate(Node, state, *GL::scope::GetCurrentCaller());
-						if (state.throwing != throwing::Nothing) {
-							if (state.throwing == throwing::Return) {
-								return GL::scope::GetCurrentCaller()->cast(state.to_return, return_type);
-							}
-							throw except::eval_error("Error inside of script function", Node.location);
-						}
-						return GL::scope::GetCurrentCaller()->cast(result, return_type);
-					}, 0, {}, {}, return_type);
-
-
-
-
-
-
-#endif
+					return nullptr;
 				};
 				// pre-evaluate the classes & namespaces. This will happen only one time. 
 				bool preEval_declarations(AbstractSyntaxTreeNode& node, GL::scope::impl::BasicScope& current_scope) {
 					if (node.identifier == GL::Engine::AST_Node_Type::Namespace) {
 						// node.tag.cast< NamespaceClassInformation>().
 						auto& this_namespace = current_scope.GetNamespace()->make_namespace(node.children[0].text);
-						for (auto& child_node : node.children) {
+						for (auto& child_node : node.children[1].children) {
 							switch (child_node.identifier) {
 							case GL::Engine::AST_Node_Type::Assign_Retroactively: {
-
 								// constexpr auto x = 10;
 								if (child_node.constant) { // Constexpr value.
-									current_scope.emplace_object_here(child_node.children[1].children[0].text, child_node.constant | GL::type::Const | GL::type::Reference);
+									this_namespace.emplace_object_here(child_node.children[1].children[0].text, child_node.constant | GL::type::Const | GL::type::Reference);
 									break;
 								}
 
@@ -16830,7 +17186,7 @@ namespace GL {
 									// Constant value provided. Need to copy it. 
 									auto& to_copy = child_node.children[0].constant;
 									if (auto* BC = current_scope.GetRoot()->try_find_class(to_copy.m_casted_type)) {
-										current_scope.emplace_object_here(child_node.children[1].children[0].text, BC->this_m.scope->call(BC->this_m.scope_name, { to_copy | GL::type::Const | GL::type::Reference }));
+										this_namespace.emplace_object_here(child_node.children[1].children[0].text, BC->this_m.scope->call(BC->this_m.scope_name, { to_copy | GL::type::Const | GL::type::Reference }));
 									}
 									else {
 										throw except::eval_error("Unable to copy variable to new object", child_node.location);
@@ -16850,7 +17206,7 @@ namespace GL {
 									if (state.throwing != throwing::Nothing) {
 										break;
 									}
-									current_scope.emplace_object_here(child_node.children[1].children[0].text, to_add);
+									this_namespace.emplace_object_here(child_node.children[1].children[0].text, to_add);
 									break;
 								}
 
@@ -16871,7 +17227,7 @@ namespace GL {
 									if (auto* BC = current_scope.GetRoot()->try_find_class(to_copy.m_casted_type)) {
 										auto copied = BC->this_m.scope->call(BC->this_m.scope_name, { to_copy | GL::type::Const | GL::type::Reference });
 										BC->this_m.scope->call("=", { copied, to_assign });
-										current_scope.emplace_object_here(child_node.children[1].children[0].text, copied);
+										this_namespace.emplace_object_here(child_node.children[1].children[0].text, copied);
 									}
 									else {
 										throw except::eval_error("Unable to copy variable to new object", child_node.location);
@@ -16897,11 +17253,11 @@ namespace GL {
 									}
 									if (auto* BC = current_scope.GetRoot()->try_find_class(copied.m_casted_type)) {
 										BC->this_m.scope->call("=", { copied, to_assign });
-										current_scope.emplace_object_here(child_node.children[1].children[0].text, copied);
+										this_namespace.emplace_object_here(child_node.children[1].children[0].text, copied);
 									}
 									else {
 										current_scope.call("=", { copied, to_assign });
-										current_scope.emplace_object_here(child_node.children[1].children[0].text, copied);
+										this_namespace.emplace_object_here(child_node.children[1].children[0].text, copied);
 									}
 								}
 
@@ -16945,46 +17301,7 @@ namespace GL {
 							&& node.children[1].identifier == GL::Engine::AST_Node_Type::Id // FunctionName
 							&& node.children[2].identifier == GL::Engine::AST_Node_Type::Arg_List // Arguments
 						) {
-							if (node.children[0].text == "void") {
-								current_scope.GetNamespace()->add_function(GL::make_callable(node.children[1].text, []() -> void {
-									
-								}, 0, {}, {}, GL::type_of<void>()));
-							}
-							else {
-								auto return_type = current_scope.DetermineType(node.children[0].text);
-								switch (node.children[2].children.size()) {
-								case 0: {
-									current_scope.GetNamespace()->add_function(GL::make_callable(node.children[1].text, [this, return_type, this_node = node.children[3]]() -> GL::any::fast_any {
-										auto Node = this_node;
-										eval_state state; 
-										GL::any::fast_any result = evaluate(Node, state, *GL::scope::GetCurrentCaller());
-										if (state.throwing != throwing::Nothing) {
-											if (state.throwing == throwing::Return) {
-												return GL::scope::GetCurrentCaller()->cast(state.to_return, return_type);
-											}											
-											throw except::eval_error("Error inside of script function", Node.location);											
-										}
-										return GL::scope::GetCurrentCaller()->cast(result, return_type);
-									}, 0, {}, {}, return_type));
-									break;
-								}
-								case 1: {
-									current_scope.GetNamespace()->add_function(GL::make_callable(node.children[1].text, [return_type, node](GL::any::fast_any input_1) -> GL::any::fast_any {
-										GL::any::fast_any result;
-
-										return GL::scope::GetCurrentCaller()->cast(result, return_type);
-									}, 0, {}, {}, return_type));
-									break;
-								}
-								default: break;
-								}
-
-
-
-
-
-
-							}
+							current_scope.GetNamespace()->add_function(make_callable_from_node(node, current_scope));
 						}
 						return false;
 					}
@@ -17996,9 +18313,28 @@ int main() {
 		for (GL::string& Script : std::vector<GL::string>{
 R"(
 	namespace TEST {
-		foot Foo(){ return 10; }
-	}
-	return TEST::Foo();
+		foot obj = 100_ft;
+
+		foot Foo0(){ 
+			return 10; 
+		};
+		foot Foo1(int x){ 
+			return x;	
+		};
+		foot Foo2(int x, double y){ 
+			return x + y; 
+		};
+		foot Foo3(int x, double y, z){ 
+			return x + y + z; 
+		};
+		var  Foo4(x, y){ 
+			x > y ? x : y; 
+		};
+	};
+	var  Foo0(){ 
+		return TEST::obj;
+	};
+	return [ Foo0(), TEST::Foo0(), TEST::Foo1(10), TEST::Foo2(5, 5), TEST::Foo3(2, 2, 6.0_ft), TEST::Foo4(10_ft, 10_m), TEST::Foo4(10_ft, 1_m), TEST::obj ];
 )",R"(
 	try{
 		auto x = 0;
