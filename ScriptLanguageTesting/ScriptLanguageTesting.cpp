@@ -8978,6 +8978,7 @@ namespace GL {
 				if (this->text.find("<") != GL::string::npos) {
 					if (this->text.find(">") != GL::string::npos) {						
 						info.template_types = this->text.right_of("<").left_of(">").split_nested(",", "<", ">");
+						for (auto& x : info.template_types) x = x.remove_leading_and_trailing(' ').remove_leading_and_trailing('\t').remove_leading_and_trailing('\n').remove_leading_and_trailing('\r');
 						this->text = this->text.left_of("<");
 					}
 				}
@@ -11715,6 +11716,27 @@ namespace GL {
 									node.constant = node.children[0].constant;
 									return true;
 								}
+
+								// constexpr int x
+								// constexpr string y;
+								if (node.children.size() == 2
+									&& node.children[0].identifier == Engine::AST_Node_Type::Id
+									&& node.children[0].text != "var"
+									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+									&& !node.constant
+								) {
+									try {
+										auto initial_value = CurrentEngine().call(node.children[0].text, {});
+										node.constant = initial_value;
+										return true;
+									}
+									catch (...) {
+										// failure to do constexpr folding.
+										node.tag.cast<ObjectDeclarationInformation>().is_constexpr = false;
+										return true;
+									}
+								}
+
 								if (node.children.size() == 2
 									&& node.children[0].identifier == Engine::AST_Node_Type::Fun_Call
 									&& node.children[0].children.size() == 2
@@ -11738,6 +11760,30 @@ namespace GL {
 										return true;
 									}
 								}
+
+								// constexpr int x = 10;
+								if (node.children.size() == 3
+									&& node.children[0].identifier == Engine::AST_Node_Type::Id
+									&& node.children[0].text != "var"
+									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+									&& node.children[2].identifier == Engine::AST_Node_Type::Constant
+									&& !node.constant
+								) {
+									try {
+										auto initial_value = CurrentEngine().call(node.children[0].text, {});
+										CurrentEngine().call("=", { initial_value, node.children[2].constant | GL::type::Const | GL::type::Reference });
+										node.constant = initial_value;
+										//node.children[0] = Constant_Node(node.children[0].children[0].text, node.children[0].children[0].location, {}, node.constant);
+										//node.children.pop_back();
+										return true;
+									}
+									catch (...) {
+										// failure to do constexpr folding.
+										node.tag.cast<ObjectDeclarationInformation>().is_constexpr = false;
+										return true;
+									}
+								}
+
 								if (node.children.size() == 3
 									&& node.children[0].identifier == Engine::AST_Node_Type::Fun_Call
 									&& node.children[0].children.size() == 2
@@ -11764,6 +11810,35 @@ namespace GL {
 										return true;
 									}
 								}
+
+								if (node.children.size() == 3
+									&& node.children[0].identifier == Engine::AST_Node_Type::Id
+									&& node.children[0].text != "var"
+									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+									&& node.children[2].identifier == Engine::AST_Node_Type::Fun_Call
+									&& node.children[2].children.size() == 2
+									&& node.children[2].children[0].identifier == Engine::AST_Node_Type::Id
+									&& node.children[2].children[0].children.size() == 0
+									&& node.children[2].children[1].identifier == Engine::AST_Node_Type::Arg_List
+									&& node.children[2].children[1].children.size() == 0
+									&& !node.constant
+								) {
+									try {
+										auto initial_value = CurrentEngine().call(node.children[0].text, {});
+										auto new_value = CurrentEngine().call(node.children[2].children[0].text, {});
+										CurrentEngine().call("=", { initial_value, new_value | GL::type::Const | GL::type::Reference });
+										node.constant = initial_value;
+										//node.children[0] = Constant_Node(node.children[0].children[0].text, node.children[0].children[0].location, {}, node.constant);
+										//node.children.erase(node.children.begin() + 2, node.children.end());
+										return true;
+									}
+									catch (...) {
+										// failure to do constexpr folding.
+										node.tag.cast<ObjectDeclarationInformation>().is_constexpr = false;
+										return true;
+									}
+								}
+
 								if (node.children.size() == 3
 									&& node.children[0].identifier == Engine::AST_Node_Type::Fun_Call
 									&& node.children[0].children.size() == 2
@@ -11796,6 +11871,7 @@ namespace GL {
 										return true;
 									}
 								}
+
 								if (node.children.size() == 3
 									&& node.children[0].identifier == Engine::AST_Node_Type::Constant
 									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
@@ -14818,8 +14894,8 @@ namespace GL {
 						// int& x;
 						// const int& x;
 						if (TypeName()) { // captures Id{ TypeName }
-							build_match<Arg_List_Node>(prev_stack_top + 1); // {no_params}
-							build_match<Fun_Call_Node>(prev_stack_top); // Fun_Call{ Id{TypeName}, ArgList{} }
+							// build_match<Arg_List_Node>(prev_stack_top + 1); // {no_params}
+							// build_match<Fun_Call_Node>(prev_stack_top); // Fun_Call{ Id{TypeName}, ArgList{} }
 							if (Id(true)) {
 								build_match<Var_Decl_Node>(prev_stack_top + 1);  // var i;
 								if (is_constexpr) {
@@ -17162,174 +17238,47 @@ namespace GL {
 					}
 					return nullptr;
 				};
-				// pre-evaluate the classes & namespaces. This will happen only one time. 
-				bool preEval_declarations(AbstractSyntaxTreeNode& node, GL::scope::impl::BasicScope& current_scope) {
-					if (node.identifier == GL::Engine::AST_Node_Type::Namespace) {
-						// node.tag.cast< NamespaceClassInformation>().
-						auto& this_namespace = current_scope.GetNamespace()->make_namespace(node.children[0].text);
-						for (auto& child_node : node.children[1].children) {
-							switch (child_node.identifier) {
-							case GL::Engine::AST_Node_Type::Assign_Retroactively: {
-								// constexpr auto x = 10;
-								if (child_node.constant) { // Constexpr value.
-									this_namespace.emplace_object_here(child_node.children[1].children[0].text, child_node.constant | GL::type::Const | GL::type::Reference);
-									break;
-								}
 
-								// auto x = 10;
-								if (child_node.children.size() == 2
-									&& child_node.children[0].identifier == Engine::AST_Node_Type::Constant
-									&& child_node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
-									&& child_node.children[1].children.size() == 1
-									&& child_node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
-								) {
-									// Constant value provided. Need to copy it. 
-									auto& to_copy = child_node.children[0].constant;
-									if (auto* BC = current_scope.GetRoot()->try_find_class(to_copy.m_casted_type)) {
-										this_namespace.emplace_object_here(child_node.children[1].children[0].text, BC->this_m.scope->call(BC->this_m.scope_name, { to_copy | GL::type::Const | GL::type::Reference }));
-									}
-									else {
-										throw except::eval_error("Unable to copy variable to new object", child_node.location);
-									}
-									break;
-								}
-
-								// auto x = int();
-								if (child_node.children.size() == 2
-									&& child_node.children[0].identifier != Engine::AST_Node_Type::Constant
-									&& child_node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
-									&& child_node.children[1].children.size() == 1
-									&& child_node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
-								) {
-									eval_state state;
-									auto to_add = evaluate(child_node.children[0], state, current_scope);
-									if (state.throwing != throwing::Nothing) {
-										break;
-									}
-									this_namespace.emplace_object_here(child_node.children[1].children[0].text, to_add);
-									break;
-								}
-
-								// int x = 10.0f;
-								if (child_node.children.size() == 3
-									&& child_node.children[0].identifier == Engine::AST_Node_Type::Constant
-									&& child_node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
-									&& child_node.children[1].children.size() == 1
-									&& child_node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
-									) {
-									// Constant value provided. Need to copy it. 
-									auto& to_copy = child_node.children[0].constant;
-									eval_state state;
-									auto to_assign = evaluate(child_node.children[2], state, current_scope);
-									if (state.throwing != throwing::Nothing) {
-										break;
-									}
-									if (auto* BC = current_scope.GetRoot()->try_find_class(to_copy.m_casted_type)) {
-										auto copied = BC->this_m.scope->call(BC->this_m.scope_name, { to_copy | GL::type::Const | GL::type::Reference });
-										BC->this_m.scope->call("=", { copied, to_assign });
-										this_namespace.emplace_object_here(child_node.children[1].children[0].text, copied);
-									}
-									else {
-										throw except::eval_error("Unable to copy variable to new object", child_node.location);
-									}
-									break;
-								}
-
-								// SOMETHING x = 10.0f;
-								if (child_node.children.size() == 3
-									&& child_node.children[0].identifier != Engine::AST_Node_Type::Constant
-									&& child_node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
-									&& child_node.children[1].children.size() == 1
-									&& child_node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
-								) {
-									eval_state state;
-									auto copied = evaluate(child_node.children[0], state, current_scope);
-									if (state.throwing != throwing::Nothing) {
-										break;
-									}
-									auto to_assign = evaluate(child_node.children[2], state, current_scope);
-									if (state.throwing != throwing::Nothing) {
-										break;
-									}
-									if (auto* BC = current_scope.GetRoot()->try_find_class(copied.m_casted_type)) {
-										BC->this_m.scope->call("=", { copied, to_assign });
-										this_namespace.emplace_object_here(child_node.children[1].children[0].text, copied);
-									}
-									else {
-										current_scope.call("=", { copied, to_assign });
-										this_namespace.emplace_object_here(child_node.children[1].children[0].text, copied);
-									}
-								}
-
-								break;
-							}
-							default: break;
-							}
-						}
-						node.for_each_child([this, &this_namespace](AbstractSyntaxTreeNode& this_node) -> bool {
-							if (preEval_declarations(this_node, this_namespace)) {
-								// returned true, meaning continue deeper into the child during THIS search
-								return true;
-							}
-							else {
-								// returned false, meaning DO NOT continue deeper into the child during THIS search
-								return false;
-							}
-						}, [](AbstractSyntaxTreeNode&) {}, [](AbstractSyntaxTreeNode&) {});
-						return false;
-					}
-					else if (node.identifier == GL::Engine::AST_Node_Type::Class) {						
-						auto& this_class = current_scope.GetNamespace()->make_class(node.children[0].text);
-						for (int i = 0; i < node.tag.cast< NamespaceClassInformation>().template_types.size(); ++i) {
-							this_class.template_types.push_back({ node.tag.cast< NamespaceClassInformation>().template_types[i], GL::is_template::type(i,node.tag.cast< NamespaceClassInformation>().template_types[i]) });
-						}
-						node.for_each_child([this, &this_class](AbstractSyntaxTreeNode& this_node) -> bool {
-							if (preEval_declarations(this_node, this_class)) {
-								// returned true, meaning continue deeper into the child during THIS search
-								return true;
-							}
-							else {
-								// returned false, meaning DO NOT continue deeper into the child during THIS search
-								return false;
-							}
-						}, [](AbstractSyntaxTreeNode&) {}, [](AbstractSyntaxTreeNode&) {});
-						return false;
-					}
-					else if (node.identifier == GL::Engine::AST_Node_Type::FunctionDecl) {
-						if (node.children.size() == 4
-							&& node.children[0].identifier == GL::Engine::AST_Node_Type::Id // Return TypeName
-							&& node.children[1].identifier == GL::Engine::AST_Node_Type::Id // FunctionName
-							&& node.children[2].identifier == GL::Engine::AST_Node_Type::Arg_List // Arguments
-						) {
-							current_scope.GetNamespace()->add_function(make_callable_from_node(node, current_scope));
-						}
-						return false;
-					}
-					else {
-						node.for_each_child([this,&current_scope](AbstractSyntaxTreeNode& this_node) -> bool {
-							if (preEval_declarations(this_node, current_scope)) {
-								// returned true, meaning continue deeper into the child during THIS search
-								return true;
-							}
-							else {
-								// returned false, meaning DO NOT continue deeper into the child during THIS search
-								return false;
-							}
-						}, [](AbstractSyntaxTreeNode&) {}, [](AbstractSyntaxTreeNode&) {});
-						return true;
-					}
-				};
-				// populate the return type information (as much as possible) for every node. This will happen on repeat until all nodes return false.
-				bool preEval_returnTypes(AbstractSyntaxTreeNode& node, GL::scope::impl::BasicScope& current_scope) {
-					return false;
-				};
-				// select the functions that should be used, and their return types (as much as possible) for every node. This will happen on repeat until all nodes return false.
-				bool preEval_functionSelections(AbstractSyntaxTreeNode& node, GL::scope::impl::BasicScope& current_scope) {
-					return false;
-				};
-
-				GL::any::fast_any evaluate(AbstractSyntaxTreeNode& node, eval_state& state, GL::scope::impl::BasicScope& current_scope) {					
+				GL::any::fast_any evaluate(AbstractSyntaxTreeNode& node, eval_state& state, GL::scope::impl::BasicScope& current_scope, bool in_class = false) {					
 					switch (node.identifier) {
+					case Engine::AST_Node_Type::Namespace: {
+						if (node.children.size() == 2
+							&& node.children[0].identifier == Engine::AST_Node_Type::Id
+							&& node.children[1].identifier == Engine::AST_Node_Type::DeclarationBlock
+						) {
+							auto& info = node.tag.cast<NamespaceClassInformation>();							
+							auto& this_namespace = current_scope.GetNamespace()->make_namespace(node./*children[0].*/text);
+							for (auto& child_node : node.children[1].children) {
+								(void)evaluate(child_node, state, this_namespace);
+								if (state.throwing != throwing::Nothing) return state.to_return;
+							}
+						}
+						return nullptr;
+					};
+					case Engine::AST_Node_Type::Class: {
+						if (node.children.size() == 2
+							&& node.children[0].identifier == Engine::AST_Node_Type::Id
+							&& node.children[1].identifier == Engine::AST_Node_Type::DeclarationBlock
+						) {
+							auto& info = node.tag.cast<NamespaceClassInformation>();
+							auto& this_class = current_scope.GetNamespace()->make_class(node./*children[0].*/text);
+							if (this_class.template_types.size() == 0) {
+								for (auto& template_type : info.template_types) {
+									this_class.template_types.push_back({ template_type, GL::is_template::type(this_class.template_types.size(), template_type) });
+								}
+							}
+							for (auto& child_node : node.children[1].children) {
+								(void)evaluate(child_node, state, this_class, true);
+								if (state.throwing != throwing::Nothing) return state.to_return;
+							}
+							this_class.initialize_basic_member_functions();
+						}
+						return nullptr;
+					};
+					case Engine::AST_Node_Type::FunctionDecl: {
+						current_scope.GetNamespace()->add_function(make_callable_from_node(node, *current_scope.GetNamespace()));
+						return nullptr;
+					};
 					case Engine::AST_Node_Type::PreprocessorMacro: {
 						if (node.text == "#error"
 							&& node.children.size() >= 1
@@ -17341,9 +17290,7 @@ namespace GL {
 						return nullptr;
 					}
 					case Engine::AST_Node_Type::Comment: [[fallthrough]];
-					case Engine::AST_Node_Type::Noop: {
-						return nullptr;
-					}
+					case Engine::AST_Node_Type::Noop: return nullptr;					
 					case Engine::AST_Node_Type::Block: [[fallthrough]];
 					case Engine::AST_Node_Type::File: {
 						auto new_scope = current_scope.make_scope();
@@ -17358,9 +17305,7 @@ namespace GL {
 					case Engine::AST_Node_Type::Scopeless_Block: {
 						for (int i = 0; i < (node.children.size() - 1); ++i) {
 							evaluate(node.children[i], state, current_scope);
-							if (state.throwing != throwing::Nothing) {
-								return state.to_return;
-							}
+							if (state.throwing != throwing::Nothing) return state.to_return;							
 						}
 						return state.to_return = evaluate(node.children.back(), state, current_scope);
 					}
@@ -17385,102 +17330,270 @@ namespace GL {
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
 					case Engine::AST_Node_Type::Assign_Retroactively: {
-						// constexpr auto x = 10;
-						if (node.constant) {
-							// Constexpr value.
-							current_scope.emplace_object_here(node.children[1].children[0].text, node.constant | GL::type::Const | GL::type::Reference);
-							return state.to_return = nullptr;
-						}
+						if (in_class) {
+							if (auto* this_class = dynamic_cast<GL::scope::impl::ClassScope*>(current_scope.GetNamespace())) {
+								// constexpr auto x = 10;
+								if (node.constant) {
+									// Constexpr value.
+									// this_class->add_member_object(node.children[1].children[0].text, (node.constant - GL::type::Const - GL::type::Reference).m_casted_type, node.constant | GL::type::Const | GL::type::Reference);
+									current_scope.emplace_object_here(node.children[1].children[0].text, node.constant | GL::type::Const | GL::type::Reference);
+									return state.to_return = nullptr;
+								}
 
-						// auto x = 10;
-						if (node.children.size() == 2
-							&& node.children[0].identifier == Engine::AST_Node_Type::Constant
-							&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
-							&& node.children[1].children.size() == 1
-							&& node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+								// auto x = 10;
+								if (node.children.size() == 2
+									&& node.children[0].identifier == Engine::AST_Node_Type::Constant
+									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+									&& node.children[1].children.size() == 1
+									&& node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+								) {
+									// Constant value provided. Need to copy it. 
+									auto& to_copy = node.children[0].constant;
+									this_class->add_member_object(node.children[1].children[0].text,
+										to_copy.m_casted_type - GL::type::Const - GL::type::Reference,
+										to_copy
+									);
+									return state.to_return = nullptr;
+								}
+
+								// CustomType x;
+								if (node.children.size() == 2
+									&& node.children[0].identifier == Engine::AST_Node_Type::Id
+									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+									&& node.children[1].children.size() == 1
+									&& node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+								) {
+									auto this_t = current_scope.DetermineType(node.children[0].text);
+									this_class->add_member_object(node.children[1].children[0].text,
+										this_t
+									);
+									return state.to_return = nullptr;
+								}
+
+								// auto x = int();
+								if (node.children.size() == 2
+									&& node.children[0].identifier != Engine::AST_Node_Type::Constant
+									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+									&& node.children[1].children.size() == 1
+									&& node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+								) {
+									auto to_add = evaluate(node.children[0], state, current_scope);
+									this_class->add_member_object(node.children[1].children[0].text,
+										to_add.m_casted_type - GL::type::Const - GL::type::Reference,
+										to_add
+									);
+									return state.to_return = nullptr;
+								}
+
+								// int x = 10.0f;
+								if (node.children.size() == 3
+									&& node.children[0].identifier == Engine::AST_Node_Type::Constant
+									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+									&& node.children[1].children.size() == 1
+									&& node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+								) {
+									// Constant value provided. Need to copy it. 
+									auto& to_copy = node.children[0].constant;
+									auto to_assign = evaluate(node.children[2], state, current_scope);
+									if (state.throwing != throwing::Nothing) return state.to_return;									
+									if (auto* BC = current_scope.GetRoot()->try_find_class(to_copy.m_casted_type)) {
+										auto copied = BC->this_m.scope->call(BC->this_m.scope_name, { to_copy | GL::type::Const | GL::type::Reference });
+										BC->this_m.scope->call("=", { copied, to_assign });
+
+										this_class->add_member_object(node.children[1].children[0].text,
+											to_copy.m_casted_type - GL::type::Const - GL::type::Reference,
+											copied
+										);
+									}
+									else {
+										throw except::eval_error("Unable to copy variable to new object", node.location);
+									}
+									return state.to_return = nullptr;
+								}
+
+								// CustomType x = 10.0f;
+								if (node.children.size() == 3
+									&& node.children[0].identifier == Engine::AST_Node_Type::Id
+									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+									&& node.children[1].children.size() == 1
+									&& node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+								) {
+									auto to_assign = evaluate(node.children[2], state, current_scope);
+									if (state.throwing != throwing::Nothing) return state.to_return;
+									auto this_t = current_scope.DetermineType(node.children[0].text);
+									this_class->add_member_object(node.children[1].children[0].text,
+										this_t,
+										to_assign
+									);
+									return state.to_return = nullptr;
+								}
+
+								// SOMETHING x = 10.0f;
+								if (node.children.size() == 3
+									&& node.children[0].identifier != Engine::AST_Node_Type::Constant
+									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+									&& node.children[1].children.size() == 1
+									&& node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+								) {
+									auto copied = evaluate(node.children[0], state, current_scope);
+									if (state.throwing != throwing::Nothing) return state.to_return;
+									
+									auto to_assign = evaluate(node.children[2], state, current_scope);
+									if (state.throwing != throwing::Nothing) return state.to_return;
+									
+									if (auto* BC = current_scope.GetRoot()->try_find_class(copied.m_casted_type)) {
+										BC->this_m.scope->call("=", { copied, to_assign });
+
+										this_class->add_member_object(node.children[1].children[0].text,
+											copied.m_casted_type - GL::type::Const - GL::type::Reference,
+											copied
+										);
+									}
+									else {
+										current_scope.call("=", { copied, to_assign });
+										this_class->add_member_object(node.children[1].children[0].text,
+											copied.m_casted_type - GL::type::Const - GL::type::Reference,
+											copied
+										);
+									}
+									return state.to_return = nullptr;
+								}
+							}
+						}
+						else {
+							// constexpr auto x = 10;
+							if (node.constant) {
+								// Constexpr value.
+								current_scope.emplace_object_here(node.children[1].children[0].text, node.constant | GL::type::Const | GL::type::Reference);
+								return state.to_return = nullptr;
+							}
+
+							// auto x = 10;
+							if (node.children.size() == 2
+								&& node.children[0].identifier == Engine::AST_Node_Type::Constant
+								&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+								&& node.children[1].children.size() == 1
+								&& node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+								) {
+								// Constant value provided. Need to copy it. 
+								auto& to_copy = node.children[0].constant;
+								if (auto* BC = current_scope.GetRoot()->try_find_class(to_copy.m_casted_type)) {
+									current_scope.emplace_object_here(node.children[1].children[0].text, BC->this_m.scope->call(BC->this_m.scope_name, { to_copy | GL::type::Const | GL::type::Reference }));
+								}
+								else {
+									throw except::eval_error("Unable to copy variable to new object", node.location);
+								}
+								return state.to_return = nullptr;
+							}
+
+							// CustomType x;
+							if (node.children.size() == 2
+								&& node.children[0].identifier == Engine::AST_Node_Type::Id
+								&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+								&& node.children[1].children.size() == 1
+								&& node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
 							) {
-							// Constant value provided. Need to copy it. 
-							auto& to_copy = node.children[0].constant;
-							if (state.throwing != throwing::Nothing) {
-								return state.to_return;
+								auto this_t = current_scope.DetermineType(node.children[0].text);
+								if (auto BC = current_scope.GetRoot()->try_find_class(this_t)) {
+									auto to_add = BC->this_m.scope->call(BC->this_m.scope_name, {});
+									current_scope.emplace_object_here(node.children[1].children[0].text, to_add);
+								}
+								else {
+									auto to_add = current_scope.call(node.children[0].text, {});
+									current_scope.emplace_object_here(node.children[1].children[0].text, to_add);
+								}
+								return state.to_return = nullptr;
 							}
-							if (auto* BC = current_scope.GetRoot()->try_find_class(to_copy.m_casted_type)) {
-								current_scope.emplace_object_here(node.children[1].children[0].text, BC->this_m.scope->call(BC->this_m.scope_name, { to_copy | GL::type::Const | GL::type::Reference }));
-							}
-							else {
-								throw except::eval_error("Unable to copy variable to new object", node.location);
-							}
-							return state.to_return = nullptr;
-						}
 
-						// auto x = int();
-						if (node.children.size() == 2
-							&& node.children[0].identifier != Engine::AST_Node_Type::Constant
-							&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
-							&& node.children[1].children.size() == 1
-							&& node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
-						) {
-							auto to_add = evaluate(node.children[0], state, current_scope);
-							if (state.throwing != throwing::Nothing) {
-								return state.to_return;
+							// auto x = int();
+							if (node.children.size() == 2
+								&& node.children[0].identifier != Engine::AST_Node_Type::Constant
+								&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+								&& node.children[1].children.size() == 1
+								&& node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+								) {
+								auto to_add = evaluate(node.children[0], state, current_scope);
+								if (state.throwing != throwing::Nothing) {
+									return state.to_return;
+								}
+								current_scope.emplace_object_here(node.children[1].children[0].text, to_add);
+								return state.to_return = nullptr;
 							}
-							current_scope.emplace_object_here(node.children[1].children[0].text, to_add);
-							return state.to_return = nullptr;
-						}
 
-						// int x = 10.0f;
-						if (node.children.size() == 3
-							&& node.children[0].identifier == Engine::AST_Node_Type::Constant
-							&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
-							&& node.children[1].children.size() == 1
-							&& node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
-						) {
-							// Constant value provided. Need to copy it. 
-							auto& to_copy = node.children[0].constant;
-							if (state.throwing != throwing::Nothing) {
-								return state.to_return;
+							// int x = 10.0f;
+							if (node.children.size() == 3
+								&& node.children[0].identifier == Engine::AST_Node_Type::Constant
+								&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+								&& node.children[1].children.size() == 1
+								&& node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+								) {
+								// Constant value provided. Need to copy it. 
+								auto& to_copy = node.children[0].constant;
+								if (state.throwing != throwing::Nothing) {
+									return state.to_return;
+								}
+								auto to_assign = evaluate(node.children[2], state, current_scope);
+								if (state.throwing != throwing::Nothing) {
+									return state.to_return;
+								}
+								if (auto* BC = current_scope.GetRoot()->try_find_class(to_copy.m_casted_type)) {
+									auto copied = BC->this_m.scope->call(BC->this_m.scope_name, { to_copy | GL::type::Const | GL::type::Reference });
+									BC->this_m.scope->call("=", { copied, to_assign });
+									current_scope.emplace_object_here(node.children[1].children[0].text, copied);
+								}
+								else {
+									throw except::eval_error("Unable to copy variable to new object", node.location);
+								}
+								return state.to_return = nullptr;
 							}
-							auto to_assign = evaluate(node.children[2], state, current_scope);
-							if (state.throwing != throwing::Nothing) {
-								return state.to_return;
-							}
-							if (auto* BC = current_scope.GetRoot()->try_find_class(to_copy.m_casted_type)) {
-								auto copied = BC->this_m.scope->call(BC->this_m.scope_name, { to_copy | GL::type::Const | GL::type::Reference });
-								BC->this_m.scope->call("=", { copied, to_assign });
-								current_scope.emplace_object_here(node.children[1].children[0].text, copied);
-							}
-							else {
-								throw except::eval_error("Unable to copy variable to new object", node.location);
-							}
-							return state.to_return = nullptr;
-						}
 
-						// SOMETHING x = 10.0f;
-						if (node.children.size() == 3
-							&& node.children[0].identifier != Engine::AST_Node_Type::Constant
-							&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
-							&& node.children[1].children.size() == 1
-							&& node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
-						) {
-							auto copied = evaluate(node.children[0], state, current_scope);
-							if (state.throwing != throwing::Nothing) {
-								return state.to_return;
+							// CustomType x = 10.0f;
+							if (node.children.size() == 3
+								&& node.children[0].identifier == Engine::AST_Node_Type::Id
+								&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+								&& node.children[1].children.size() == 1
+								&& node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+							) {
+								auto to_assign = evaluate(node.children[2], state, current_scope);
+								if (state.throwing != throwing::Nothing) return state.to_return;
+								auto this_t = current_scope.DetermineType(node.children[0].text);
+								if (auto BC = current_scope.GetRoot()->try_find_class(this_t)) {
+									auto to_copy = BC->this_m.scope->call(BC->this_m.scope_name, { to_assign });
+									current_scope.emplace_object_here(node.children[1].children[0].text, to_copy);
+								}
+								else {
+									auto to_copy = current_scope.call(node.children[0].text, { to_assign });
+									current_scope.emplace_object_here(node.children[1].children[0].text, to_copy);
+								}
+								return state.to_return = nullptr;
 							}
-							auto to_assign = evaluate(node.children[2], state, current_scope);
-							if (state.throwing != throwing::Nothing) {
-								return state.to_return;
-							}
-							if (auto* BC = current_scope.GetRoot()->try_find_class(copied.m_casted_type)) {
-								BC->this_m.scope->call("=", { copied, to_assign });
-								current_scope.emplace_object_here(node.children[1].children[0].text, copied);
-							}
-							else {
-								current_scope.call("=", { copied, to_assign });
-								current_scope.emplace_object_here(node.children[1].children[0].text, copied);
-							}
-							return state.to_return = nullptr;
-						}
 
+							// SOMETHING x = 10.0f;
+							if (node.children.size() == 3
+								&& node.children[0].identifier != Engine::AST_Node_Type::Constant
+								&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+								&& node.children[1].children.size() == 1
+								&& node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+								) {
+								auto copied = evaluate(node.children[0], state, current_scope);
+								if (state.throwing != throwing::Nothing) {
+									return state.to_return;
+								}
+								auto to_assign = evaluate(node.children[2], state, current_scope);
+								if (state.throwing != throwing::Nothing) {
+									return state.to_return;
+								}
+								if (auto* BC = current_scope.GetRoot()->try_find_class(copied.m_casted_type)) {
+									BC->this_m.scope->call("=", { copied, to_assign });
+									current_scope.emplace_object_here(node.children[1].children[0].text, copied);
+								}
+								else {
+									current_scope.call("=", { copied, to_assign });
+									current_scope.emplace_object_here(node.children[1].children[0].text, copied);
+								}
+								return state.to_return = nullptr;
+							}
+						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
 					case Engine::AST_Node_Type::Return: {
@@ -18108,6 +18221,54 @@ namespace GL {
 					}
 					case Engine::AST_Node_Type::Try: {
 						if (node.children.size() >= 1) {
+							AbstractSyntaxTreeNode* finally_node = nullptr;
+							for (size_t child_index = 1; child_index < node.children.size(); ++child_index) {
+								if (node.children[child_index].identifier == Engine::AST_Node_Type::Finally) {
+									if (node.children[child_index].children.size() == 1) { // finally{ ... }
+										finally_node = &node.children[child_index].children[0];
+										// auto new_scope_2 = new_scope.make_scope();
+										// auto returned = evaluate(node.children[child_index].children[0], state, new_scope_2);
+										// if (state.throwing != throwing::Nothing) return state.to_return;
+										// return state.to_return = returned;
+									}
+								}
+							}
+							auto evaluate_finally = [&]() -> GL::any::fast_any {
+								if (finally_node) {
+									auto new_scope_2 = current_scope.make_scope();
+									if (state.throwing == throwing::Return) {						
+										auto temp_hold = state.to_return;
+										state.throwing = throwing::Nothing;
+										auto returned = evaluate(*finally_node, state, new_scope_2);
+										if (state.throwing != throwing::Nothing) {
+											return state.to_return = returned;
+										}
+										else {
+											return state.to_return = temp_hold;
+										}
+									}
+									else if (state.throwing == throwing::Nothing){
+										auto returned = evaluate(*finally_node, state, new_scope_2);
+										if (state.throwing != throwing::Nothing) {
+											return state.to_return = returned;
+										}
+										else {
+											return state.to_return = returned;
+										}
+									}
+									else { // error being thrown?
+										auto temp_state = state;
+										state.throwing = throwing::Nothing;
+										(void)evaluate(*finally_node, state, new_scope_2);
+										state = temp_state;
+										return state.to_return;
+									}
+								}
+								else {
+									return state.to_return;
+								}
+							};
+
 							auto new_scope = current_scope.make_scope();
 							GL::any::fast_any captured_thrown;
 							try {
@@ -18116,7 +18277,7 @@ namespace GL {
 									captured_thrown = state.to_return;
 								}
 								else {
-									state.to_return = returned;
+									return evaluate_finally();
 								}
 							}
 							catch (except::eval_error& e1) {
@@ -18188,25 +18349,14 @@ namespace GL {
 								if (captured_thrown) {
 									// went un-handled, so re-throw
 									state.throwing = throwing::Error;
-									return state.to_return;
+									return evaluate_finally();
 								}
 							}
 							else {
 								throw except::eval_error("Exception caught but nothing was captured", node.location);
 							}
 
-							for (size_t child_index = 1; child_index < node.children.size(); ++child_index) {
-								if (node.children[child_index].identifier == Engine::AST_Node_Type::Finally) {
-									if (node.children[child_index].children.size() == 1) { // finally{ ... }
-										auto new_scope_2 = new_scope.make_scope();
-										auto returned = evaluate(node.children[child_index].children[0], state, new_scope_2);
-										if (state.throwing != throwing::Nothing) return state.to_return;
-										return state.to_return = returned;
-									}									
-								}
-							}
-
-							return state.to_return;
+							return evaluate_finally();
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
@@ -18246,9 +18396,6 @@ namespace GL {
 
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
-					case Engine::AST_Node_Type::Namespace: break;
-					case Engine::AST_Node_Type::Class: break;
-					case Engine::AST_Node_Type::FunctionDecl: break;
 					case Engine::AST_Node_Type::Finally: [[fallthrough]];
 					case Engine::AST_Node_Type::Catch: [[fallthrough]];
 					case Engine::AST_Node_Type::Case: [[fallthrough]];
@@ -18269,13 +18416,7 @@ namespace GL {
 					}
 					return nullptr;					
 				};
-				GL::any::fast_any Eval(AbstractSyntaxTreeNode& node, eval_state& state, GL::scope::impl::RootScope& parent_scope)  {					
-					preEval_declarations(node, parent_scope);
-
-					while (node.for_each_child([this, &parent_scope](AbstractSyntaxTreeNode& this_node) -> bool {
-						return preEval_returnTypes(this_node, parent_scope) || preEval_functionSelections(this_node, parent_scope);
-					}, true)) {};
-
+				GL::any::fast_any Eval(AbstractSyntaxTreeNode& node, eval_state& state, GL::scope::impl::RootScope& parent_scope)  {	
 					try {
 						return evaluate(node, state, parent_scope);
 					}
@@ -18308,12 +18449,66 @@ namespace GL {
 
 };
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 int main() {
 	if (1) {
 		for (GL::string& Script : std::vector<GL::string>{
+#if 0
 R"(
 	namespace TEST {
-		foot obj = 100_ft;
+		meter obj = 100_in;
 
 		foot Foo0(){ 
 			return 10; 
@@ -18327,7 +18522,7 @@ R"(
 		foot Foo3(int x, double y, z){ 
 			return x + y + z; 
 		};
-		var  Foo4(x, y){ 
+		var Foo4(x, y){ 
 			x > y ? x : y; 
 		};
 	};
@@ -18336,6 +18531,127 @@ R"(
 	};
 	return [ Foo0(), TEST::Foo0(), TEST::Foo1(10), TEST::Foo2(5, 5), TEST::Foo3(2, 2, 6.0_ft), TEST::Foo4(10_ft, 10_m), TEST::Foo4(10_ft, 1_m), TEST::obj ];
 )",R"(
+	class TEST {
+		meter obj = 100_in;
+
+		foot Foo0(){ 
+			return 10; 
+		};
+		foot Foo1(int x){ 
+			return x;	
+		};
+		foot Foo2(int x, double y){ 
+			return x + y; 
+		};
+		foot Foo3(int x, double y, z){ 
+			return x + y + z; 
+		};
+		var Foo4(x, y){ 
+			x > y ? x : y; 
+		};
+	};
+	var  Foo0(){ 
+		return TEST().obj;
+	};
+	return [ Foo0(), TEST::Foo0(), TEST::Foo1(10), TEST::Foo2(5, 5), TEST::Foo3(2, 2, 6.0_ft), TEST::Foo4(10_ft, 10_m), TEST::Foo4(10_ft, 1_m), TEST().obj ];
+)",R"(
+	class TEST<T0> {
+		T0 obj = 100_in;
+
+		T0 Foo0(){ 
+			return 10; 
+		};
+		T0 Foo1(int x){ 
+			return x;	
+		};
+		T0 Foo2(int x, double y){ 
+			return x + y; 
+		};
+		T0 Foo3(int x, double y, z){ 
+			return x + y + z; 
+		};
+		var Foo4(x, y){ 
+			x > y ? x : y; 
+		};
+	};
+	var  Foo0(){ 
+		return TEST<foot>().obj;
+	};
+	return [ Foo0(), TEST<foot>::Foo0(), TEST<foot>::Foo1(10), TEST<foot>::Foo2(5, 5), TEST<foot>::Foo3(2, 2, 6.0_ft), TEST<foot>::Foo4(10_ft, 10_m), TEST<foot>::Foo4(10_ft, 1_m), TEST<inch>().obj ];
+)",
+#endif
+R"(
+	class MAP<T0, T1> {
+		map<T0, T1> _impl;
+		size_t size(MAP<T0, T1> const& self) {
+			return self._impl.size();
+		};
+		var insert(MAP<T0, T1> const& self, T0 const& key, T1 const& value) {
+			return self._impl.insert(key, value);
+		};
+	};
+	MAP<meter, foot> obj;
+	while (obj.size() < 10){
+		obj.insert(obj.size(), inch(obj.size()));
+	}
+	return obj.to_string;
+)",
+R"(
+	namespace GUI {		
+		class Inner1<T> {
+			T member1 = 10;
+			int member2 = 10;
+
+			T sum(GUI::Inner1<T> const& self) {
+				return self.member1 + self.member2;
+			};
+		};
+		class Inner2<T, H> {
+			T member1 = 10;
+			H member2 = 10;
+
+			T sum(GUI::Inner2<T, H> const& self) {
+				return self.member1 + self.member2;
+			};
+		};
+		class Outter<T> {
+			GUI::Inner1<T> obj1;
+			GUI::Inner2<T, meter> obj2;
+
+			T sum(GUI::Outter<T> const& self) {
+				return self.obj1.sum + self.obj2.sum;
+			};
+		};		
+	};
+
+	auto& x = GUI::Outter<foot>().obj1.member1;
+	auto& y = GUI::Outter<foot>().obj2.member1;
+	auto& z = GUI::Outter<foot>().obj2.member2;
+	return [ x, y, z, GUI::Outter<foot>().sum ];
+)",
+R"(
+	try{
+		auto x = 0;
+		while (true){
+			++x;
+			if (x > 1000){
+				throw x;
+			}
+		}
+	}catch(string e){
+		return e + " caught 1";
+	}catch(double e){
+		return e.to_string + " caught 2";
+	}catch(value e){
+		return e.to_string + " caught 3";
+	}catch(int e){
+		return e.to_string + " caught 4";
+	}catch(e){
+		return e.to_string + " caught 5";
+	}finally{
+		return "superceded?";
+	};
+)", R"(
 	try{
 		auto x = 0;
 		while (true){
@@ -18357,7 +18673,54 @@ R"(
 	}finally{
 		"superceded?";
 	};
-)",R"(
+)", R"(
+	try{
+		auto x = 0;
+		while (true){
+			++x;
+			if (x > 1000){
+				throw x;
+			}
+		}
+	}catch(string e){
+		return e + " caught 1";
+	}catch(double e){
+		return e.to_string + " caught 2";
+	}catch(value e){
+		return e.to_string + " caught 3";
+	}catch(int e){
+		return e.to_string + " caught 4";
+	}catch(e){
+		return e.to_string + " caught 5";
+	}finally{
+		"superceded?";
+	};
+)", R"(
+	int count = 0;
+	class TEST{
+		int count = 0;
+		string Foo(TEST& self){
+			try{
+				throw "ERR";
+			} catch(string e){
+				return e + " caught 1";
+			} catch(double e){
+				return e.to_string + " caught 2";
+			} catch(value e){
+				return e.to_string + " caught 3";
+			} catch(int e){
+				return e.to_string + " caught 4";
+			} catch(e){
+				return e.to_string + " caught 5";
+			} finally{
+				++self.count;
+			};	
+			return "FAILURE?";		
+		};
+	};
+	auto& x = TEST();
+	return [x.count.to_string, x.Foo, x.count.to_string];
+)", R"(
 	auto t0 = datetime::Now();
 	for (auto i = 0; i < 1'000'000; ++i) {
 		constexpr auto x0 = 100.0_ft; // 100 ft

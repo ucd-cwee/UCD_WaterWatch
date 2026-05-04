@@ -355,7 +355,7 @@ namespace GL {
             return data.operator[](index);
         };
         size_type hash(size_type out = 0) const {
-            if ((out == 0) && (length() > 16)) {
+            if ((out == 0)/* && (length() > 16)*/) {
                 if (_hash == npos) {
                     for (auto& x : data) out ^= (size_t)x + 0x9e3779b9 + (out << 6) + (out >> 2);
                     InterlockedExchange(reinterpret_cast<volatile size_type*>(const_cast<size_type*>(&_hash)), out);

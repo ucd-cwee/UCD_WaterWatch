@@ -233,10 +233,10 @@ namespace GL {
                 template<int category> __declspec(noinline) GL::shared_ptr<T>& TryGetCache(size_t cache_version) {
                     GL::shared_ptr<T>* out{ nullptr };
                     _current_cache.do_at_end([&](size_t curr_version, std::array<ResultForInputType, numCategories>& cache) {
-                        if (curr_version >= cache_version) {
+                        if (curr_version >= cache_version) { // if (curr_version >= cache_version) {
                             out = &cache[category];
                         }
-                        });
+                    });
                     if (out) return *out;
                     else {
                         static GL::shared_ptr<T> temp{ nullptr };
@@ -874,7 +874,9 @@ namespace GL {
                             }
                         }
 
-                        auto total_hash = GL::util::inline_hash(search_from->this_m.scope->GetNamespace()->cache_version, search_from->this_m.scope->GetRoot()->constructors_version.load());
+                        auto total_hash = 
+                            // GL::util::inline_hash(search_from->this_m.scope->GetNamespace()->cache_version, search_from->this_m.scope->GetRoot()->constructors_version.load());
+                            search_from->this_m.scope->GetNamespace()->cache_version + search_from->this_m.scope->GetRoot()->constructors_version.load();
 
                         size_t search_hash = PossiblyScopedName.hash();
                         if (from_iter != from_end) {
@@ -1147,12 +1149,41 @@ namespace GL {
 
                                  // perhaps it needs to be template initialized?
                                  if (auto remainder_t = const_cast<BasicScope*>(this)->DetermineType(remainder); remainder_t != GL::type_of<GL::undefined>()) {
-                                     if (auto* BC = this->GetRoot()->try_find_class(remainder_t); BC) {
-                                         if (auto ff = BC->this_m.scope->try_find_callable(remainder, from_iter, from_end, search_state, BC); ff) {
-                                             //if (auto& cache = this->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
-                                             //    cache->insert_fast(search_hash, (GL::Proxy_Function)ff);
-                                             //}
-                                             return ff;
+                                     if (remainder_t.is_template()) {
+                                         auto template_index = GL::is_template::index(remainder_t);
+                                         if (Breadcrumb* BC = this->FindNearestScopeWhere([&](Breadcrumb* namespacePtr, int)-> int {
+                                             if (!namespacePtr->this_m.is_class()) return SearchResult::Failure;
+                                             auto& templates = dynamic_cast<ClassScope*>(namespacePtr->this_m.scope)->template_types;
+                                             if (templates.size() > template_index) {
+                                                 if (templates[template_index].second.is_template()) {
+                                                     return SearchResult::Failure;
+                                                 }
+                                                 else if (templates[template_index].first == remainder) {
+                                                     remainder_t = templates[template_index].second;
+                                                     return SearchResult::Success;
+                                                 }
+                                             }
+                                             return SearchResult::Failure;
+                                         }, nullptr, SkipChildren); BC) {
+                                             if (auto* BC = this->GetRoot()->try_find_class(remainder_t); BC) {
+                                                 if (auto ff = BC->this_m.scope->try_find_callable(BC->this_m.scope_name, from_iter, from_end, search_state, BC); ff) {
+                                                     //if (auto& cache = this->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
+                                                     //    cache->insert_fast(search_hash, (GL::Proxy_Function)ff);
+                                                     //}
+                                                     return ff;
+                                                 }
+                                             }
+                                         };
+                                     }
+                                     else {
+                                         // std::cout << remainder_t.name() << std::endl;
+                                         if (auto* BC = this->GetRoot()->try_find_class(remainder_t); BC) {
+                                             if (auto ff = BC->this_m.scope->try_find_callable(BC->this_m.scope_name, from_iter, from_end, search_state, BC); ff) {
+                                                 //if (auto& cache = this->GetNamespace()->search_cache.TryGetCache<0>(total_hash); cache) {
+                                                 //    cache->insert_fast(search_hash, (GL::Proxy_Function)ff);
+                                                 //}
+                                                 return ff;
+                                             }
                                          }
                                      }
                                  }

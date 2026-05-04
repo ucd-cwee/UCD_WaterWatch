@@ -976,6 +976,28 @@ namespace GL {
                 return dynamic_cast<ClassScope*>(BC->this_m.scope)->this_type | state_modifiers;
 
             // check to see if it matches the template name for any of the template arguments from up above
+            auto* this_p = this;
+            while (this_p) {
+                if (this_p->is_class()) {
+                    for (auto& x : dynamic_cast<ClassScope*>(this_p)->template_types) {
+                        if (x.first == from) {
+                            return x.second;
+                        }
+                    }
+                    this_p = this_p->GetParent();
+                }
+                else {
+                    auto new_p = this_p->GetNamespace();
+                    if (new_p == this_p) {
+                        this_p = new_p->GetParent();
+                    }
+                    else {
+                        this_p = new_p;
+                    }
+                }                
+                if (this_p && this_p->is_root()) break;
+            }
+
             GL::type out = GL::type_of<GL::undefined>();
             (void)this->FindNearestScopeWhere([&from, &out](Breadcrumb* BC, int state) -> int {
                 if ((state & SearchState::SearchingUsings) != 0) return SearchResult::StaticFailure;
@@ -1550,6 +1572,10 @@ namespace GL {
                 return { out, result };
             }
             else {
+                // std::cout << candidtate.name() << std::endl;
+
+
+
                 if (auto* Class_p = NewClass->GetRoot()->try_find_class(candidtate)) {
                     auto& Class = *dynamic_cast<GL::scope::impl::ClassScope*>(Class_p->this_m.scope);
                     std::vector<std::pair<GL::string, GL::type>> corrected_template_params;
@@ -1615,6 +1641,15 @@ namespace GL {
                         new_class->template_types = templates;
                         const_cast<GL::type&>(new_class->this_type).add_base(this->this_type);
 
+                        _parent->children.insert(
+                            { name.hash(), std::dynamic_pointer_cast<NamespaceScope>(new_class) }
+                        );
+                        if (auto f = _parent->children.find(name.hash()); f != _parent->children.end()) {
+                            auto* newclass = dynamic_cast<ClassScope*>(f->second.get());
+                            this->GetRoot()->classes.insert({ newclass->this_type.get_base_hash(), &newclass->breadcrumb_m });
+                            this->GetRoot()->classes_by_name.insert({ name, &newclass->breadcrumb_m });
+                        }
+
                         this->for_each_function([&](GL::Proxy_Function const& f)->bool {
                             if ((f->m_signature.state_m & GL::function_signature::Constructor) > 0) {
                                 // assume that constructors will be unique to this invocation
@@ -1641,7 +1676,11 @@ namespace GL {
                             }
                             for (auto& x : new_f->m_signature.argument_types_m) {
                                 auto& replace_me = x;
-                                if (auto [newT, successful] = TryFinalizeType(replace_me, new_class.get()); successful) {
+                                if (replace_me.get_base_hash() == this->this_type.get_base_hash()) {
+                                    replace_me = new_class->this_type + (replace_me - GL::type::CppType - GL::type::TemplateType).get_qualifiers();
+                                    necessary = true;
+                                }
+                                else if (auto [newT, successful] = TryFinalizeType(replace_me, new_class.get()); successful) {
                                     replace_me = newT + (replace_me - GL::type::CppType - GL::type::TemplateType).get_qualifiers();
                                     necessary = true;
                                 }
@@ -1665,7 +1704,19 @@ namespace GL {
                         for (auto& member_o : this->member_objects) {
                             auto& replace_me = member_o.second.first; 
                             if (auto [newT, successful] = TryFinalizeType(replace_me, new_class.get()); successful) {
-                                new_class->add_member_object(member_o.first, newT + (replace_me - GL::type::CppType - GL::type::TemplateType).get_qualifiers());
+                                if (member_o.second.first != GL::type_of<GL::undefined>()) {
+                                    new_class->add_member_object(
+                                        member_o.first,
+                                        newT + (replace_me - GL::type::CppType - GL::type::TemplateType).get_qualifiers(),
+                                        member_o.second.second
+                                    );
+                                }
+                                else {
+                                    new_class->add_member_object(
+                                        member_o.first,
+                                        newT + (replace_me - GL::type::CppType - GL::type::TemplateType).get_qualifiers()
+                                    );
+                                }
                             }
                         }
                         if (1) {
@@ -1691,9 +1742,8 @@ namespace GL {
                         //    }
                         //}
 
-                        _parent->children.insert(
-                            { name.hash(), std::dynamic_pointer_cast<NamespaceScope>(new_class) }
-                        );
+                        new_class->initialize_basic_member_functions();
+                        return *new_class;
                     }
                     if (auto f = _parent->children.find(name.hash()); f != _parent->children.end()) {
                         auto* newclass = dynamic_cast<ClassScope*>(f->second.get());
