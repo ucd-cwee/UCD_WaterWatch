@@ -346,6 +346,12 @@ namespace GL {
                 };
                 template<typename iter> GL::Proxy_Function const& try_find_callable(GL::string const& name, iter const& from_iter, iter const& from_end, int search_mode = 0) const {
                     return for_each(name, [&](GL::Proxy_Function const& f)->bool {
+                        if (name == "_impl") {
+                            if (f->m_signature.name_m == name) {
+                                std::cout << "HERE" << std::endl;
+                            }
+                        }
+
                         if ((search_mode & only_templates) > 0) {
                             if ((f->m_signature.state_m & GL::function_signature::Template) == 0)
                                 return false;
@@ -361,9 +367,15 @@ namespace GL {
                             return f->m_signature.can_call_with_cast(from_iter, from_end);
                         });
                 };
-                template<typename iter_type> GL::Proxy_Function const& try_find_callable(GL::string const& name, iter_type const& from_iter, iter_type const& end, int search_mode, Converter converters) const {
+                template<typename iter_type> GL::Proxy_Function const& try_find_callable(GL::string const& name, iter_type const& from_iter, iter_type const& end, int search_mode, Converter converters) const {                    
                     std::multimap<double, GL::Proxy_Function const*> options;
                     /*return*/ (void)for_each(name, [&](GL::Proxy_Function const& f)->bool {
+                        if (name == "_impl") {
+                            if (f->m_signature.name_m == name) {
+                                std::cout << "HERE" << std::endl;
+                            }
+                        }
+
                         iter_type iter = from_iter;
                         if ((search_mode & Functions::only_templates) > 0) {
                             if ((f->m_signature.state_m & GL::function_signature::Template) == 0)
@@ -411,8 +423,8 @@ namespace GL {
                                     }
                                 }
                                 if (!can_cast(iter, sig.argument_types_m[i])) {
-                                    if (auto f = converters.try_get_converter(get_type_of(iter), sig.argument_types_m[i], 0, true); f) {
-                                        cost += f->m_signature.numConversions;
+                                    if (auto f2 = converters.try_get_converter(get_type_of(iter), sig.argument_types_m[i], 0, true); f2) {
+                                        cost += f2->m_signature.numConversions;
                                     }
                                     else {
                                         return false;
@@ -562,6 +574,8 @@ namespace GL {
                     bool did_conversions = false;
                     for (; (begin != end) && (pos < 16); ++begin, ++pos) {
                         if (!can_free_cast(begin, func->m_signature.argument_types_m[pos])) {
+                            std::cout << "Could not free-cast from " << get_type_of(begin).name() << " to " << func->m_signature.argument_types_m[pos].name() << std::endl;
+
                             if (GL::fast_shared_ptr<GL::details::Proxy_Function_Base> conversion_func{ try_get_converter(const_cast<any::fast_any*>(&*begin)->m_casted_type, func->m_signature.argument_types_m[pos], 0, true) }; conversion_func) {
                                 did_conversions = true;
                                 raw_params[raw_pos] = conversion_func->operator()(const_cast<any::fast_any&>(*begin));
@@ -592,6 +606,9 @@ namespace GL {
                         }
                         else {
                             params[pos] = const_cast<any::fast_any*>(&*begin);
+                            // std::cout << "BEFORE: " + params[pos]->m_casted_type.name() << std::endl;
+                            params[pos]->m_casted_type |= (func->m_signature.argument_types_m[pos] - GL::type::CppType - GL::type::TemplateType).get_qualifiers();
+                            // std::cout << "AFTER : " + params[pos]->m_casted_type.name() << std::endl;
                         }
                     }
                     GL::any::fast_any out{ func->operator()(&params[0], pos) };
@@ -824,6 +841,15 @@ namespace GL {
                 /// <returns>ObjectWrapper</returns>
                 GL::any* find_object_here(GL::string const& sv) const;
 
+                // should be in the form of: [](auto const& iter) -> bool {}
+                template <typename T> bool for_each_object_here(T const& Func) const {
+                    auto objects = this->objects_m.lock_shared();
+                    for (auto iter = objects->begin(), end = objects->end(); iter != end; ++iter) {
+                        if (Func(*iter)) return true;
+                    }
+                    return false;
+                };
+
                 // Searches for a namespace that best fits the provided information, starting from this scope's namespace or position.
                 Breadcrumb* find_namespace(GL::string const& Name) const;
 
@@ -867,7 +893,7 @@ namespace GL {
                                     }
                                     if (from_iter == from_end) {
                                         // allowed to return a static object, perhaps?
-                                        return GL::fast_shared_ptr<GL::details::Proxy_Function_Base>(GL::make_callable(PossiblyScopedName, [o]() -> GL::any::fast_any { return o->fast(); }, GL::function_signature::Static, {}, {}, o->m_casted_type + GL::type::Reference));
+                                        return GL::fast_shared_ptr<GL::details::Proxy_Function_Base>(GL::make_callable(PossiblyScopedName, [o]() -> GL::any::fast_any { return o->fast(); }, GL::function_signature::Static | GL::function_signature::Object, {}, {}, o->m_casted_type + GL::type::Reference));
                                     }
                                 }
                                 obj_search = obj_search->parent_m;
@@ -945,7 +971,7 @@ namespace GL {
                                 }
                                 if (from_iter == from_end) {
                                     // allowed to return a static object, perhaps?
-                                    return GL::fast_shared_ptr<GL::details::Proxy_Function_Base>(GL::make_callable(PossiblyScopedName, [o]() -> GL::any::fast_any { return o->fast(); }, GL::function_signature::Static, {}, {}, o->m_casted_type + GL::type::Reference));
+                                    return GL::fast_shared_ptr<GL::details::Proxy_Function_Base>(GL::make_callable(PossiblyScopedName, [o]() -> GL::any::fast_any { return o->fast(); }, GL::function_signature::Static | GL::function_signature::Object, {}, {}, o->m_casted_type + GL::type::Reference));
                                 }
                             }
 

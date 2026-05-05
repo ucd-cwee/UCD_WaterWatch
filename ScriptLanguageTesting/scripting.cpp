@@ -372,6 +372,11 @@ namespace GL {
                             }
                         }
 
+                        GL::string temp1 = from.name();
+                        GL::string temp2 = to.name();
+                        if (temp1.find("MAP<meter,foot>") != GL::string::npos) {
+                            std::cout << "trying to convert from " << temp1 << " to " << temp2 << std::endl;
+                        }
                         if (auto f2 = f1->second.find(to), e2 = f1->second.end(); f2 != e2) {
                             // we have made (or tried to make) the converter for this before. 
                             if (auto f3 = f2->second.load_fast(); f3) {
@@ -394,7 +399,7 @@ namespace GL {
                                     GL::any casted = From;
                                     casted.m_casted_type = To;
                                     return casted;
-                                    }, GL::function_signature::Cached | GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Explicit, {}, { { "From", from } }, to);
+                                }, GL::function_signature::Cached | GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Explicit, {}, { { "From", from } }, to);
                                 temp->m_signature.numConversions = 0;
                                 f1->second[to] = std::move(temp);
                                 return f1->second[to].load_fast();
@@ -415,18 +420,37 @@ namespace GL {
                             }
 
                             // We need to make the cast from the available cast for this same type. Sort options by preference? 
-                            std::map<int, GL::Proxy_Function> options;
+                            std::map<double, GL::Proxy_Function> options;
                             for (auto& potential_conversion : f1->second) {
                                 if (auto func = potential_conversion.second.load(); func) {
                                     if ((func->m_signature.state_m & GL::function_signature::Cached) > 0) continue;
 
                                     if (func->m_signature.returns_m.can_free_cast(to, false)) {
+                                        //double cost = 0; 
+                                        //if (func->m_signature.returns_m.is_const() != to.is_const()) {
+                                        //    cost += 0.25;
+                                        //}
+                                        //if (func->m_signature.returns_m.is_ref() != to.is_ref()) {
+                                        //    cost += 0.25;
+                                        //}
+                                        //options[cost] = std::move(func);
+                                        //continue;
                                         f1->second[to] = std::move(func);
                                         return f1->second[to].load_fast();
                                     }
 
                                     if (func->m_signature.returns_m.can_free_cast(to)) {
                                         if (options.count(0) == 0) {
+                                            //double cost = 0;
+                                            //if (func->m_signature.returns_m.is_const() != to.is_const()) {
+                                            //    cost += 0.25;
+                                            //}
+                                            //if (func->m_signature.returns_m.is_ref() != to.is_ref()) {
+                                            //    cost += 0.25;
+                                            //}
+                                            //options[cost] = std::move(func);
+                                            //continue;
+
                                             options[0] = std::move(func);
                                         }
                                         continue;
@@ -442,7 +466,7 @@ namespace GL {
                                                     GL::any casted = caster->operator()(&_from, &_from + 1);
                                                     casted.m_casted_type = To;
                                                     return casted;
-                                                    }, func->m_signature.state_m | GL::function_signature::Cached | GL::function_signature::Explicit, {}, { { "From", from } }, to);
+                                                }, func->m_signature.state_m | GL::function_signature::Cached | GL::function_signature::Explicit, {}, { { "From", from } }, to);
                                                 options[1]->m_signature.numConversions = func->m_signature.numConversions;
                                             }
                                             // return f1->second[to].load();
@@ -451,6 +475,7 @@ namespace GL {
                                     }
                                 }
                             }
+
                             if (options.size() > 0) {
                                 f1->second[to] = std::move(options.begin()->second);
                                 return f1->second[to].load_fast();
@@ -2136,20 +2161,24 @@ namespace GL {
         void impl::RootScope::perform_builtins() {
             // type-casting or language support
             if (1) {
+                this->add_function(GL::make_callable("printf", [](GL::string const& str) -> void { 
+                    std::cout << str << std::endl;
+                }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static | GL::function_signature::Volatile));
+
                 // this->add_function(GL::make_callable("reference_cast", [](GL::any::fast_any any_type) -> GL::any::fast_any { return any_type | GL::type::Reference; }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
                 // this->add_function(GL::make_callable("reinterpret_cast", [](GL::any::fast_any from, GL::type const& to_type) -> GL::any::fast_any { from.m_casted_type = to_type; return from; }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
                 // this->add_function(GL::make_callable("const_cast", [](GL::any::fast_any any_type) -> GL::any::fast_any { return any_type - GL::type::Const; }, GL::function_signature::Async | GL::function_signature::Constant | GL::function_signature::Static));
             }
 
             // void
-            if (1) {
+            if (0) {
                 this->add_function(GL::make_callable("to_string", 
                     [](GL::any::fast_any rhs) -> GL::string { return GL::string::empty_string(); },
-                    0, {}, { { "rhs", GL::type_of<void>() } }, GL::type_of<GL::string>()
+                    GL::function_signature::Async | GL::function_signature::Constant, {}, { { "rhs", GL::type_of<void>() } }, GL::type_of<GL::string>()
                 ));
                 this->add_function(GL::make_callable("to_hash",
                     [](GL::any::fast_any rhs) -> size_t { return 0; },
-                    0, {}, { { "rhs", GL::type_of<void>() } }, GL::type_of<size_t>()
+                    GL::function_signature::Async | GL::function_signature::Constant, {}, { { "rhs", GL::type_of<void>() } }, GL::type_of<size_t>()
                 ));
             }
 
@@ -2163,8 +2192,8 @@ namespace GL {
                     } else { \
                         return GL::string(std::to_string(rhs)); \
                     } \
-                })); \
-                this->make_class(GL::type_of< type >()).add_function(GL::make_callable("to_hash", [this](type const& rhs) -> size_t { return std::hash<type>()(rhs); })); \
+                }, GL::function_signature::Constant)); \
+                this->make_class(GL::type_of< type >()).add_function(GL::make_callable("to_hash", [this](type const& rhs) -> size_t { return std::hash<type>()(rhs); }, GL::function_signature::Constant)); \
                 add_function(GL::make_callable("=", [](GL::any::fast_any lhs, type const& rhs) -> GL::any::fast_any { lhs.cast<type &>() = rhs; return lhs; }, 0, {}, { { "lhs", GL::type_of<type &>() }, { "rhs", GL::type_of<type const&>() }}, GL::type_of< type& >())); \
                 this->make_class(GL::type_of< bool >()).add_function(GL::make_converter<type, bool>()); \
                 this->make_class(GL::type_of< char >()).add_function(GL::make_converter<type, char>()); \

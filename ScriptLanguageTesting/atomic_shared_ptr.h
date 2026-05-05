@@ -90,6 +90,7 @@ namespace /* atomic_shared_ptr */ GL {
     };
 
     // specialized, derived class for control blocks with specialized types.
+#if 0
     template<typename T> struct embedded_control_block final : public control_block_base {        
         template<class... _Types> explicit embedded_control_block(_Types&&... _Args) : control_block_base(static_cast<void*>(reinterpret_cast<T*>(&obj[0]))) {
             if constexpr ((sizeof...(_Args) > 0) || !std::is_pod<T>::value) {
@@ -122,7 +123,30 @@ namespace /* atomic_shared_ptr */ GL {
         };
 
     };
+#else
+    template<typename T> struct embedded_control_block final : public control_block_base {
+        template<class... _Types> explicit embedded_control_block(_Types&&... _Args) : control_block_base(static_cast<void*>(reinterpret_cast<T*>(&obj))), obj(_STD forward<_Types>(_Args)...) {}
+        ~embedded_control_block() = default;
+        
+        T obj;
 
+        void Delete() override {
+            obj.~T();
+        };
+
+        void DeleteSelf(control_block_base* p) override {
+            return Allocator<sizeof(embedded_control_block<T>)>().Free(p);
+        };
+
+    public:
+        template<class... _Types> static embedded_control_block<T>* AllocateSelf(_Types&&... _Args) {
+            auto* p = Allocator<sizeof(embedded_control_block<T>)>().Alloc();
+            new (reinterpret_cast<embedded_control_block<T>*>(&(*p)[0])) embedded_control_block<T>(_STD forward<_Types>(_Args)...);
+            return reinterpret_cast<embedded_control_block<T>*>(p);
+        };
+
+    };
+#endif
     // shared pointer that manages lifetime of the provided class. NOT THREAD-SAFE. May be modified. 
     template<typename T> class shared_ptr {
         template<typename A> friend class shared_ptr;

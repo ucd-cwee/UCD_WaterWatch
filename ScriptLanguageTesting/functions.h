@@ -26,6 +26,7 @@ namespace GL {
             Constructor = 128,
             MemberObject = 256,
             Volatile = 512,
+            Object = 1024
             // TemplateConstructor = 512 // indicates that the name and return type for the function should be updated once template-initialization is performed. 
         };
 
