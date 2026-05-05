@@ -177,7 +177,7 @@ namespace GL {
 			BinaryFoldRight, BinaryFoldLeft, Binary,
 			Global_Decl,
 			Compiled,
-			ControlBlock,
+			Enum,
 			Assign_Retroactively,
 			TypeId,
 			JustInTimeCompilation,
@@ -8946,9 +8946,10 @@ namespace GL {
 				this->tag = GL::any::fast_any::instance((GL::Engine::Operators::Opers)Engine::Operators::to_operator(t_ast_node_text.c_str()));
 			};
 		};
-		struct NamespaceClassInformation {
+		struct NamespaceClassInformation {			
 			std::vector<GL::string> template_types;
 			bool original_placement;
+			bool is_class = false;
 		};
 		class Namespace_Node final : public AbstractSyntaxTreeNode {
 		public:
@@ -8961,6 +8962,7 @@ namespace GL {
 				NamespaceClassInformation info;
 				info.template_types = {};
 				info.original_placement = true;
+				info.is_class = false;
 				this->tag = GL::any::fast_any::instance(std::move(info));
 			};
 		};
@@ -8975,6 +8977,7 @@ namespace GL {
 				NamespaceClassInformation info;
 				info.template_types = {};
 				info.original_placement = true;	
+				info.is_class = true;
 				if (this->text.find("<") != GL::string::npos) {
 					if (this->text.find(">") != GL::string::npos) {						
 						info.template_types = this->text.right_of("<").left_of(">").split_nested(",", "<", ">");
@@ -8985,6 +8988,17 @@ namespace GL {
 				this->tag = GL::any::fast_any::instance(std::move(info));
 			};
 		};
+		class Enum_Node final : public AbstractSyntaxTreeNode {
+		public:
+			Enum_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Enum, t_ast_node_text, t_loc, t_children) {
+				NamespaceClassInformation info;
+				info.template_types = {};
+				info.original_placement = true;
+				info.is_class = false;
+				this->tag = GL::any::fast_any::instance(std::move(info));
+			};
+		};
+
 		class Declaration_Block_Node final : public AbstractSyntaxTreeNode {
 		public:
 			Declaration_Block_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::DeclarationBlock, t_ast_node_text, t_loc, t_children) {};
@@ -11627,7 +11641,8 @@ namespace GL {
 										if (
 											child.children[i].identifier == Engine::AST_Node_Type::Namespace
 											|| child.children[i].identifier == Engine::AST_Node_Type::Class
-											) {
+											|| child.children[i].identifier == Engine::AST_Node_Type::Enum
+										) {
 											AbstractSyntaxTreeNode copy = child.children[i];
 											if (copy.tag.cast<NamespaceClassInformation&>().original_placement) {
 												copy.tag.cast<NamespaceClassInformation&>().original_placement = false;
@@ -11637,8 +11652,8 @@ namespace GL {
 												for (i = 0; i < node.children.size(); ++i) {
 													if (node.children[i].identifier == Engine::AST_Node_Type::Namespace
 														|| node.children[i].identifier == Engine::AST_Node_Type::Class
-														) {
-													}
+														|| child.children[i].identifier == Engine::AST_Node_Type::Enum
+													) {}
 													else {
 														node.children.insert(node.children.begin() + i, copy);
 														return true;
@@ -11654,8 +11669,8 @@ namespace GL {
 												for (i = 0; i < node.children.size(); ++i) {
 													if (node.children[i].identifier == Engine::AST_Node_Type::Namespace
 														|| node.children[i].identifier == Engine::AST_Node_Type::Class
-														) {
-													}
+														|| child.children[i].identifier == Engine::AST_Node_Type::Enum
+													) {}
 													else {
 														node.children.insert(node.children.begin() + i, copy);
 														return true;
@@ -15841,32 +15856,62 @@ namespace GL {
 				/// Reads a namespace block from input
 				/// namespace Thing{ ... };
 				bool DeclClass() {
-					bool retval = false;
 					const auto prev_stack_top = m_match_stack.size();
 
 					// class TypeName { ... }
 					// class TypeName : ParentTypeName { ... }
 
 					if (Keyword("class")) {
-						retval = true;
 						SkipWS(true);
 
-						if (TypeName(false)) { // variable becase this namespace may not exist yet! 
-							/* Great! Got the desired name of the new namespace */
-						}
-						else {
-							throw except::eval_error("Incomplete 'class' block: class must have a name", Parse_Location(m_position, m_position));
-						}
+						if (!TypeName(false)) throw except::eval_error("Incomplete 'class' block: class must have a name", Parse_Location(m_position, m_position));						
 						auto this_class_name = GL::string(m_match_stack.back().get_text());
-
-						// instead of collecting statements, we want to collect declarations...
-						if (!DeclarationsBlock()) {
-							throw except::eval_error("Incomplete 'class' block: class declarations must be wrapped in a curly-bracket block", Parse_Location(m_position, m_position));
-						}
-
+						
+						if (!DeclarationsBlock()) throw except::eval_error("Incomplete 'class' block: class declarations must be wrapped in a curly-bracket block", Parse_Location(m_position, m_position));
+						
 						build_match<Class_Node>(prev_stack_top);
+						return true;
 					}
-					return retval;
+
+					if (Keyword("enum")) {
+						bool is_class = Keyword("class");
+						SkipWS(true);
+						if (!Id(true)) throw except::eval_error("Incomplete 'enum' declaration: enum must be provided a valid name", Parse_Location(m_position, m_position));
+						auto enum_name = m_match_stack.back().text;
+						m_match_stack.pop_back();
+						SkipWS(true);
+						if (!Char('{')) throw except::eval_error("Incomplete 'enum' block: class declarations must be wrapped in a curly-bracket block", Parse_Location(m_position, m_position));
+						while (true) {
+							const auto stack_top = m_match_stack.size();
+							SkipWS(true);
+							if (Char('}')) break;
+							if (!Id(true)) throw except::eval_error("Incomplete 'enum' item: enum items must be provided a valid name", Parse_Location(m_position, m_position));
+							SkipWS(true);
+							if (Char('=')) {
+								SkipWS(true);
+								if (Equation() || Value()) {
+
+								}
+								else {
+									throw except::eval_error("Incomplete 'enum' item: enum items with '=' operators must be provided a valid values", Parse_Location(m_position, m_position));
+								}
+							}
+
+							if (stack_top != m_match_stack.size()) {
+								build_match<Arg_Node>(stack_top);
+							}
+							SkipWS(true);
+							if (Char(';') || Char(',') || Eol()) {
+								continue;
+							}							
+						}
+						
+						build_match<Enum_Node>(prev_stack_top, enum_name);
+						m_match_stack.back().tag.cast<NamespaceClassInformation>().is_class = is_class;
+						return true;
+					}
+
+					return false;
 				};
 
 				/// Reads a namespace block from input
@@ -17241,6 +17286,229 @@ namespace GL {
 
 				GL::any::fast_any evaluate(AbstractSyntaxTreeNode& node, eval_state& state, GL::scope::impl::BasicScope& current_scope, bool in_class = false) {					
 					switch (node.identifier) {
+					case Engine::AST_Node_Type::Enum: {
+						auto& enum_name = node.text;
+						if (auto* PotentialRedecl = current_scope.GetNamespace()->find_namespace(enum_name)) {
+							auto& enum_class = current_scope.GetNamespace()->make_class(enum_name);
+							if (PotentialRedecl->this_m.scope->get_unique_index() == enum_class.get_unique_index()) {
+								throw except::eval_error("Re-declaration of enum class `" + enum_name + "` is not allowed", node.location);
+							}
+						}
+
+						auto& info = node.tag.cast<NamespaceClassInformation>();						
+						std::set<GL::type> types;
+						std::vector<std::pair<GL::string, GL::any::fast_any>> items;
+						bool empty_type_provided = false;
+						
+						for (auto& enum_item : node.children) {
+							if (enum_item.identifier != Engine::AST_Node_Type::Arg)
+								throw except::eval_error("Parameters for " + std::string(enum_item.identifier.ToString()) + " were not handled: " + enum_item.to_string("", *current_scope.GetRoot()), enum_item.location);
+
+							if (enum_item.children.size() >= 2) {
+								// x = 0
+								if (!enum_item.children[1].constant) throw except::eval_error("Enum items with provided values (e.g. `enum NAME { ENUM_ITEM = 0 }`) must be constexpr", enum_item.location);
+								types.insert(enum_item.children[1].constant.m_casted_type - GL::type::Const - GL::type::Reference);
+
+								// items.push_back({ enum_item.children[0].text, enum_item.children[1].constant });
+							}
+							else {
+								// x
+								empty_type_provided = true;
+							}							
+						}
+
+						auto& enum_class = current_scope.GetNamespace()->make_class(enum_name);
+						if (types.size() > 1) {
+							// items are of varying type
+							for (auto& enum_item : node.children) {								
+								if (enum_item.children.size() >= 2) {
+									items.push_back({ enum_item.children[0].text, enum_item.children[1].constant });
+								}
+								else throw except::eval_error("Enum items with varied types were provided, including at least one item without a type. Could not evaluate which type to use for the unspecified enum item.", enum_item.location);								
+							}
+							enum_class.add_member_object("~value", GL::type_of<var>());
+							enum_class.add_member_object("value_str", GL::type_of<GL::string>());
+							enum_class.add_member_object("value_index", GL::type_of<size_t>(), GL::any::fast_any::instance(std::numeric_limits<size_t>::max()));
+						}
+						else if (types.size() == 1) {
+							// assumes all types match the one provided
+							GL::any::fast_any current_value;
+							if (auto* BC = current_scope.GetRoot()->try_find_class(*types.begin())) {
+								current_value = BC->this_m.scope->call(BC->this_m.scope_name, {});
+
+								for (auto& enum_item : node.children) {
+									if (enum_item.children.size() >= 2) {
+										current_value = BC->this_m.scope->call(BC->this_m.scope_name, { enum_item.children[1].constant });										
+									}
+									items.push_back({ enum_item.children[0].text, BC->this_m.scope->call(BC->this_m.scope_name, { current_value }) });
+									if (empty_type_provided) BC->this_m.scope->call("++", { current_value });
+								}
+							}
+							enum_class.add_member_object("~value", *types.begin());
+							enum_class.add_member_object("value_str", GL::type_of<GL::string>());
+							enum_class.add_member_object("value_index", GL::type_of<size_t>(), GL::any::fast_any::instance(std::numeric_limits<size_t>::max()));
+						}
+						else if (types.size() == 0) {
+							// assumes 'size_t'
+							GL::any::fast_any current_value;
+							if (auto* BC = current_scope.GetRoot()->try_find_class(GL::type_of<size_t>())) {
+								current_value = BC->this_m.scope->call(BC->this_m.scope_name, {});
+								for (auto& enum_item : node.children) {
+									items.push_back({ enum_item.children[0].text, BC->this_m.scope->call(BC->this_m.scope_name, { current_value }) });
+									BC->this_m.scope->call("++", { current_value });									
+								}
+							}
+							enum_class.add_member_object("~value", GL::type_of<size_t>());
+							enum_class.add_member_object("value_str", GL::type_of<GL::string>());
+							enum_class.add_member_object("value_index", GL::type_of<size_t>(), GL::any::fast_any::instance(std::numeric_limits<size_t>::max()));
+						}
+
+						for (auto& command : std::vector<GL::string>{ "==", "!=", ">" , ">=" , "<" , "<=" }) {
+							enum_class.add_function(GL::make_callable(command, [command](GL::any::fast_any lhs, GL::any::fast_any rhs) -> bool {
+								//if (lhs.cast<GL::dynamic_object&>()["~value"]->can_cast(GL::type_of<GL::var&>())) {
+								//	if (!lhs.cast<GL::dynamic_object&>()["~value"]->cast<GL::var&>().get_data()) {
+								//		if (rhs.cast<GL::dynamic_object&>()["~value"]->can_cast(GL::type_of<GL::var&>())) 
+								//			if (!rhs.cast<GL::dynamic_object&>()["~value"]->cast<GL::var&>().get_data()) return true;
+								//		return false;
+								//	}
+								//}
+								//else if (rhs.cast<GL::dynamic_object&>()["~value"]->can_cast(GL::type_of<GL::var&>())) {
+								//	if (!rhs.cast<GL::dynamic_object&>()["~value"]->cast<GL::var&>().get_data()) return false;									
+								//}
+								return GL::scope::GetCurrentCaller()->call<bool>(command, { lhs.cast<GL::dynamic_object&>()["value_index"]->fast(), rhs.cast<GL::dynamic_object&>()["value_index"]->fast() });
+							}, GL::function_signature::Constant, {}, { { "lhs", enum_class.this_type | GL::type::Const | GL::type::Reference }, { "rhs", enum_class.this_type | GL::type::Const | GL::type::Reference } }, GL::type_of<bool>()));
+						}
+
+						enum_class.add_function(GL::make_callable("from_string", [&enum_class](GL::string const& from) -> GL::any::fast_any {
+							if (auto* p = enum_class.find_object_here(from)) return p->fast();							
+							else throw std::runtime_error("Could not convert the string to an enum value");							
+						}, GL::function_signature::Constant | GL::function_signature::Static, {}, { { "from", GL::type_of<GL::string const&>()}}, enum_class.this_type));
+						enum_class.add_function(GL::make_callable("name", [&enum_class](GL::any::fast_any from) -> GL::string {
+							return GL::scope::GetCurrentCaller()->call<GL::string>("to_string", {
+								from.cast<GL::dynamic_object&>()["value_str"]->fast()
+							});
+						}, GL::function_signature::Constant | GL::function_signature::Static, {}, { { "from",  enum_class.this_type | GL::type::Const | GL::type::Reference } }, GL::type_of<GL::string>() ));
+
+#if 0
+						auto& BaseClass = enum_class;
+						BaseClass.add_function(GL::make_callable("begin", [&BaseClass](GL::any::fast_any lhs) -> GL::any::fast_any {
+							if (auto* impl_class = GL::scope::GetClass(lhs.m_casted_type)) {
+								auto new_iterator = impl_class->call("iterator<" + impl_class->this_type.name() + ">", {});
+								impl_class->call("begin", { new_iterator, lhs }); // initializes the base iterator 
+								auto& iterator = new_iterator.cast<GL::dynamic_object&>();
+								iterator["position"] = GL::make_shared<GL::any>((size_t)0ull);
+								return new_iterator;
+							}
+							throw std::runtime_error("Could not find the associated class");
+						}, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const } }));
+						BaseClass.add_function(GL::make_callable("end", [&BaseClass](GL::any::fast_any lhs) -> GL::any::fast_any {
+							if (auto* impl_class = GL::scope::GetClass(lhs.m_casted_type)) {
+								auto new_iterator = impl_class->call("iterator<" + impl_class->this_type.name() + ">", {});
+								impl_class->call("end", { new_iterator, lhs }); // initializes the base iterator 
+								auto& iterator = new_iterator.cast<GL::dynamic_object&>();
+								if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
+									auto& impl = (*implp)->cast<GL::atomic_constructable_vector<GL::any::fast_any>>();
+									iterator["position"] = GL::make_shared<GL::any>((size_t)impl.size());
+								}
+								return new_iterator;
+							}
+							throw std::runtime_error("Could not find the associated class");
+						}, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const } }));
+						BaseClass.add_function(GL::make_callable("get", [&BaseClass](GL::any::fast_any lhs, GL::any::fast_any rhs) -> GL::any::fast_any {
+							auto* impl_class = GL::scope::GetClass(lhs.m_casted_type);
+							// auto* iter_class = GetClass(rhs.m_casted_type);
+							auto& iterator = rhs.cast<GL::dynamic_object&>();
+							return impl_class->call("[]", { lhs, iterator["position"]->fast() }) | GL::type::Reference;
+						}, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference }, { "rhs", GL::type_of<GL::any::fast_any>() } }, GL::is_template::type<0>("T0") | GL::type::Reference));
+						BaseClass.add_function(GL::make_callable("get", [&BaseClass](GL::any::fast_any lhs, GL::any::fast_any rhs) -> GL::any::fast_any {
+							auto* impl_class = GL::scope::GetClass(lhs.m_casted_type);
+							// auto* iter_class = GetClass(rhs.m_casted_type);
+							auto& iterator = rhs.cast<GL::dynamic_object&>();
+							return impl_class->call("[]", { lhs, iterator["position"]->fast() }) | GL::type::Reference | GL::type::Const;
+						}, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "rhs", GL::type_of<GL::any::fast_any>() } }, GL::is_template::type<0>("T0") | GL::type::Reference | GL::type::Const));
+						BaseClass.add_function(GL::make_callable("++", [&BaseClass](GL::any::fast_any lhs, GL::any::fast_any rhs) -> void {
+							auto* impl_class = GL::scope::GetClass(lhs.m_casted_type);
+							// auto* iter_class = GetClass(rhs.m_casted_type);
+							auto& iterator = rhs.cast<GL::dynamic_object&>();
+							++iterator["position"]->cast<size_t>();
+							// if we needed to do anything with the iterator, this would have been the time.
+						}, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "rhs", GL::type_of<GL::any::fast_any>() } }));
+						BaseClass.add_function(GL::make_callable("--", [&BaseClass](GL::any::fast_any lhs, GL::any::fast_any rhs) -> void {
+							auto* impl_class = GL::scope::GetClass(lhs.m_casted_type);
+							// auto* iter_class = GetClass(rhs.m_casted_type);
+							auto& iterator = rhs.cast<GL::dynamic_object&>();
+							--iterator["position"]->cast<size_t>();
+						}, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "lhs", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "rhs", GL::type_of<GL::any::fast_any>() } }));
+
+						BaseClass.add_function(GL::make_callable("==", [&BaseClass](GL::any::fast_any parent, GL::any::fast_any lhs, GL::any::fast_any rhs) -> bool {
+							auto* impl_class = GL::scope::GetClass(lhs.m_casted_type);
+							auto& iterator1 = lhs.cast<GL::dynamic_object&>();
+							auto& iterator2 = rhs.cast<GL::dynamic_object&>();
+							return iterator1["position"]->cast<size_t>() == iterator2["position"]->cast<size_t>();
+						}, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "parent", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "lhs", GL::type_of<GL::any::fast_any>() }, { "rhs", GL::type_of<GL::any::fast_any>() } }, GL::type_of<bool>()));
+						BaseClass.add_function(GL::make_callable("!=", [&BaseClass](GL::any::fast_any parent, GL::any::fast_any lhs, GL::any::fast_any rhs) -> bool {
+							auto* impl_class = GL::scope::GetClass(lhs.m_casted_type);
+							auto& iterator1 = lhs.cast<GL::dynamic_object&>();
+							auto& iterator2 = rhs.cast<GL::dynamic_object&>();
+							return iterator1["position"]->cast<size_t>() != iterator2["position"]->cast<size_t>();
+						}, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "parent", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "lhs", GL::type_of<GL::any::fast_any>() }, { "rhs", GL::type_of<GL::any::fast_any>() } }, GL::type_of<bool>()));
+						BaseClass.add_function(GL::make_callable(">", [&BaseClass](GL::any::fast_any parent, GL::any::fast_any lhs, GL::any::fast_any rhs) -> bool {
+							auto* impl_class = GL::scope::GetClass(lhs.m_casted_type);
+							auto& iterator1 = lhs.cast<GL::dynamic_object&>();
+							auto& iterator2 = rhs.cast<GL::dynamic_object&>();
+							return iterator1["position"]->cast<size_t>() > iterator2["position"]->cast<size_t>();
+						}, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "parent", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "lhs", GL::type_of<GL::any::fast_any>() }, { "rhs", GL::type_of<GL::any::fast_any>() } }, GL::type_of<bool>()));
+						BaseClass.add_function(GL::make_callable(">=", [&BaseClass](GL::any::fast_any parent, GL::any::fast_any lhs, GL::any::fast_any rhs) -> bool {
+							auto* impl_class = GL::scope::GetClass(lhs.m_casted_type);
+							auto& iterator1 = lhs.cast<GL::dynamic_object&>();
+							auto& iterator2 = rhs.cast<GL::dynamic_object&>();
+							return iterator1["position"]->cast<size_t>() >= iterator2["position"]->cast<size_t>();
+						}, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "parent", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "lhs", GL::type_of<GL::any::fast_any>() }, { "rhs", GL::type_of<GL::any::fast_any>() } }, GL::type_of<bool>()));
+						BaseClass.add_function(GL::make_callable("<", [&BaseClass](GL::any::fast_any parent, GL::any::fast_any lhs, GL::any::fast_any rhs) -> bool {
+							auto* impl_class = GL::scope::GetClass(lhs.m_casted_type);
+							auto& iterator1 = lhs.cast<GL::dynamic_object&>();
+							auto& iterator2 = rhs.cast<GL::dynamic_object&>();
+							return iterator1["position"]->cast<size_t>() < iterator2["position"]->cast<size_t>();
+						}, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "parent", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "lhs", GL::type_of<GL::any::fast_any>() }, { "rhs", GL::type_of<GL::any::fast_any>() } }, GL::type_of<bool>()));
+						BaseClass.add_function(GL::make_callable("<=", [&BaseClass](GL::any::fast_any parent, GL::any::fast_any lhs, GL::any::fast_any rhs) -> bool {
+							auto* impl_class = GL::scope::GetClass(lhs.m_casted_type);
+							auto& iterator1 = lhs.cast<GL::dynamic_object&>();
+							auto& iterator2 = rhs.cast<GL::dynamic_object&>();
+							return iterator1["position"]->cast<size_t>() <= iterator2["position"]->cast<size_t>();
+						}, GL::function_signature::Async | GL::function_signature::Constant, {}, { { "parent", BaseClass.this_type | GL::type::Reference | GL::type::Const }, { "lhs", GL::type_of<GL::any::fast_any>() }, { "rhs", GL::type_of<GL::any::fast_any>() } }, GL::type_of<bool>()));
+#endif
+
+						enum_class.initialize_basic_member_functions();
+
+						size_t index = 0;
+						for (auto& enum_item : items) {
+							auto initialized_enum = enum_class.call(enum_class.this_type.name(), {});
+
+							(void)enum_class.call("=", {
+								initialized_enum.cast<GL::dynamic_object&>()["~value"]->fast(),
+								enum_item.second
+							});
+
+							(void)enum_class.call("=", {
+								initialized_enum.cast<GL::dynamic_object&>()["value_str"]->fast(),
+								GL::any::fast_any::instance(enum_item.first)
+							});
+
+							(void)enum_class.call("=", {
+								initialized_enum.cast<GL::dynamic_object&>()["value_index"]->fast(),
+								GL::any::fast_any::instance(index++)
+							});
+
+							enum_class.insert_object_here(enum_item.first, initialized_enum);
+
+							if (!info.is_class) {
+								enum_class.GetParent()->GetNamespace()->insert_object_here(enum_item.first, initialized_enum);
+								// enum_class.GetParent()->GetNamespace()->add_using_here(enum_class);
+							}
+						}
+						
+						return nullptr;
+					}
 					case Engine::AST_Node_Type::Namespace: {
 						if (node.children.size() == 2
 							&& node.children[0].identifier == Engine::AST_Node_Type::Id
@@ -18244,6 +18512,7 @@ namespace GL {
 											return state.to_return = returned;
 										}
 										else {
+											state.throwing = throwing::Return;
 											return state.to_return = temp_hold;
 										}
 									}
@@ -18403,8 +18672,7 @@ namespace GL {
 			        case Engine::AST_Node_Type::Map_Pair: [[fallthrough]];
 					case Engine::AST_Node_Type::Arg_List: [[fallthrough]];
 					case Engine::AST_Node_Type::Arg: [[fallthrough]];
-					case Engine::AST_Node_Type::Def: [[fallthrough]];
-					case Engine::AST_Node_Type::ControlBlock: [[fallthrough]];					
+					case Engine::AST_Node_Type::Def: [[fallthrough]];					
 					case Engine::AST_Node_Type::Attr_Decl: [[fallthrough]];
 					case Engine::AST_Node_Type::Reference: [[fallthrough]];
 					case Engine::AST_Node_Type::Assign_Decl: [[fallthrough]];
@@ -18448,58 +18716,6 @@ namespace GL {
 	};
 
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 int main() {
@@ -18581,6 +18797,116 @@ R"(
 )",
 #endif
 R"(
+	enum Enum1 {
+		a, b, c, d, e
+	};
+	enum class Enum2 {
+		a
+		b
+		c
+		d
+		e
+	};
+	enum Enum3 {
+		a = 1
+		b = 2
+		c = 3
+		d = 4
+		e = 5
+	};
+	enum class Enum4 {
+		a = 1 + 1,
+		b = 2 + 1,
+		c = 3 + 1,
+		d = 4 + 1,
+		e = 5 + 1,
+	};
+	enum class Enum5 {
+		a; b; c = 3; d; e = 128;
+	};
+	enum class Enum6 {
+		a = "apple"; 
+        b = "banana"; 
+        c = 128; 
+        d = 256; 
+        e = 100_ft;
+	};
+	#define as_s(x) [ x(), x##::a, x##::b, x##::c, x##::d, x##::e, x(x##::e) ]
+	return [ as_s(Enum1), as_s(Enum2), as_s(Enum3), as_s(Enum4), as_s(Enum5), as_s(Enum6), [ a.type_of, b.type_of, c.type_of, d.type_of, e.type_of ] ];	
+)", R"(
+	enum class Enum6 {
+		a = "apple"; 
+        b = "banana"; 
+        c = 128; 
+        d = 256; 
+        e = 100_ft;
+	};
+	Enum6 Func(){
+		return Enum6::e;
+	};
+	return Func();
+)", R"(
+	enum class Enum6 {
+		a = "apple"; 
+        b = "banana"; 
+        c = "copperhead"; 
+        d = "dialect"; 
+        e = "elephant man";
+	};
+	switch (Enum6::a){
+		case Enum6::e {
+			return Enum6::e;
+		}
+		case Enum6::d {
+			return Enum6::d;
+		}
+		case Enum6::c {
+			return Enum6::c;
+		}
+		case Enum6::b {
+			return Enum6::b;
+		}
+		case Enum6::a {
+			return Enum6::a;
+		}
+		default: return "ERR";
+	}
+)", R"(
+	enum class Enum6 {
+		a = "apple"; 
+        b = "banana"; 
+        c = 128; 
+        d = [1,2,3,4]; 
+        e = 100_ft;
+	};
+	switch (Enum6::a){
+		case Enum6::e {
+			return Enum6::e;
+		}
+		case Enum6::d {
+			return Enum6::d;
+		}
+		case Enum6::c {
+			return Enum6::c;
+		}
+		case Enum6::b {
+			return Enum6::b;
+		}
+		case Enum6::a {
+			return Enum6::a;
+		}
+		default: return "ERR";
+	}
+)", R"(
+	enum class Enum6 {
+		a = "apple"; 
+        b = "banana"; 
+        c = 128; 
+        d = 256; 
+        e = 100_ft;
+	};
+	return [ Enum6::from_string("a"), Enum6::from_string("b"), Enum6::from_string("c"), Enum6::from_string("d"), Enum6::from_string("e"), Enum6::a.name() ];
+)", R"(
 	class MAP<T0, T1> {
 		map<T0, T1> _impl;
 		size_t size(MAP<T0, T1> const& self) {
