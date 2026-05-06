@@ -8730,6 +8730,7 @@ namespace GL {
 		struct FunctionCallInformation {
 			GL::string function_name;
 			bool use_return;
+			GL::fast_shared_ptr<GL::details::Proxy_Function_Base> preprocessed_function;
 		};
 		class Fun_Call_Node final : public AbstractSyntaxTreeNode {
 		public:
@@ -8737,7 +8738,7 @@ namespace GL {
 				FunctionCallInformation info;
 				info.function_name = this->children[0].get_text();
 				info.use_return = true;
-				this->tag = GL::any::fast_any::instance(info);
+				this->tag = GL::any::fast_any::instance(std::move(info));
 			};
 		};
 		class Unused_Return_Fun_Call_Node final : public AbstractSyntaxTreeNode {
@@ -8746,7 +8747,7 @@ namespace GL {
 				FunctionCallInformation info;
 				info.function_name = this->children[0].get_text();
 				info.use_return = false;
-				this->tag = GL::any::fast_any::instance(info);
+				this->tag = GL::any::fast_any::instance(std::move(info));
 			};
 		};
 		class Equation_Node final : public AbstractSyntaxTreeNode {
@@ -8839,7 +8840,12 @@ namespace GL {
 		};
 		/* x[1] */ class Array_Call_Node final : public AbstractSyntaxTreeNode {
 		public:
-			Array_Call_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Array_Call, t_ast_node_text, t_loc, t_children) {};
+			Array_Call_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Array_Call, t_ast_node_text, t_loc, t_children) {
+				FunctionCallInformation info;
+				info.function_name = "[]";
+				info.use_return = true;
+				this->tag = GL::any::fast_any::instance(std::move(info));
+			};
 		};
 		/* x.first */ class Dot_Access_Node final : public AbstractSyntaxTreeNode {
 		public:
@@ -8847,6 +8853,11 @@ namespace GL {
 				GL::string m_fun_name = ((children[1].identifier == Engine::AST_Node_Type::Fun_Call) || (children[1].identifier == Engine::AST_Node_Type::Array_Call))
 					? children[1].children[0].text
 					: children[1].text;
+
+				FunctionCallInformation info;
+				info.function_name = m_fun_name;
+				info.use_return = true;
+				this->tag = GL::any::fast_any::instance(std::move(info));
 			};
 		};
 		/* [x](FF) async -> int { return x+FF; } */ class Lambda_Node final : public AbstractSyntaxTreeNode {
@@ -10119,6 +10130,7 @@ namespace GL {
 									node = Postfix_Node(abbreviation, node.location, { node.children[0] });
 									node.tag.cast<PostfixInformation>().is_unit = true;
 									node.tag.cast<PostfixInformation>().unit_name = BC->this_m.scope_name;
+									node.output = dynamic_cast<GL::scope::impl::ClassScope*>(BC->this_m.scope)->this_type;
 									return true;
 								}
 							}
@@ -11728,7 +11740,7 @@ namespace GL {
 								catch (...) {
 									return false;
 								}
-							}							
+							}
 						}
 						return false;
 					};
@@ -11750,7 +11762,7 @@ namespace GL {
 									&& node.children[0].identifier == Engine::AST_Node_Type::Constant
 									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
 									&& !node.constant
-								) {
+									) {
 									// this is a perfect example of a constexpr object.
 									node.constant = node.children[0].constant;
 									return true;
@@ -11763,7 +11775,7 @@ namespace GL {
 									&& node.children[0].text != "var"
 									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
 									&& !node.constant
-								) {
+									) {
 									try {
 										auto initial_value = CurrentEngine().call(node.children[0].text, {});
 										node.constant = initial_value;
@@ -11786,13 +11798,13 @@ namespace GL {
 									&& node.children[0].children[1].children.size() == 0
 									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
 									&& !node.constant
-								) {
+									) {
 									try {
 										auto initial_value = CurrentEngine().call(node.children[0].children[0].text, {});
 										node.constant = initial_value;
 										// node.children[0] = Constant_Node(node.children[0].children[0].text, node.children[0].children[0].location, {}, node.constant);
 										return true;
-									} 
+									}
 									catch (...) {
 										// failure to do constexpr folding.
 										node.tag.cast<ObjectDeclarationInformation>().is_constexpr = false;
@@ -11807,7 +11819,7 @@ namespace GL {
 									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
 									&& node.children[2].identifier == Engine::AST_Node_Type::Constant
 									&& !node.constant
-								) {
+									) {
 									try {
 										auto initial_value = CurrentEngine().call(node.children[0].text, {});
 										CurrentEngine().call("=", { initial_value, node.children[2].constant | GL::type::Const | GL::type::Reference });
@@ -11834,7 +11846,7 @@ namespace GL {
 									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
 									&& node.children[2].identifier == Engine::AST_Node_Type::Constant
 									&& !node.constant
-								) {
+									) {
 									try {
 										auto initial_value = CurrentEngine().call(node.children[0].children[0].text, {});
 										CurrentEngine().call("=", { initial_value, node.children[2].constant | GL::type::Const | GL::type::Reference });
@@ -11861,7 +11873,7 @@ namespace GL {
 									&& node.children[2].children[1].identifier == Engine::AST_Node_Type::Arg_List
 									&& node.children[2].children[1].children.size() == 0
 									&& !node.constant
-								) {
+									) {
 									try {
 										auto initial_value = CurrentEngine().call(node.children[0].text, {});
 										auto new_value = CurrentEngine().call(node.children[2].children[0].text, {});
@@ -11894,7 +11906,7 @@ namespace GL {
 									&& node.children[2].children[1].identifier == Engine::AST_Node_Type::Arg_List
 									&& node.children[2].children[1].children.size() == 0
 									&& !node.constant
-								) {
+									) {
 									try {
 										auto initial_value = CurrentEngine().call(node.children[0].children[0].text, {});
 										auto new_value = CurrentEngine().call(node.children[2].children[0].text, {});
@@ -11921,7 +11933,7 @@ namespace GL {
 									&& node.children[2].children[1].identifier == Engine::AST_Node_Type::Arg_List
 									&& node.children[2].children[1].children.size() == 0
 									&& !node.constant
-								) {
+									) {
 									try {
 										auto initial_value = node.children[0].constant;
 										auto new_value = CurrentEngine().call(node.children[2].children[0].text, {});
@@ -11942,7 +11954,7 @@ namespace GL {
 									&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
 									&& node.children[2].identifier == Engine::AST_Node_Type::Constant
 									&& !node.constant
-								) {
+									) {
 									try {
 										auto initial_value = node.children[0].constant;
 										auto new_value = node.children[2].constant;
@@ -11967,11 +11979,11 @@ namespace GL {
 
 						if (((node.identifier == Engine::AST_Node_Type::Block) || (node.identifier == Engine::AST_Node_Type::Arg_List) || (node.identifier == Engine::AST_Node_Type::Scopeless_Block) || (node.identifier == Engine::AST_Node_Type::File))
 							&& node.children.size() > 0
-						) {
+							) {
 							for (auto& this_child : node.children) {
 								if (this_child.identifier == Engine::AST_Node_Type::Id
 									&& this_child.constant
-								) {
+									) {
 									this_child = Constant_Node(this_child.text, this_child.location, {}, this_child.constant);
 									return true;
 								}
@@ -11988,18 +12000,18 @@ namespace GL {
 								[&](AbstractSyntaxTreeNode& this_child) -> bool {
 									// Early exit when we do not want to have constexpr values to bleed deeper into the tree
 									if (this_child.identifier == Engine::AST_Node_Type::DeclarationBlock
-										|| this_child.identifier == Engine::AST_Node_Type::FunctionDecl 
+										|| this_child.identifier == Engine::AST_Node_Type::FunctionDecl
 										|| this_child.identifier == Engine::AST_Node_Type::JustInTimeCompilation
 										|| this_child.identifier == Engine::AST_Node_Type::Var_Decl
 										|| this_child.identifier == Engine::AST_Node_Type::Constant
 										|| this_child.identifier == Engine::AST_Node_Type::Enum
 										|| this_child.identifier == Engine::AST_Node_Type::Class
 										|| this_child.identifier == Engine::AST_Node_Type::Namespace
-									) {
+										) {
 										// do not explore any deeper into these nodes
 										return false;
 									}
-								
+
 									// capture the constexpr value for the current block
 									if (this_child.identifier == Engine::AST_Node_Type::Assign_Retroactively) {
 										if (this_child.constant
@@ -12008,8 +12020,8 @@ namespace GL {
 											&& this_child.children[1].children.size() >= 1
 											&& this_child.children[1].children[0].identifier == Engine::AST_Node_Type::Id
 											&& this_child.children[1].children[0].children.size() == 0
-										) {
-											constexpr_results.back()[this_child.children[1].children[0].text] = this_child.constant;										
+											) {
+											constexpr_results.back()[this_child.children[1].children[0].text] = this_child.constant;
 											return true;
 										}
 										if (!this_child.constant
@@ -12018,7 +12030,7 @@ namespace GL {
 											&& this_child.children[1].children.size() >= 1
 											&& this_child.children[1].children[0].identifier == Engine::AST_Node_Type::Id
 											&& this_child.children[1].children[0].children.size() == 0
-										) {
+											) {
 											constexpr_results.back()[this_child.children[1].children[0].text] = {}; // nullptr
 											return true;
 										}
@@ -12027,26 +12039,26 @@ namespace GL {
 									// Evaluate the places that constexpr should be allowed:
 									if (this_child.identifier == Engine::AST_Node_Type::Binary
 										&& this_child.children.size() == 2
-									) {
+										) {
 										for (auto& child : this_child.children) {
 											if (child.identifier == Engine::AST_Node_Type::Id
 												&& child.children.size() == 0
-											) {
+												) {
 												if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, child.text, temp)) {
 													child = Constant_Node(child.text, child.location, {}, temp);
 													made_update = true;
 													return true;
 												}
-											}									
+											}
 										}
 									}
 									if (((this_child.identifier == Engine::AST_Node_Type::BinaryFoldLeft) || (this_child.identifier == Engine::AST_Node_Type::BinaryFoldRight))
 										&& this_child.children.size() == 1
-									) {
+										) {
 										for (auto& child : this_child.children) {
 											if (child.identifier == Engine::AST_Node_Type::Id
 												&& child.children.size() == 0
-											) {
+												) {
 												if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, child.text, temp)) {
 													child = Constant_Node(child.text, child.location, {}, temp);
 													made_update = true;
@@ -12059,11 +12071,11 @@ namespace GL {
 									if (this_child.identifier == Engine::AST_Node_Type::Inline_Array
 										&& this_child.children.size() == 1
 										&& this_child.children[0].identifier == Engine::AST_Node_Type::Arg_List
-									) {
+										) {
 										for (auto& child : this_child.children[0].children) {
 											if (child.identifier == Engine::AST_Node_Type::Id
 												&& child.children.size() == 0
-											) {
+												) {
 												if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, child.text, temp)) {
 													child = Constant_Node(child.text, child.location, {}, temp);
 													made_update = true;
@@ -12078,11 +12090,11 @@ namespace GL {
 										&& this_child.children.size() == 2
 										&& this_child.children[0].identifier == Engine::AST_Node_Type::Id
 										&& this_child.children[0].children.size() == 0
-									) {
+										) {
 										if (GL::any::fast_any constexprMapOrArray; try_find_constexpr(constexpr_results, this_child.children[0].text, constexprMapOrArray)) {
 											if (this_child.children[1].identifier == Engine::AST_Node_Type::Id
 												&& this_child.children[1].children.size() == 0
-											) {
+												) {
 												if (GL::any::fast_any Index; try_find_constexpr(constexpr_results, this_child.children[1].text, Index)) {
 													if (GL::any::fast_any temp; AttemptCalculation(this_child.text, { constexprMapOrArray | GL::type::Const | GL::type::Reference, Index | GL::type::Const | GL::type::Reference }, temp)) {
 														this_child = Constant_Node(this_child.text, this_child.location, {}, temp);
@@ -12108,11 +12120,11 @@ namespace GL {
 										|| this_child.identifier == Engine::AST_Node_Type::Case
 										|| this_child.identifier == Engine::AST_Node_Type::Switch
 										|| this_child.identifier == Engine::AST_Node_Type::Map_Pair
-									) {
+										) {
 										for (auto& child : this_child.children) {
 											if (child.identifier == Engine::AST_Node_Type::Id
 												&& child.children.size() == 0
-											) {
+												) {
 												if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, child.text, temp)) {
 													child = Constant_Node(child.text, child.location, {}, temp);
 													made_update = true;
@@ -12125,11 +12137,11 @@ namespace GL {
 									if (this_child.identifier == Engine::AST_Node_Type::Fun_Call
 										&& this_child.children.size() == 2
 										&& this_child.children[1].identifier == Engine::AST_Node_Type::Arg_List
-									) {
+										) {
 										for (auto& child : this_child.children[1].children) {
 											if (child.identifier == Engine::AST_Node_Type::Id
 												&& child.children.size() == 0
-											) {
+												) {
 												if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, child.text, temp)) {
 													child = Constant_Node(child.text, child.location, {}, temp);
 													made_update = true;
@@ -12143,7 +12155,7 @@ namespace GL {
 										&& this_child.children.size() == 1
 										&& this_child.children[0].identifier == Engine::AST_Node_Type::Id
 										&& this_child.children[0].children.size() == 0
-									) {
+										) {
 										if (this_child.tag.cast<PostfixInformation>().is_unit) {
 											if (GL::any::fast_any constexprObj; try_find_constexpr(constexpr_results, this_child.children[0].text, constexprObj)) {
 												if (GL::any::fast_any temp; AttemptCalculation(this_child.tag.cast<PostfixInformation>().unit_name, { constexprObj | GL::type::Const | GL::type::Reference }, temp)) {
@@ -12166,7 +12178,7 @@ namespace GL {
 										&& this_child.children.size() == 2
 										&& this_child.children[0].identifier == Engine::AST_Node_Type::Id
 										&& this_child.children[0].children.size() == 0
-									) {
+										) {
 										if (this_child.children[1].identifier == Engine::AST_Node_Type::Id
 											&& this_child.children[1].children.size() == 0
 											) {
@@ -12183,7 +12195,7 @@ namespace GL {
 												this_child = Constant_Node(this_child.text, this_child.location, {}, temp);
 												made_update = true;
 												return true;
-											}										
+											}
 										}
 									}
 
@@ -12191,7 +12203,7 @@ namespace GL {
 										&& this_child.children.size() == 2
 										&& this_child.children[1].identifier == Engine::AST_Node_Type::Id
 										&& this_child.children[1].children.size() == 0
-									) {
+										) {
 										if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, this_child.children[1].text, temp)) {
 											this_child.children[1] = Constant_Node(this_child.text, this_child.location, {}, temp);
 											made_update = true;
@@ -12202,7 +12214,7 @@ namespace GL {
 										&& this_child.children.size() == 2
 										&& this_child.children[0].identifier == Engine::AST_Node_Type::Id
 										&& this_child.children[0].children.size() == 0
-									) {
+										) {
 										if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, this_child.children[0].text, temp)) {
 											this_child.children[0] = Constant_Node(this_child.text, this_child.location, {}, temp);
 											made_update = true;
@@ -12213,14 +12225,14 @@ namespace GL {
 										&& this_child.children.size() == 2
 										&& this_child.children[0].identifier == Engine::AST_Node_Type::Constant
 										&& this_child.text != ".."
-									) {
+										) {
 										throw except::eval_error("Calling a modifying equation on constexpr objects is not supported.", this_child.location);
 									}
 
 									if (this_child.identifier == Engine::AST_Node_Type::Id
 										&& this_child.children.size() == 0
 										&& !this_child.constant
-									) {
+										) {
 										if (GL::any::fast_any temp; try_find_constexpr(constexpr_results, this_child.text, temp)) {
 											this_child.constant = temp;
 											made_update = true;
@@ -12234,24 +12246,24 @@ namespace GL {
 
 
 									return true;
-								}, 
+								},
 								// Pushed on the start of every new "layer"
-								[&](AbstractSyntaxTreeNode& this_child) -> void {								
+									[&](AbstractSyntaxTreeNode& this_child) -> void {
 									if (this_child.identifier == Engine::AST_Node_Type::File
 										|| this_child.identifier == Engine::AST_Node_Type::Block
-									) {
+										) {
 										constexpr_results.push_back({});
-									}								
-								}, 
-								// Popped on the end of every "layer"
-								[&](AbstractSyntaxTreeNode& this_child) -> void {								
+									}
+								},
+									// Popped on the end of every "layer"
+									[&](AbstractSyntaxTreeNode& this_child) -> void {
 									if (this_child.identifier == Engine::AST_Node_Type::File
 										|| this_child.identifier == Engine::AST_Node_Type::Block
-									) {
+										) {
 										constexpr_results.pop_back();
 									}
 								}
-							);
+								);
 							return made_update;
 						}
 
@@ -12755,6 +12767,434 @@ namespace GL {
 					};
 				};
 
+				// explicitely handle the return types for everything that we reasonably can
+				struct EvaluateReturnTypes {
+					// returns the correct type if there are NO competing types with the same name.
+					static GL::type TryDetermineType(GL::string const& type_name) {
+						auto returned_type = CurrentEngine().DetermineType(type_name);
+
+						auto& map = CurrentEngine().classes_by_name;
+						int count = 0;
+						GL::type out; 
+						for (auto f = map.find(type_name), end = map.end(); f != end; ++f) {
+							if (f->first != type_name) {
+								break;
+							}
+							else if (f->second->this_m.is_class()) {
+								out = dynamic_cast<GL::scope::impl::ClassScope*>(f->second->this_m.scope)->this_type;
+								++count;
+							}
+						}
+						if (count == 1)
+							return out;
+						else
+							return returned_type;
+					};
+					static bool try_find_type(std::deque<std::map<GL::string, GL::type>>& type_results, GL::string const& to_find, GL::type& out) {
+						for (auto iter = type_results.rbegin(), e = type_results.rend(); iter != e; ++iter) {
+							auto f = iter->find(to_find);
+							auto ee = iter->end();
+							if (f != ee) {
+								out = f->second;
+								if (out == GL::type_of<GL::undefined>()) {
+									return false;
+								}
+								else {
+									return true;
+								}
+							}
+						}
+						// not declared locally -- see if it's a function? 
+						if (auto callable = CurrentEngine().try_find_callable(to_find, {}); callable) {
+							if ((callable->m_signature.state_m & GL::function_signature::Constructor) > 0) return false;
+							if ((callable->m_signature.state_m & GL::function_signature::Volatile) > 0) return false;
+							if ((callable->m_signature.state_m & GL::function_signature::Object) > 0) {
+								try {
+									out = callable->m_signature.returns_m;
+									return true;
+								}
+								catch (...) {
+									return false;
+								}
+							}
+						}
+						return false;
+					};
+
+					bool optimize(AbstractSyntaxTreeNode& node) {	
+						// Convert DotAccess to FunctionCalls
+						if (node.identifier == Engine::AST_Node_Type::Dot_Access
+							&& node.children.size() == 2
+							&& node.children[1].identifier == Engine::AST_Node_Type::Fun_Call
+							&& node.children[1].children.size() == 2
+							&& node.children[1].children[1].identifier == Engine::AST_Node_Type::Arg_List
+							) {
+							node.children[1].children[1].children.insert(node.children[1].children[1].children.begin(), node.children[0]);
+							node.children[1].location = node.location;
+							node = node.children[1];
+							node.output = GL::type_of<GL::undefined>();
+							node.tag.cast<FunctionCallInformation>().preprocessed_function = nullptr;
+							return true;
+						}
+
+						// return types are easy
+						if (node.identifier == Engine::AST_Node_Type::Return
+							&& node.output == GL::type_of<GL::undefined>()
+						) {
+							if (node.children.size() == 0) {
+								node.output = GL::type_of<void>();
+								return true;
+							}
+							else if (node.children.size() == 1
+								&& node.children[0].output != GL::type_of<GL::undefined>()
+								&& !node.children[0].output.can_free_cast(GL::type_of<GL::var const&>())
+							) {
+								node.output = node.children[0].output;
+								return true;
+							}
+						}
+
+						if (node.identifier == Engine::AST_Node_Type::Assign_Retroactively
+							&& node.output == GL::type_of<GL::undefined>()
+						) {
+							if (node.children.size() > 1
+								&& node.children[0].identifier == Engine::AST_Node_Type::Id
+								&& node.children[0].output == GL::type_of<GL::undefined>()
+							) {
+								// see if we can determine this type...
+								node.children[0].output = TryDetermineType(node.children[0].text) - GL::type::Const - GL::type::Reference - GL::type::Temporary;
+								if (node.children[0].output != GL::type_of<GL::undefined>()) return true;
+							}
+
+							if (node.children.size() >= 2
+								&& node.children[0].output != GL::type_of<GL::undefined>()
+								&& !node.children[0].output.can_free_cast(GL::type_of<GL::var const&>())
+								&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+								&& node.children[1].children.size() == 1
+								&& node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+							) {
+								node.children[1].children[0].output = node.children[1].output = node.output =  node.children[0].output - GL::type::Const - GL::type::Reference - GL::type::Temporary;
+								return true;
+							}
+						}
+
+						if (node.identifier == Engine::AST_Node_Type::Dot_Access
+							&& node.children.size() == 2
+							&& node.children[1].identifier == Engine::AST_Node_Type::Id
+							&& node.children[1].output == GL::type_of<GL::undefined>()
+						) {
+							node.children[1].output = GL::type_of<void>();
+							return true;
+						}
+
+						if (node.identifier == Engine::AST_Node_Type::Fun_Call
+							&& node.children.size() >= 1
+							&& node.children[0].identifier == Engine::AST_Node_Type::Id
+							&& node.children[0].output == GL::type_of<GL::undefined>()
+						) {
+							node.children[0].output = GL::type_of<void>();
+							return true;
+						}
+
+						if ((node.identifier == Engine::AST_Node_Type::Block
+							|| node.identifier == Engine::AST_Node_Type::Scopeless_Block
+							|| node.identifier == Engine::AST_Node_Type::File)
+							&& node.children.size() >= 1
+						) {
+							if (node.output != node.children.back().output) {
+								node.output = node.children.back().output;
+								return true;
+							}
+						}
+
+						// x.size
+						if (node.identifier == Engine::AST_Node_Type::Dot_Access
+							&& node.children.size() == 2
+							&& node.children[0].output != GL::type_of<GL::undefined>()
+							&& !node.children[0].output.can_free_cast(GL::type_of<GL::var const&>())
+							&& node.children[1].identifier == Engine::AST_Node_Type::Id
+							&& node.output == GL::type_of<GL::undefined>()
+						) {
+							if (GL::fast_shared_ptr<GL::details::Proxy_Function_Base> func = CurrentEngine().try_find_callable(node.children[1].text, { node.children[0].output })) {
+								node.tag.cast< FunctionCallInformation>().preprocessed_function = std::move(func);
+								node.output = node.tag.cast< FunctionCallInformation>().preprocessed_function->m_signature.returns_m;
+								return true;
+							}							
+						}
+
+						// size("inputs")
+						if (node.identifier == Engine::AST_Node_Type::Fun_Call
+							&& node.children.size() >= 2
+							&& node.children[0].identifier == Engine::AST_Node_Type::Id
+							&& node.children[1].identifier == Engine::AST_Node_Type::Arg_List
+							&& node.output == GL::type_of<GL::undefined>()
+						) {
+							std::vector<GL::type> inputs;
+							for (auto& input : node.children[1].children) {
+								inputs.push_back(input.output);
+								if (inputs.back() == GL::type_of<GL::undefined>()
+									|| inputs.back().can_free_cast(GL::type_of<GL::var const&>())
+								) {
+									return false;
+								}
+							}
+							if (GL::fast_shared_ptr<GL::details::Proxy_Function_Base> func = CurrentEngine().try_find_callable(node.children[0].text, inputs)) {
+								node.tag.cast< FunctionCallInformation>().preprocessed_function = std::move(func);
+								node.output = node.tag.cast< FunctionCallInformation>().preprocessed_function->m_signature.returns_m;
+								return true;
+							}
+						}
+
+						// perform replacements as appropriate with constexpr values. 					
+						if (node.identifier != Engine::AST_Node_Type::Assign_Retroactively) {
+							std::deque<std::map<GL::string, GL::type>> type_results;
+							type_results.push_back({});
+
+							bool made_update = false;
+							node.for_each_child(
+								// called for each child in each layer, depth-first.
+								[&](AbstractSyntaxTreeNode& this_child) -> bool {
+									// Early exit when we do not want to have constexpr values to bleed deeper into the tree
+									if (this_child.identifier == Engine::AST_Node_Type::DeclarationBlock
+										|| this_child.identifier == Engine::AST_Node_Type::FunctionDecl
+										|| this_child.identifier == Engine::AST_Node_Type::JustInTimeCompilation
+										|| this_child.identifier == Engine::AST_Node_Type::Var_Decl
+										|| this_child.identifier == Engine::AST_Node_Type::Constant
+										|| this_child.identifier == Engine::AST_Node_Type::Enum
+										|| this_child.identifier == Engine::AST_Node_Type::Class
+										|| this_child.identifier == Engine::AST_Node_Type::Namespace
+										) {
+										// do not explore any deeper into these nodes
+										return false;
+									}
+
+									// capture the constexpr value for the current block
+									if (this_child.identifier == Engine::AST_Node_Type::Assign_Retroactively) {										
+										if (this_child.children.size() >= 2
+											&& this_child.children[1].identifier == Engine::AST_Node_Type::Var_Decl
+											&& this_child.children[1].children.size() >= 1
+											&& this_child.children[1].children[0].identifier == Engine::AST_Node_Type::Id
+											&& this_child.children[1].children[0].children.size() == 0
+										) {
+											type_results.back()[this_child.children[1].children[0].text] = this_child.output;
+											return false;
+										}
+									}
+
+									// Evaluate the places that constexpr should be allowed:
+									if (this_child.identifier == Engine::AST_Node_Type::Binary
+										&& this_child.children.size() == 2
+									) {
+										for (auto& child : this_child.children) {
+											if (child.identifier == Engine::AST_Node_Type::Id
+												&& child.children.size() == 0
+											) {
+												if (child.output == GL::type_of<GL::undefined>()) {
+													if (GL::type temp; try_find_type(type_results, child.text, temp)) {
+														if (temp != GL::type_of<GL::undefined>()) {
+															child.output = temp;
+															made_update = true;
+															return true;
+														}
+													}
+												}
+											}
+										}
+									}
+									if (((this_child.identifier == Engine::AST_Node_Type::BinaryFoldLeft) || (this_child.identifier == Engine::AST_Node_Type::BinaryFoldRight))
+										&& this_child.children.size() == 1
+										) {
+										for (auto& child : this_child.children) {
+											if (child.identifier == Engine::AST_Node_Type::Id
+												&& child.children.size() == 0
+											) {
+												if (child.output == GL::type_of<GL::undefined>()) {
+													if (GL::type temp; try_find_type(type_results, child.text, temp)) {
+														if (temp != GL::type_of<GL::undefined>()) {
+															child.output = temp;
+															made_update = true;
+															return true;
+														}
+													}
+												}
+											}
+										}
+									}
+
+									if (this_child.identifier == Engine::AST_Node_Type::Inline_Array
+										&& this_child.children.size() == 1
+										&& this_child.children[0].identifier == Engine::AST_Node_Type::Arg_List
+										) {
+										for (auto& child : this_child.children[0].children) {
+											if (child.identifier == Engine::AST_Node_Type::Id
+												&& child.children.size() == 0
+												) {
+												if (child.output == GL::type_of<GL::undefined>()) {
+													if (GL::type temp; try_find_type(type_results, child.text, temp)) {
+														if (temp != GL::type_of<GL::undefined>()) {
+															child.output = temp;
+															made_update = true;
+															return true;
+														}
+													}
+												}
+											}
+										}
+									}
+
+									// constexprMap[constexprIndex]
+									if (this_child.identifier == Engine::AST_Node_Type::Array_Call
+										&& this_child.children.size() == 2
+										&& this_child.children[0].identifier == Engine::AST_Node_Type::Id
+										&& this_child.children[0].children.size() == 0
+									) {
+										
+									}
+
+									if (this_child.identifier == Engine::AST_Node_Type::If
+										|| this_child.identifier == Engine::AST_Node_Type::For
+										|| this_child.identifier == Engine::AST_Node_Type::While
+										|| this_child.identifier == Engine::AST_Node_Type::Ranged_For
+										|| this_child.identifier == Engine::AST_Node_Type::Case
+										|| this_child.identifier == Engine::AST_Node_Type::Switch
+										|| this_child.identifier == Engine::AST_Node_Type::Map_Pair
+										) {
+										for (auto& child : this_child.children) {
+											if (child.identifier == Engine::AST_Node_Type::Id
+												&& child.children.size() == 0
+												) {
+												if (child.output == GL::type_of<GL::undefined>()) {
+													if (GL::type temp; try_find_type(type_results, child.text, temp)) {
+														if (temp != GL::type_of<GL::undefined>()) {
+															child.output = temp;
+															made_update = true;
+															return true;
+														}
+													}
+												}
+											}
+										}
+									}
+
+									if (this_child.identifier == Engine::AST_Node_Type::Fun_Call
+										&& this_child.children.size() == 2
+										&& this_child.children[1].identifier == Engine::AST_Node_Type::Arg_List
+										) {
+										for (auto& child : this_child.children[1].children) {
+											if (child.identifier == Engine::AST_Node_Type::Id
+												&& child.children.size() == 0
+												) {
+												if (child.output == GL::type_of<GL::undefined>()) {
+													if (GL::type temp; try_find_type(type_results, child.text, temp)) {
+														if (temp != GL::type_of<GL::undefined>()) {
+															child.output = temp;
+															made_update = true;
+															return true;
+														}
+													}
+												}
+											}
+										}
+									}
+
+									if (this_child.identifier == Engine::AST_Node_Type::Postfix
+										&& this_child.children.size() == 1
+										&& this_child.children[0].identifier == Engine::AST_Node_Type::Id
+										&& this_child.children[0].children.size() == 0
+										) {
+										if (this_child.tag.cast<PostfixInformation>().is_unit) {
+
+										}
+										else {
+
+										}
+									}
+
+									if (this_child.identifier == Engine::AST_Node_Type::Type_Cast
+										&& this_child.children.size() == 2
+										&& this_child.children[0].identifier == Engine::AST_Node_Type::Id
+										&& this_child.children[0].children.size() == 0
+										) {
+										if (this_child.children[1].identifier == Engine::AST_Node_Type::Id
+											&& this_child.children[1].children.size() == 0
+										) {
+
+										}
+										else if (this_child.children[1].identifier == Engine::AST_Node_Type::Constant) {
+											if (GL::any::fast_any temp; AttemptCalculation(this_child.children[0].text, { this_child.children[1].constant | GL::type::Const | GL::type::Reference }, temp)) {
+												this_child = Constant_Node(this_child.text, this_child.location, {}, temp);
+												made_update = true;
+												return true;
+											}
+										}
+									}
+
+									if (this_child.identifier == Engine::AST_Node_Type::Equation
+										&& this_child.children.size() == 2
+										&& this_child.children[1].identifier == Engine::AST_Node_Type::Id
+										&& this_child.children[1].children.size() == 0
+									) {
+
+									}
+									if (this_child.identifier == Engine::AST_Node_Type::Equation
+										&& this_child.children.size() == 2
+										&& this_child.children[0].identifier == Engine::AST_Node_Type::Id
+										&& this_child.children[0].children.size() == 0
+									) {
+
+									}
+									if (this_child.identifier == Engine::AST_Node_Type::Equation
+										&& this_child.children.size() == 2
+										&& this_child.children[0].identifier == Engine::AST_Node_Type::Constant
+										&& this_child.text != ".."
+									) {
+										throw except::eval_error("Calling a modifying equation on constexpr objects is not supported.", this_child.location);
+									}
+
+									if (this_child.identifier == Engine::AST_Node_Type::Id
+										&& this_child.children.size() == 0
+										&& !this_child.constant
+										) {
+										if (this_child.output == GL::type_of<GL::undefined>()) {
+											if (GL::type temp; try_find_type(type_results, this_child.text, temp)) {
+												if (temp != GL::type_of<GL::undefined>()) {
+													this_child.output = temp;
+													made_update = true;
+													return true;
+												}
+											}
+										}
+									}
+
+
+									return true;
+								},
+								// Pushed on the start of every new "layer"
+									[&](AbstractSyntaxTreeNode& this_child) -> void {
+									if (this_child.identifier == Engine::AST_Node_Type::File
+										|| this_child.identifier == Engine::AST_Node_Type::Block
+									) {
+										type_results.push_back({});
+									}
+								},
+									// Popped on the end of every "layer"
+									[&](AbstractSyntaxTreeNode& this_child) -> void {
+									if (this_child.identifier == Engine::AST_Node_Type::File
+										|| this_child.identifier == Engine::AST_Node_Type::Block
+									) {
+										type_results.pop_back();
+									}
+								}
+							);
+							return made_update;
+						}
+
+
+
+						return false;
+					};
+				};
+
 				struct ErrorOrWarningDetection {
 					bool optimize(AbstractSyntaxTreeNode& node) {
 						// Equations that may modify lhs const values
@@ -12778,6 +13218,7 @@ namespace GL {
 				using Optimizer_Constexpr = Optimizer<
 					optimizer::PreprocessMacroObjects,
 					optimizer::VarDeclEquation_To_RetroactiveAssignment,
+					optimizer::EvaluateReturnTypes,
 					optimizer::PostfixFold,
 					optimizer::PrefixFold,
 					optimizer::BinaryFold,
@@ -12806,7 +13247,7 @@ namespace GL {
 					optimizer::ForLoopSignature,
 					optimizer::Block,
 					optimizer::Switch, 
-					optimizer::ConstexprFunctionCalls
+					optimizer::ConstexprFunctionCalls					
 				>;
 
 				using Optimizer_Errors = Optimizer<
@@ -12814,7 +13255,8 @@ namespace GL {
 				>;
 
 			public:
-				static AbstractSyntaxTreeNode optimize_all(AbstractSyntaxTreeNode p, Engine::ScriptParser::Parser* parser, int maxDepth = 1000) {
+				static constexpr size_t standard_optimization_depth = 1000;
+				static AbstractSyntaxTreeNode optimize_all(AbstractSyntaxTreeNode p, Engine::ScriptParser::Parser* parser, int maxDepth = standard_optimization_depth) {
 					GetParser().push_back(parser);
 
 					while ((--maxDepth >= 0) 
@@ -12827,7 +13269,7 @@ namespace GL {
 					GetParser().pop_back();
 					return p;
 				};
-				static AbstractSyntaxTreeNode incorporate_warnings_and_errors(AbstractSyntaxTreeNode p, Engine::ScriptParser::Parser* parser, int maxDepth = 1000) {
+				static AbstractSyntaxTreeNode incorporate_warnings_and_errors(AbstractSyntaxTreeNode p, Engine::ScriptParser::Parser* parser, int maxDepth = standard_optimization_depth) {
 					GetParser().push_back(parser);
 
 					Optimizer_Errors().optimize(p, parser->analysis_engine, maxDepth);
@@ -14873,7 +15315,7 @@ namespace GL {
 							return true;
 						}
 						else {
-							while (TypeCastOperation() || /*Postfix(false) || */Dot_Fun_Array() || Prefix()) {}
+							while (TypeCastOperation() || Dot_Fun_Array() || Prefix()) {}
 							Postfix(true);
 							if ((m_match_stack.size() - prev_stack_top) >= 2) {
 								build_match<Type_Cast_Node>(prev_stack_top);
@@ -14882,38 +15324,7 @@ namespace GL {
 							else {
 								return failure();
 							}
-
-							//if (Dot_Fun_Array() || TypeCastOperation() || Prefix() || Paren_Expression() || Quoted_String() || Num() || Value()) {
-							//	Postfix(true);
-							//	build_match<Type_Cast_Node>(prev_stack_top);
-							//	return true;
-							//}
-
-
-							//if (Quoted_String() || Paren_Expression() || Num() || Value() || Prefix() || Id(false) || TypeCastOperation() || Dot_Fun_Array()) {
-							//	Postfix(true);
-							//	build_match<Type_Cast_Node>(prev_stack_top);
-							//	return true;
-							//}
-						}
-
-						
-
-
-
-
-
-
-
-
-
-						//if (Postfix(true)) {
-						//	return true;
-						//}
-						//else if (Operator()) { // if (TypeCastOperation() || Value()) {
-						//	build_match<Type_Cast_Node>(prev_stack_top);
-						//	return true;						
-						//}					
+						}			
 					}
 
 					return failure();
@@ -15122,6 +15533,7 @@ namespace GL {
 										build_match<Postfix_Node>(prev_stack_top - gotValueAlready, unit_type.second.second.first.abbreviation());
 										m_match_stack.back().tag.cast<PostfixInformation>().is_unit = true;
 										m_match_stack.back().tag.cast<PostfixInformation>().unit_name = unit_type.second.second.second.m_casted_type.name();
+										m_match_stack.back().output = unit_type.second.second.second.m_casted_type;
 										return true;
 									}								
 								}
@@ -15349,6 +15761,10 @@ namespace GL {
 										}
 										auto dot_access = std::move(m_match_stack.back().children[0]);
 										auto func_call = std::move(m_match_stack.back());
+
+										func_call.output = GL::type_of<GL::undefined>();
+										dot_access.output = GL::type_of<GL::undefined>();
+
 										m_match_stack.pop_back();
 										func_call.children.erase(func_call.children.begin());
 										if (dot_access.children.empty()) {
@@ -15367,7 +15783,7 @@ namespace GL {
 							else if (Char('[')) {
 								has_more = true;
 								if (!(Operator() && Char(']'))) {
-									// TO-DO, Extend to allow matrix accessors, i.e. matrix_obj[0,0] = 10.0;
+									/// \todo Extend to allow matrix accessors, i.e. matrix_obj[0,0] = 10.0;
 									throw except::eval_error("Incomplete array access", Parse_Location(m_position, m_position));
 								}
 
@@ -16816,15 +17232,15 @@ namespace GL {
 				~Parser() = default;
 
 				// highest-level parse request, which starts a new scope from scratch and completes it. 
-				AbstractSyntaxTreeNode Parse(GL::string t_input, int optimization_depth = 1000, std::vector<AbstractSyntaxTreeNode> const& preloaded_matches = {}) {
+				AbstractSyntaxTreeNode Parse(GL::string t_input, int optimization_depth = optimizer::standard_optimization_depth, std::vector<AbstractSyntaxTreeNode> const& preloaded_matches = {}) {
 					return parse(t_input, optimization_depth, preloaded_matches);
 				};
 
 			private:
-				AbstractSyntaxTreeNode parse(GL::string& t_input, int optimization_depth = 1000, std::vector<AbstractSyntaxTreeNode> const& preloaded_matches = {}) {
+				AbstractSyntaxTreeNode parse(GL::string& t_input, int optimization_depth = optimizer::standard_optimization_depth, std::vector<AbstractSyntaxTreeNode> const& preloaded_matches = {}) {
 					return parse_instr_eval(t_input, optimization_depth, preloaded_matches);
 				};
-				AbstractSyntaxTreeNode parse_internal(GL::string& t_input, int optimization_depth = 1000) {
+				AbstractSyntaxTreeNode parse_internal(GL::string& t_input, int optimization_depth = optimizer::standard_optimization_depth) {
 					m_position = Engine::Position(0, t_input);
 
 					// top level stack
@@ -16908,7 +17324,7 @@ namespace GL {
 
 					return m_match_stack.front();
 				};
-				AbstractSyntaxTreeNode parse_instr_eval(GL::string& t_input, int optimization_depth = 1000, std::vector<AbstractSyntaxTreeNode> const& preloaded_matches = {}) {
+				AbstractSyntaxTreeNode parse_instr_eval(GL::string& t_input, int optimization_depth = optimizer::standard_optimization_depth, std::vector<AbstractSyntaxTreeNode> const& preloaded_matches = {}) {
 					auto last_position = m_position;
 					auto last_match_stack = std::exchange(m_match_stack, decltype(m_match_stack){});
 					auto last_comment_stack = std::exchange(m_comment_stack, decltype(m_comment_stack){});
@@ -17358,6 +17774,7 @@ namespace GL {
 					}
 					return nullptr;
 				};
+				
 				// preevaluate means to only perform the Class, Namespace, Enums, FunctionDecl, 
 				GL::any::fast_any evaluate(AbstractSyntaxTreeNode& node, eval_state& state, GL::scope::impl::BasicScope& current_scope, bool in_class = false) {					
 					switch (node.identifier) {
@@ -17632,6 +18049,7 @@ namespace GL {
 									|| node.children[i].identifier == Engine::AST_Node_Type::Namespace
 									|| node.children[i].identifier == Engine::AST_Node_Type::Enum
 									|| node.children[i].identifier == Engine::AST_Node_Type::PrevEvaluated
+									|| node.children[i].identifier == Engine::AST_Node_Type::FunctionDecl
 								) {
 									// good to continue
 								}
@@ -17665,6 +18083,7 @@ namespace GL {
 									|| node.children[i].identifier == Engine::AST_Node_Type::Namespace
 									|| node.children[i].identifier == Engine::AST_Node_Type::Enum
 									|| node.children[i].identifier == Engine::AST_Node_Type::PrevEvaluated
+									|| node.children[i].identifier == Engine::AST_Node_Type::FunctionDecl
 									) {
 									// good to continue
 								}
@@ -18795,11 +19214,14 @@ namespace GL {
 					}
 					catch (except::eval_error& e) {
 						state.throwing = GL::Engine::throwing::Error;
+						print(e.what());
 						throw e;
 					}
 					catch (std::exception& e) {
 						state.throwing = GL::Engine::throwing::Error;
-						throw except::eval_error(std::string(e.what()), node.location);
+						auto err = except::eval_error(std::string(e.what()), node.location);
+						print(err.what());
+						throw err;
 					}
 					catch (GL::any::fast_any& e) {
 						state.throwing = GL::Engine::throwing::Return;
@@ -18814,6 +19236,20 @@ namespace GL {
 						throw except::eval_error("Unknown error", node.location);
 					}
 				};
+
+				AbstractSyntaxTreeNode compile(GL::string const& t_input, GL::scope::impl::RootScope& parent_scope) {
+					GL::Engine::eval_state evaluation_state;
+					evaluation_state.in_preeval = true;
+					AbstractSyntaxTreeNode out{ Parse(t_input) };
+
+					// print(out.to_string("", parent_scope));
+
+					auto returned = Eval(out, evaluation_state, parent_scope);
+					if (evaluation_state.throwing == throwing::Error) {
+						throw except::eval_error(parent_scope.call<GL::string>("to_string", { returned }), out.location);
+					}
+					return out;
+				};
 			};
 
 		};
@@ -18826,7 +19262,220 @@ namespace GL {
 int main() {
 	if (1) {
 		for (GL::string& Script : std::vector<GL::string>{
+#if 0
+R"(
+	try{
+		constexpr cubic_foot_per_second QZERO = 1.e-6; // equiv. to 0 flow in CFS
+		constexpr value PI = (double)constants::pi;
+		constexpr value A1 = 1000.0 * PI;
+		constexpr value A2 = 500.0 * 3.141592653589793238462643383279502884197169399375105820974944f;
+		constexpr value A3 = 16.0 * 3.141592653589793238462643383279502884197169399375105820974944f;
+		constexpr value A4 = 2.0 * 3.141592653589793238462643383279502884197169399375105820974944f;
+		constexpr value A8 = 4.61841319859066668690e+00; // 5.74*(PI/4)^.9
+		constexpr value A9 = -8.68588963806503655300e-01;  // -2/ln(10)
+		constexpr value AA = -1.5634601348517065795e+00; // -2*.9*2/ln(10)
+		constexpr value AB = 3.28895476345399058690e-03; // 5.74/(4000^.9)
+		constexpr value AC = AA * AB;
+		constexpr value CSMALL = 1.e-6;
+		constexpr value CBIG = 1.e8;
+		constexpr auto MAXERRS = 10;  // Max. input errors reported
+		constexpr auto MAXCOUNT = 10; // Max. # of disconnected nodes listed
+		constexpr long HASHTABLEMAXSIZE = 128000;
+		constexpr auto ALLOC_BLOCK_SIZE = 64000;   /*(62*1024)*/
+		constexpr auto NOTFOUND = 0;
+		constexpr auto CODEVERSION = 20200;
+		constexpr auto MAGICNUMBER = 516114521;
+		constexpr auto ENGINE_VERSION = 201; // Used for binary hydraulics file
+		constexpr auto EOFMARK = 0x1A; // Use 0x04 for UNIX systems
+		constexpr auto MAXTITLE = 3;   // Max. # title lines
+		constexpr auto TITLELEN = 79;  // Max. # characters in a title line
+		constexpr auto MAXID = 51; //31;   // Max. # characters in ID name (this is very short! Want to fix, but would break current co-op with existing EPAnet files)
+		constexpr auto MAXMSG = 255;  // Max. # characters in message text
+		constexpr auto MAXLINE = 1024;   // Max. # characters read from input line
+		constexpr auto MAXFNAME = 259;  // Max. # characters in file name
+		constexpr auto MAXTOKS = 40;   // Max. items per line of input from INP files
+
+		constexpr value FULL = 2;
+		constexpr value BIG = 1.E10;
+		constexpr value TINY = 1.E-6;
+		constexpr value MISSING = -1.E-7;     // Missing value indicator // was -1.E-10, but was too small for constexpr math
+		constexpr value DIFFUS = (1.3E-8)_sq_ft / 1_s;     // Diffusivity of chlorine (sq ft/sec)
+		constexpr value VISCOS = (1.1E-5)_sq_ft / 1_s;     // Kinematic viscosity of water @ 20 deg C (sq ft/sec)
+		constexpr value MINPDIFF = 0.1;        // PDA min. pressure difference (psi or m?)
+		constexpr auto SEPSTR = " \t\n\r";  // Token separator characters (space, tab, new line, carriage return)
+		constexpr value GPMperCFS = 1.0 / ((gallon_per_minute)1 / (cubic_foot_per_second)1);
+		constexpr value AFDperCFS = 1.0 / ((acre_foot_per_day)1 / (cubic_foot_per_second)1);
+		constexpr value MGDperCFS = 1.0 / (((million_gallon_per_day)1) / ((cubic_foot_per_second)1));
+		constexpr value IMGDperCFS = 1.0 / (((imperial_million_gallon_per_day)1) / ((cubic_foot_per_second)1)); // was 0.5382; // Disagreement between units??
+		constexpr value LPSperCFS = 1.0 / (((liter_per_second)1) / ((cubic_foot_per_second)1));
+		constexpr value LPMperCFS = 1.0 / (((liter_per_minute)1) / ((cubic_foot_per_second)1));
+		constexpr value CMHperCFS = 1.0 / (((cubic_meter_per_hour)1) / ((cubic_foot_per_second)1));
+		constexpr value CMDperCFS = 1.0 / (((cubic_meter_per_day)1) / ((cubic_foot_per_second)1));
+		constexpr value MLDperCFS = 1.0 / (((megaliter_per_day)1) / ((cubic_foot_per_second)1));
+		constexpr value M3perFT3 = 1.0 / (((cubic_meter)1) / ((cubic_foot)1));
+		constexpr value LperFT3 = 1.0 / (((liter)1) / ((cubic_foot)1));
+		constexpr value MperFT = 1.0 / (((meter)1) / ((foot)1));
+		constexpr value PSIperFT = 1.0 / (((pounds_per_square_inch)1) / ((head)1));
+		constexpr value KPAperPSI = 1.0 / (((kilopascals)1) / ((pounds_per_square_inch)1));
+		constexpr value KWperHP = 1.0 / (((kilowatt)1) / ((horsepower)1));
+		constexpr value SECperDAY = 1.0 / ((second)1 / (day)1); 
+
+		constexpr value MAXITER = 200;  // Default max. # hydraulic iterations
+		constexpr value HACC = 0.001;    // Default hydraulics convergence ratio
+		constexpr foot HTOL = 0.0005;   // Default hydraulic head tolerance (ft)
+		constexpr cubic_foot_per_second QTOL = 0.0001;   // Default flow rate tolerance (cfs)
+		constexpr value AGETOL = 0.01;   // Default water age tolerance (hrs)
+		constexpr value CHEMTOL = 0.01;  // Default concentration tolerance
+		constexpr value PAGESIZE = 0;    // Default uses no page breaks
+		constexpr value SPGRAV = 1.0;    // Default specific gravity
+		constexpr value EPUMP = 75;      // Default pump efficiency
+		constexpr auto  DEFPATID = "1";    // Default demand pattern ID
+		constexpr value RQTOL = 1E-7;    // Default low flow resistance tolerance
+		constexpr value CHECKFREQ = 2;   // Default status check frequency
+		constexpr value MAXCHECK = 10;   // Default # iterations for status checks
+		constexpr value DAMPLIMIT = 0;   // Default damping threshold
+		constexpr cubic_foot_per_second Q_STAGNANT = 0.005_gpm;     // 0.005 gpm = 1.114e-5 cfs
+
+		printf([
+			QZERO, PI, A1, A2, A3, A4, A8, A9, AA, AB, AC, CSMALL, CBIG							
+		].to_string);
+		printf([
+			EOFMARK, BIG, TINY, MISSING, DIFFUS, VISCOS, MINPDIFF, SEPSTR
+		].to_string);
+		printf([
+			GPMperCFS, AFDperCFS, MGDperCFS, IMGDperCFS, LPSperCFS, LPMperCFS, CMHperCFS, CMDperCFS, MLDperCFS, M3perFT3, LperFT3, MperFT, PSIperFT, KPAperPSI, KWperHP, SECperDAY
+		].to_string);
+		printf([
+			MAXITER, HACC, HTOL, QTOL, DEFPATID, RQTOL, CHECKFREQ, MAXCHECK, DAMPLIMIT, Q_STAGNANT
+		].to_string);
+
+		int hydsolve(EN_Project const& pr, int& iter, value& relerr, HydraulicSimulationQuality simQuality) {
+			EN_Network const& net = pr.network;
+			Hydraul& hyd = pr.hydraul;
+			Smatrix& sm = hyd.smatrix;
+			Report& rpt = pr.report;
+
+			int    i;							// Node index
+			int    errcode = 0;					// Node causing solution error
+			int    nextcheck;					// Next status check trial
+			int    maxtrials;					// Max. trials for convergence
+			value  newerr;						// New convergence error
+			int    valveChange;					// Valve status change flag
+			int    statChange;					// Non-valve status change flag
+			Hydbalance hydbal;					// Hydraulic balance errors
+			cubic_foot_per_second fullDemand;   // Full demand for a node (cfs)
+
+			// Initialize status checking & relaxation factor
+			nextcheck = hyd.CheckFreq;
+			hyd.RelaxFactor = 1.0;
+
+			// Initialize convergence criteria and PDA results
+			hydbal.maxheaderror = 0.0_ft;
+			hydbal.maxflowchange = 0.0_cfs;
+			hyd.DeficientNodes = 0;
+			hyd.DemandReduction = 0.0;
+
+			// Repeat iterations until convergence or trial limit is exceeded. (ExtraIter used to increase trials in case of status cycling.)
+			if (((SCALER)rpt.Statflag) == FULL) writerelerr(pr, 0, 0);
+			maxtrials = hyd.MaxIter;
+			if (hyd.ExtraIter > 0) maxtrials += hyd.ExtraIter;
+			iter = 1;
+			while (iter <= maxtrials) {
+				/* Compute coefficient matrices A & F and solve A*H = F
+					where H = heads, A = Jacobian coeffs. derived from
+					head loss gradients, & F = flow correction terms.
+					Solution for H is returned in F from call to linsolve(). */
+ 				headlosscoeffs(pr); // parallelized
+				matrixcoeffs(pr);
+				errcode = smatrix_t::linsolve(sm, net.Njuncs);
+
+				// Matrix ill-conditioning problem - if control valve causing problem, fix its status & continue, otherwise quit with no solution.
+				if (errcode > 0) {
+					if (badvalve(pr, sm.Order[errcode])) continue;
+					else break;
+				}
+
+				// Update current solution. (Row[i] = row of solution matrix corresponding to node i)
+				for (i = 1; i <= net.Njuncs; i++) {
+					hyd.NodeHead[i] = sm.B_ft[sm.Row[i]];   // Update heads
+				}
+
+				newerr = newflows(pr, hydbal);             // Update flows
+				relerr = newerr;
+
+				// Write convergence error to status report if called for
+				if (((SCALER)rpt.Statflag) == FULL) {
+					writerelerr(pr, iter, relerr);
+				}
+
+				// Apply solution damping & check for change in valve status
+				hyd.RelaxFactor = 1.0;
+				valveChange = false;
+				if (hyd.DampLimit > 0.0) {
+					if (relerr <= hyd.DampLimit) {
+						hyd.RelaxFactor = 0.6;
+						valveChange = calc_and_set_prv_and_psv_status(pr);
+					}
+				}
+				else {
+					valveChange = calc_and_set_prv_and_psv_status(pr);
+				}
+
+				// Check for convergence
+				if (hasconverged(pr, relerr, hydbal)) {
+					// We have convergence - quit if we are into extra iterations
+					if (iter > hyd.MaxIter) break;
+
+					// Quit if no status changes occur
+					statChange = false;
+					if (valveChange)    statChange = true;
+					if (linkstatus(pr)) statChange = true;
+					if (pswitch(pr))    statChange = true;
+					if (!statChange)    break;
+
+					// We have a status change so continue the iterations
+					nextcheck = iter + hyd.CheckFreq;
+				}
+
+				// No convergence yet - see if its time for a periodic status check  on pumps, CV's, and pipes connected to tank
+				else if ((iter <= hyd.MaxCheck) && (iter == nextcheck)) {
+					linkstatus(pr);
+					nextcheck += hyd.CheckFreq;
+				}
+				iter++;
+			}
+
+			// Iterations ended - report any errors.
+			if (errcode > 0) {
+				writehyderr(pr, sm.Order[errcode]); // Ill-conditioned matrix error
+				errcode = 110;
+			}
+
+			// Store actual junction outflow in NodeDemand & full demand in DemandFlow
+			for (i = 1; i <= net.Njuncs; i++) {
 #if 1
+				fullDemand = hyd.NodeDemand[i];
+				hyd.NodeDemand[i] = hyd.DemandFlow[i] + hyd.EmitterFlow[i];
+				hyd.DemandFlow[i] = fullDemand;
+#else
+				#error We should not process this line, ever. 
+#endif
+			}
+
+			// Save the simulation data for this timestep            
+			SaveResultsForTimeStep(pr, simQuality);
+
+			// Save convergence info
+			hyd.RelativeError = relerr;
+			hyd.MaxHeadError = hydbal.maxheaderror;
+			hyd.MaxFlowChange = hydbal.maxflowchange;
+			hyd.Iterations = iter;
+			return errcode;
+		};
+		return hydsolve(a,b,c,d);
+)",
+#endif
+#if 0
 R"(
 	namespace TEST {
 		var Enum_Factory_1() {
@@ -19069,7 +19718,7 @@ R"(
 	}
 	return obj.to_string;
 )"
-#if 1
+#if 0
 , R"(
 	namespace GUI {		
 		class Inner1<T> {
@@ -19219,7 +19868,10 @@ R"(
 		auto x = x0 + d; // 275 ft			
 	}
 	return (datetime::Now() - t0)_ms
-)",R"(
+)"
+#endif 
+#if 0
+, R"(
 	string out;
 	for (x : [1,2,3,4,5,6,7,8]){
 		out = out.add_to_delim(to_string(x), ", ");
@@ -19371,39 +20023,28 @@ R"(
 )"
 #endif
 		}) {
-			GL::scope::impl::RootScope root;
-			root.perform_builtins();
+		    print(Script);
+
+			GL::scope::impl::RootScope root; {
+				root.perform_builtins();
+			}			
 			GL::Engine::ScriptParser::Parser parser(root);
-			auto parsed = parser.Parse(Script);
-
-
-			print(Script);
-			//print(" >> ");
-			//print(parsed.to_string("", root));
-
-			GL::Engine::eval_state evaluation_state;
-			evaluation_state.in_preeval = true;
-			parser.Eval(parsed, evaluation_state, root);
-			evaluation_state.in_preeval = false;
-			print(" >> ");
-			print(parsed.to_string("", root));
-
-			evaluation_state.throwing = GL::Engine::throwing::Nothing;
-			evaluation_state.to_return = nullptr;
+			auto compiled = parser.compile(Script, root);
+			print(" >> \n" + compiled.to_string("", root));
 
 			try {
-				auto returned = parser.Eval(parsed, evaluation_state, root);
-				//print(" >> ");
-				//print(parsed.to_string("", root));
-				print("returned: " + root.call<GL::string>("to_string", { returned }));
-				if (evaluation_state.throwing != GL::Engine::throwing::Nothing) {
-					print("thrown: " + root.call<GL::string>("to_string", { evaluation_state.to_return }));
+				GL::Engine::eval_state evaluation_state;
+				auto returned = parser.Eval(compiled, evaluation_state, root);
+				if (evaluation_state.throwing == GL::Engine::throwing::Nothing ) {
+					print("output: " + root.call<GL::string>("to_string", { returned }));
+				} else if (evaluation_state.throwing == GL::Engine::throwing::Return) {
+					print("returned: " + root.call<GL::string>("to_string", { evaluation_state.to_return }));
+				} else {
+					print("thrown w/i script: " + root.call<GL::string>("to_string", { evaluation_state.to_return }));
 				}
 			}
 			catch (std::exception& e) {
-				//print(" >> ");
-				//print(parsed.to_string("", root));
-				print(e.what());
+				print(std::string("thrown: ") + e.what());
 			}
 			print("\n\n");
 		}

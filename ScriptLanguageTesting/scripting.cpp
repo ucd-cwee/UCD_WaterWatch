@@ -2166,7 +2166,7 @@ namespace GL {
             }
 
             // void
-            if (0) {
+            if (1) {
                 this->add_function(GL::make_callable("to_string", 
                     [](GL::any::fast_any rhs) -> GL::string { return GL::string::empty_string(); },
                     GL::function_signature::Async | GL::function_signature::Constant, {}, { { "rhs", GL::type_of<void>() } }, GL::type_of<GL::string>()
