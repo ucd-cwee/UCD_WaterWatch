@@ -151,6 +151,242 @@ namespace GL {
             }     
             state_m &= ~function_state::Template; // unsets the template flag
         }
+        template<typename iter_type> int degrees_of_error_with_free_cast(iter_type iter, iter_type const& end) const {
+            int out = 0;
+            if constexpr (std::is_same_v<iter_type, GL::type*>) {
+                size_t i = 0;
+                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                    if (!iter->can_free_cast(argument_types_m[i])) {
+                        return std::numeric_limits<int>::max();
+                    }
+                    else {
+                        if (iter->is_const() != argument_types_m[i].is_const()) out += 1;
+                        if (iter->is_ref() != argument_types_m[i].is_ref()) out += 1;
+                        if (iter->is_temp() != argument_types_m[i].is_temp()) out += 1;
+                    }
+                }
+                for (; i < argument_defaults_m.size(); ++i) {
+                    if (argument_defaults_m[i].m_casted_type.is_void()) {
+                        return std::numeric_limits<int>::max();
+                    }
+                }
+                if (iter != end) return std::numeric_limits<int>::max();
+            }
+            else if constexpr (std::is_same_v<iter_type, GL::any::fast_any*>) {
+                size_t i = 0;
+                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                    if (!iter->can_free_cast(argument_types_m[i])) {
+                        return std::numeric_limits<int>::max();
+                    }
+                    else {
+                        if (iter->m_casted_type.is_const() != argument_types_m[i].is_const()) out += 1;
+                        if (iter->m_casted_type.is_ref() != argument_types_m[i].is_ref()) out += 1;
+                        if (iter->m_casted_type.is_temp() != argument_types_m[i].is_temp()) out += 1;
+                    }
+                }
+                for (; i < argument_defaults_m.size(); ++i) {
+                    if (argument_defaults_m[i].m_casted_type.is_void()) {
+                        return std::numeric_limits<int>::max();
+                    }
+                }
+                if (iter != end) return std::numeric_limits<int>::max();
+            }
+            else if constexpr (std::is_same_v<iter_type, GL::any*>) {
+                size_t i = 0;
+                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                    if (!iter->can_free_cast(argument_types_m[i])) {
+                        return std::numeric_limits<int>::max();
+                    }
+                    else {
+                        if (iter->m_casted_type.is_const() != argument_types_m[i].is_const()) out += 1;
+                        if (iter->m_casted_type.is_ref() != argument_types_m[i].is_ref()) out += 1;
+                        if (iter->m_casted_type.is_temp() != argument_types_m[i].is_temp()) out += 1;
+                    }
+                }
+                for (; i < argument_defaults_m.size(); ++i) {
+                    if (argument_defaults_m[i].m_casted_type.is_void()) {
+                        return std::numeric_limits<int>::max();
+                    }
+                }
+                if (iter != end) return std::numeric_limits<int>::max();
+            }
+            else if constexpr (std::is_same_v<iter_type::value_type, GL::type>) {
+                size_t i = 0;
+                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                    if (!iter->can_free_cast(argument_types_m[i])) {
+                        return std::numeric_limits<int>::max();
+                    }
+                    else {
+                        if (iter->is_const() != argument_types_m[i].is_const()) out += 1;
+                        if (iter->is_ref() != argument_types_m[i].is_ref()) out += 1;
+                        if (iter->is_temp() != argument_types_m[i].is_temp()) out += 1;
+                    }
+                }
+                for (; i < argument_defaults_m.size(); ++i) {
+                    if (argument_defaults_m[i].m_casted_type.is_void()) {
+                        return std::numeric_limits<int>::max();
+                    }
+                }
+                if (iter != end) return std::numeric_limits<int>::max();
+            }
+            else if constexpr (std::is_same_v<iter_type::value_type, GL::any::fast_any>) {
+                size_t i = 0;
+                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                    if (!iter->can_free_cast(argument_types_m[i])) {
+                        return std::numeric_limits<int>::max();
+                    }
+                    else {
+                        if (iter->m_casted_type.is_const() != argument_types_m[i].is_const()) out += 1;
+                        if (iter->m_casted_type.is_ref() != argument_types_m[i].is_ref()) out += 1;
+                        if (iter->m_casted_type.is_temp() != argument_types_m[i].is_temp()) out += 1;
+                    }
+                }
+                for (; i < argument_defaults_m.size(); ++i) {
+                    if (argument_defaults_m[i].m_casted_type.is_void()) {
+                        return std::numeric_limits<int>::max();
+                    }
+                }
+                if (iter != end) return std::numeric_limits<int>::max();
+            }
+            else if constexpr (std::is_same_v<iter_type::value_type, GL::any>) {
+                size_t i = 0;
+                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                    if (!iter->can_free_cast(argument_types_m[i])) {
+                        return std::numeric_limits<int>::max();
+                    }
+                    else {
+                        if (iter->m_casted_type.is_const() != argument_types_m[i].is_const()) out += 1;
+                        if (iter->m_casted_type.is_ref() != argument_types_m[i].is_ref()) out += 1;
+                        if (iter->m_casted_type.is_temp() != argument_types_m[i].is_temp()) out += 1;
+                    }
+                }
+                for (; i < argument_defaults_m.size(); ++i) {
+                    if (argument_defaults_m[i].m_casted_type.is_void()) {
+                        return std::numeric_limits<int>::max();
+                    }
+                }
+                if (iter != end) return std::numeric_limits<int>::max();
+            }
+            return out;
+        };
+        template<typename iter_type> int degrees_of_error_with_cast(iter_type iter, iter_type const& end) const {
+            int out = 0;
+            if constexpr (std::is_same_v<iter_type, GL::type*>) {
+                size_t i = 0;
+                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                    if (!iter->can_cast(argument_types_m[i])) {
+                        return std::numeric_limits<int>::max();
+                    }
+                    else {
+                        if (iter->is_const() != argument_types_m[i].is_const()) out += 1;
+                        if (iter->is_ref() != argument_types_m[i].is_ref()) out += 1;
+                        if (iter->is_temp() != argument_types_m[i].is_temp()) out += 1;
+                    }
+                }
+                for (; i < argument_defaults_m.size(); ++i) {
+                    if (argument_defaults_m[i].m_casted_type.is_void()) {
+                        return std::numeric_limits<int>::max();
+                    }
+                }
+                if (iter != end) return std::numeric_limits<int>::max();
+            }
+            else if constexpr (std::is_same_v<iter_type, GL::any::fast_any*>) {
+                size_t i = 0;
+                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                    if (!iter->can_cast(argument_types_m[i])) {
+                        return std::numeric_limits<int>::max();
+                    }
+                    else {
+                        if (iter->m_casted_type.is_const() != argument_types_m[i].is_const()) out += 1;
+                        if (iter->m_casted_type.is_ref() != argument_types_m[i].is_ref()) out += 1;
+                        if (iter->m_casted_type.is_temp() != argument_types_m[i].is_temp()) out += 1;
+                    }
+                }
+                for (; i < argument_defaults_m.size(); ++i) {
+                    if (argument_defaults_m[i].m_casted_type.is_void()) {
+                        return std::numeric_limits<int>::max();
+                    }
+                }
+                if (iter != end) return std::numeric_limits<int>::max();
+            }
+            else if constexpr (std::is_same_v<iter_type, GL::any*>) {
+                size_t i = 0;
+                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                    if (!iter->can_cast(argument_types_m[i])) {
+                        return std::numeric_limits<int>::max();
+                    }
+                    else {
+                        if (iter->m_casted_type.is_const() != argument_types_m[i].is_const()) out += 1;
+                        if (iter->m_casted_type.is_ref() != argument_types_m[i].is_ref()) out += 1;
+                        if (iter->m_casted_type.is_temp() != argument_types_m[i].is_temp()) out += 1;
+                    }
+                }
+                for (; i < argument_defaults_m.size(); ++i) {
+                    if (argument_defaults_m[i].m_casted_type.is_void()) {
+                        return std::numeric_limits<int>::max();
+                    }
+                }
+                if (iter != end) return std::numeric_limits<int>::max();
+            }
+            else if constexpr (std::is_same_v<iter_type::value_type, GL::type>) {
+                size_t i = 0;
+                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                    if (!iter->can_cast(argument_types_m[i])) {
+                        return std::numeric_limits<int>::max();
+                    }
+                    else {
+                        if (iter->is_const() != argument_types_m[i].is_const()) out += 1;
+                        if (iter->is_ref() != argument_types_m[i].is_ref()) out += 1;
+                        if (iter->is_temp() != argument_types_m[i].is_temp()) out += 1;
+                    }
+                }
+                for (; i < argument_defaults_m.size(); ++i) {
+                    if (argument_defaults_m[i].m_casted_type.is_void()) {
+                        return std::numeric_limits<int>::max();
+                    }
+                }
+                if (iter != end) return std::numeric_limits<int>::max();
+            }
+            else if constexpr (std::is_same_v<iter_type::value_type, GL::any::fast_any>) {
+                size_t i = 0;
+                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                    if (!iter->can_cast(argument_types_m[i])) {
+                        return std::numeric_limits<int>::max();
+                    }
+                    else {
+                        if (iter->m_casted_type.is_const() != argument_types_m[i].is_const()) out += 1;
+                        if (iter->m_casted_type.is_ref() != argument_types_m[i].is_ref()) out += 1;
+                        if (iter->m_casted_type.is_temp() != argument_types_m[i].is_temp()) out += 1;
+                    }
+                }
+                for (; i < argument_defaults_m.size(); ++i) {
+                    if (argument_defaults_m[i].m_casted_type.is_void()) {
+                        return std::numeric_limits<int>::max();
+                    }
+                }
+                if (iter != end) return std::numeric_limits<int>::max();
+            }
+            else if constexpr (std::is_same_v<iter_type::value_type, GL::any>) {
+                size_t i = 0;
+                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                    if (!iter->can_cast(argument_types_m[i])) {
+                        return std::numeric_limits<int>::max();
+                    }
+                    else {
+                        if (iter->m_casted_type.is_const() != argument_types_m[i].is_const()) out += 1;
+                        if (iter->m_casted_type.is_ref() != argument_types_m[i].is_ref()) out += 1;
+                        if (iter->m_casted_type.is_temp() != argument_types_m[i].is_temp()) out += 1;
+                    }
+                }
+                for (; i < argument_defaults_m.size(); ++i) {
+                    if (argument_defaults_m[i].m_casted_type.is_void()) {
+                        return std::numeric_limits<int>::max();
+                    }
+                }
+                if (iter != end) return std::numeric_limits<int>::max();
+            }
+            return out;
+        };
         template<typename iter_type> bool can_call_with_free_cast(iter_type iter, iter_type const& end) const {
 
             if constexpr (std::is_same_v<iter_type, GL::type*>) {

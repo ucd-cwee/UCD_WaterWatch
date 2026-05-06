@@ -18073,12 +18073,6 @@ namespace GL {
 								inputs[i] = evaluate(node.children[1].children[i], state, current_scope);
 								if (state.throwing != throwing::Nothing) return state.to_return;
 							}
-							if (node.children[1].children.size() == 3) {
-								print("Input type: " + inputs[0].m_casted_type.name());
-								if (inputs[0].m_casted_type.name() == "const MAP<meter,foot>&") {
-									evaluate(node.children[1].children[0], state, current_scope);
-								}								
-							}
 							state.to_return = current_scope.call_impl(function_name, &inputs[0], &inputs[0] + node.children[1].children.size());
 							return state.to_return;
 						}
@@ -19063,23 +19057,19 @@ R"(
 	class MAP<T0, T1> {
 		map<T0, T1> _impl;
 		size_t size(MAP<T0, T1> const& self) {
-			return size(_impl(self));
+			return self._impl.size;
 		};
 		void insert(MAP<T0, T1>& self, T0 const& key, T1 const& value) {
-			printf("insert type-check 1: " + self.type_name());
-			printf("insert type-check 2: " + _impl(self).type_name());
-			insert(_impl(self), key, value);
+			self._impl.insert(key, value);
 		};
 	};
 	MAP<meter, foot> obj;
-	while (size(obj) < 10ull){
-		printf("while type-check: " + obj.type_name());
-		insert(obj, meter(size(obj)), foot(inch(size(obj))));
-		printf("while: " + obj.to_string);
+	while (obj.size < 10ull){
+		obj.insert(obj.size, (obj.size)_in);
 	}
 	return obj.to_string;
 )"
-#if 0
+#if 1
 , R"(
 	namespace GUI {		
 		class Inner1<T> {
@@ -19388,8 +19378,8 @@ R"(
 
 
 			print(Script);
-			print(" >> ");
-			print(parsed.to_string("", root));
+			//print(" >> ");
+			//print(parsed.to_string("", root));
 
 			GL::Engine::eval_state evaluation_state;
 			evaluation_state.in_preeval = true;
@@ -19403,16 +19393,16 @@ R"(
 
 			try {
 				auto returned = parser.Eval(parsed, evaluation_state, root);
-				print(" >> ");
-				print(parsed.to_string("", root));
+				//print(" >> ");
+				//print(parsed.to_string("", root));
 				print("returned: " + root.call<GL::string>("to_string", { returned }));
 				if (evaluation_state.throwing != GL::Engine::throwing::Nothing) {
 					print("thrown: " + root.call<GL::string>("to_string", { evaluation_state.to_return }));
 				}
 			}
 			catch (std::exception& e) {
-				print(" >> ");
-				print(parsed.to_string("", root));
+				//print(" >> ");
+				//print(parsed.to_string("", root));
 				print(e.what());
 			}
 			print("\n\n");

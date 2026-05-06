@@ -372,11 +372,6 @@ namespace GL {
                             }
                         }
 
-                        GL::string temp1 = from.name();
-                        GL::string temp2 = to.name();
-                        if (temp1.find("MAP<meter,foot>") != GL::string::npos) {
-                            std::cout << "trying to convert from " << temp1 << " to " << temp2 << std::endl;
-                        }
                         if (auto f2 = f1->second.find(to), e2 = f1->second.end(); f2 != e2) {
                             // we have made (or tried to make) the converter for this before. 
                             if (auto f3 = f2->second.load_fast(); f3) {
