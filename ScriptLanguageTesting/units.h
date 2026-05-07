@@ -892,10 +892,12 @@ namespace GL {
         friend bool operator!=(value const& A, value const& V) noexcept {
             return !operator==(A, V);
         };
+        GL::string to_string() const {
+            auto pkg = packed;
+            return NumStr(static_cast<double>(pkg.m_bits.val)) + " " + abbreviation(pkg);
+        };
         friend std::ostream& operator<<(std::ostream& os, value const& obj) {
-            auto pkg = obj.packed;
-            GL::string out = NumStr(static_cast<double>(pkg.m_bits.val)) + " " + abbreviation(pkg);
-            os << out;
+            os << obj.to_string();
             return os;
         };
 
@@ -1123,10 +1125,7 @@ namespace GL {
 // std::to_string and std::hash and std::numeric_limits
 namespace std {
     _NODISCARD inline std::string to_string(GL::value const& _Val) { // convert number to string
-        std::string out;
-        std::ostringstream str(out);
-        str << _Val;
-        return out;
+        return _Val.to_string().to_string();
     };
     template <> struct hash<GL::value> {
         std::size_t operator()(const GL::value& k) const {
