@@ -3296,18 +3296,20 @@ namespace GL {
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                     }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "rhs", GL::is_template::type<0>("T0") | GL::type::Const | GL::type::Reference }, { "copy", GL::is_template::type<1>("T1") | GL::type::Reference }}));
-                BaseClass.add_function(GL::make_callable("insert", [](GL::any::fast_any lhs, GL::any::fast_any key, GL::any::fast_any obj) -> bool {
+                BaseClass.add_function(GL::make_callable("insert", [](GL::any::fast_any lhs, GL::any::fast_any key, GL::any::fast_any obj) -> void {
                     auto* impl_class = GetClass(lhs.m_casted_type);
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto& impl = (*implp)->cast<impl_t>();
                         auto hash = GL::scope::GetCurrentCaller()->GetRoot()->call<size_t>("to_hash", { key });
-                        auto wrapped_ref = impl.insert(hash, { key, obj });
-                        
-                        auto out = GL::scope::GetCurrentCaller()->call("pair<" + impl_class->template_types[0].second.name() + "," + impl_class->template_types[1].second.name() + ">", {});
-                        auto out_wrapped = out.cast< GL::dynamic_object& >();
-                        *out_wrapped["first"] = wrapped_ref.second.first;
-                        *out_wrapped["second"] = wrapped_ref.second.second;
-                        return out | GL::type::Reference;
+                        /*auto wrapped_ref = */impl.insert_fast(hash, { key, obj });
+
+                        //auto out = GL::scope::GetCurrentCaller()->call("pair<" + impl_class->template_types[0].second.name() + "," + impl_class->template_types[1].second.name() + ">", {});
+                        //auto out_wrapped = out.cast< GL::dynamic_object& >();
+                        //*out_wrapped["first"] = wrapped_ref.second.first;
+                        //*out_wrapped["second"] = wrapped_ref.second.second;
+                        //return out | GL::type::Reference;
+
+                        return;
                     }
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "key", GL::is_template::type<0>("T0") | GL::type::Const | GL::type::Reference }, { "obj", GL::is_template::type<1>("T1") | GL::type::Const | GL::type::Reference } }));

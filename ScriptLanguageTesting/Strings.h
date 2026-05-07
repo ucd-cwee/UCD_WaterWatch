@@ -584,9 +584,12 @@ namespace GL {
                 if ((search_pos + nested_end.length()) > this->length()) break;
                 if ((search_pos + delim.length()) > this->length()) break;
 
-                if (this->substr(search_pos, nested_start.length()).begins_with(nested_start)) depth++;
-                else if (this->substr(search_pos, nested_end.length()).begins_with(nested_end)) depth--;
-                else if ((this->substr(search_pos, delim.length()).begins_with(delim)) && (depth == 0)) {
+                if (this->c_str().substr(search_pos, nested_start.length()).find(nested_start.c_str()) == 0) depth++;
+                else if (this->c_str().substr(search_pos, nested_end.length()).find(nested_end.c_str()) == 0) depth--;
+                else if ((this->c_str().substr(search_pos, delim.length()).find(delim.c_str()) == 0) && (depth == 0)) {
+                //if (this->substr(search_pos, nested_start.length()).begins_with(nested_start)) depth++;
+                //else if (this->substr(search_pos, nested_end.length()).begins_with(nested_end)) depth--;
+                //else if ((this->substr(search_pos, delim.length()).begins_with(delim)) && (depth == 0)) {
                     len += ((int)delim.length() - 1);
                     search_pos += ((int)delim.length() - 1);
                     if (len > 1) {

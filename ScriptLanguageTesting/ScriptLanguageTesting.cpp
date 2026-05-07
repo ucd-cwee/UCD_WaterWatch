@@ -17501,14 +17501,13 @@ namespace GL {
 
 						auto& FunctionsNamespace = *current_scope.GetNamespace();
 						auto eval_node_function = [&FunctionsNamespace, this, this_node = node.children[3], return_type](std::vector<std::pair<GL::string, GL::any::fast_any>> const& inputs) -> GL::any::fast_any {
-							auto Node = this_node;
 							eval_state state;
 							auto this_scope = FunctionsNamespace.make_scope();
 							for (auto& input : inputs) this_scope.insert_object_here(input.first, input.second);
 
 							// print(Node.to_string("", *this_scope.GetRoot()));
 
-							GL::any::fast_any result = evaluate(Node, state, this_scope);
+							GL::any::fast_any result = evaluate(const_cast<AbstractSyntaxTreeNode&>(this_node), state, this_scope);
 							if (state.throwing != throwing::Nothing) {
 								if (state.throwing == throwing::Return) {
 									if (return_type != GL::type_of<void>()) {
@@ -17518,7 +17517,7 @@ namespace GL {
 										return state.to_return;
 									}
 								}
-								throw except::eval_error("Error inside of script function", Node.location);
+								throw except::eval_error("Error inside of script function", this_node.location);
 							}
 							if (return_type != GL::type_of<void>()) {
 								return this_scope.cast(result, return_type);
@@ -19443,7 +19442,7 @@ namespace GL {
 int main() {
 	if (1) {
 		for (GL::string& Script : std::vector<GL::string>{
-#if 1
+#if 0
 R"(
 	try{
 		constexpr cubic_foot_per_second QZERO = 1.e-6; // equiv. to 0 flow in CFS
@@ -19656,7 +19655,7 @@ R"(
 		return hydsolve(a,b,c,d);
 )",
 #endif
-#if 1
+#if 0
 R"(
 	namespace TEST {
 		var Enum_Factory_1() {
@@ -19894,6 +19893,21 @@ R"(
 		};
 	};
 	MAP<meter, foot> obj;
+	while (obj.size < 1'000'000){
+		obj.insert((int)obj.size, (obj.size)_in);
+	}
+	return obj.size();
+)", R"(
+	class MAP<T0, T1> {
+		map<T0, T1> _impl;
+		size_t size(MAP<T0, T1> const& self) {
+			return self._impl.size;
+		};
+		void insert(MAP<T0, T1>& self, T0 const& key, T1 const& value) {
+			self._impl.insert(key, value);
+		};
+	};
+	MAP<meter, foot> obj;
 	while (obj.size < 10ull){
 		obj.insert((int)obj.size, (obj.size)_in);
 	}
@@ -20051,7 +20065,7 @@ R"(
 	return (datetime::Now() - t0)_ms
 )"
 #endif 
-#if 1
+#if 0
 , R"(
 	string out;
 	for (x : [1,2,3,4,5,6,7,8]){
