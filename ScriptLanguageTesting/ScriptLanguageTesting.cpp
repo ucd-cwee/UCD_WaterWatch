@@ -8846,10 +8846,16 @@ namespace GL {
 				this->tag = GL::any::fast_any::instance(std::move(info));
 			};
 		};
+		struct PrefixInformation {
+			GL::fast_shared_ptr<GL::details::Proxy_Function_Base> preprocessed_function;
+			GL::Engine::Operators::Opers oper;
+		};
 		/* ++x */ class Prefix_Node final : public AbstractSyntaxTreeNode {
 		public:
 			Prefix_Node(GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children = {}) : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Prefix, t_ast_node_text, t_loc, t_children) {
-				this->tag = GL::any::fast_any::instance((GL::Engine::Operators::Opers)Engine::Operators::to_operator(t_ast_node_text.c_str()));
+				PrefixInformation info;
+				info.oper = Engine::Operators::to_operator(t_ast_node_text.c_str());
+				this->tag = GL::any::fast_any::instance(std::move(info));
 			};
 		};
 		struct PostfixInformation {
@@ -13332,8 +13338,20 @@ namespace GL {
 							}
 						}
 
-
-
+						// Prefix
+						if (node.identifier == Engine::AST_Node_Type::Prefix) {
+							if (node.output == GL::type_of<GL::undefined>()
+								&& node.children.size() == 1
+								&& node.children[0].output != GL::type_of<GL::undefined>()
+								&& !node.children[0].output.can_free_cast(GL::type_of<GL::var const&>())
+							) {
+								if (auto f = CurrentEngine().try_find_callable(node.text, { node.children[0].output })) {
+									node.output = f->m_signature.returns_m;
+									node.tag.cast< PrefixInformation >().preprocessed_function = std::move(f);
+									return true;
+								}
+							}
+						}
 
 						return false;
 					};
@@ -18570,11 +18588,12 @@ namespace GL {
 								return state.to_return;
 							}
 
-							//if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
-								//if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), { assignee, assigner })) {
-									//return state.to_return = current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), { assignee, assigner });
-								//}
-							//}
+							if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
+								std::vector<any::fast_any> inputs{ assignee, assigner };
+								if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size())) {
+									return state.to_return = current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size());
+								}
+							}
 							return state.to_return = current_scope.call(node.text, { assignee, assigner });
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
@@ -18582,16 +18601,17 @@ namespace GL {
 					case Engine::AST_Node_Type::BinaryFoldRight: {
 						if (node.children.size() == 1
 							&& node.constant
-							) {
+						) {
 							auto assignee = evaluate(node.children[0], state, current_scope);
 							if (state.throwing != throwing::Nothing) {
 								return state.to_return;
 							}
-							//if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
-								//if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), { assignee, node.constant | GL::type::Const | GL::type::Reference })) {
-									//return state.to_return = current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), { assignee, node.constant | GL::type::Const | GL::type::Reference });
-								//}
-							//}
+							if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
+								std::vector<any::fast_any> inputs{ assignee, node.constant | GL::type::Const | GL::type::Reference };
+								if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size())) {
+									return state.to_return = current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size());
+								}
+							}
 							return state.to_return = current_scope.call(node.text, { assignee, node.constant | GL::type::Const | GL::type::Reference });
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
@@ -18599,16 +18619,17 @@ namespace GL {
 					case Engine::AST_Node_Type::BinaryFoldLeft: {
 						if (node.children.size() == 1
 							&& node.constant
-							) {
+						) {
 							auto assignee = evaluate(node.children[0], state, current_scope);
 							if (state.throwing != throwing::Nothing) {
 								return state.to_return;
 							}
-							//if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
-								//if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), { node.constant | GL::type::Const | GL::type::Reference, assignee })) {
-									//return state.to_return = current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), { node.constant | GL::type::Const | GL::type::Reference, assignee });
-								//}
-							//}
+							if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
+								std::vector<any::fast_any> inputs{ node.constant | GL::type::Const | GL::type::Reference, assignee };
+								if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size())) {
+									return state.to_return = current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size());
+								}
+							}
 							return state.to_return = current_scope.call(node.text, { node.constant | GL::type::Const | GL::type::Reference, assignee });
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
@@ -18655,11 +18676,11 @@ namespace GL {
 								if (state.throwing != throwing::Nothing) return state.to_return;
 							}
 
-							//if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
-								//if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + node.children[1].children.size())) {
-									//return state.to_return = current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + node.children[1].children.size());
-								//}
-							//}
+							if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
+								if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + node.children[1].children.size())) {
+									return state.to_return = current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + node.children[1].children.size());
+								}
+							}
 							return state.to_return = current_scope.call_impl(function_name, &inputs[0], &inputs[0] + node.children[1].children.size());
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
@@ -18684,11 +18705,11 @@ namespace GL {
 								if (state.throwing != throwing::Nothing) return state.to_return;
 							}
 
-							//if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
-								//if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + (node.children[1].children[1].children.size() + 1))) {
-									//return state.to_return = current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + (node.children[1].children[1].children.size() + 1));
-								//}
-							//}
+							if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
+								if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + (node.children[1].children[1].children.size() + 1))) {
+									return state.to_return = current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + (node.children[1].children[1].children.size() + 1));
+								}
+							}
 							return state.to_return = current_scope.call_impl(function_name, &inputs[0], &inputs[0] + (node.children[1].children[1].children.size() + 1));
 						}
 						if (node.children.size() == 2
@@ -18713,14 +18734,11 @@ namespace GL {
 							auto to_cast = evaluate(node.children[1], state, current_scope);
 							if (state.throwing != throwing::Nothing) return state.to_return;
 
-							//if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
-								//if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), { to_cast })) {
-								    //return state.to_return = current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), { to_cast });
-								//}
-							//}
-
-
-
+							if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
+								if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), to_cast)) {
+								    return state.to_return = current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), to_cast);
+								}
+							}
 
 							auto type = current_scope.DetermineType(node.children[0].text);
 							if (type == GL::type_of<GL::undefined>()) throw except::eval_error("Type-cast was unable to determine the requested type: " + node.children[0].text, node.location);
@@ -18914,28 +18932,30 @@ namespace GL {
 					case Engine::AST_Node_Type::Prefix: {
 						if (node.children.size() == 1) {
 							auto source = evaluate(node.children[0], state, current_scope);
-							switch (node.tag.cast< GL::Engine::Operators::Opers>()) {
+
+							if (node.tag.can_cast(GL::type_of<PrefixInformation>()) && node.tag.cast<PrefixInformation>().preprocessed_function) {
+								if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<PrefixInformation>().preprocessed_function.get(), source)) {
+									return state.to_return = current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<PrefixInformation>().preprocessed_function.get(), source);
+								}
+							}
+
+							switch (node.tag.cast< PrefixInformation >().oper) {
 							case GL::Engine::Operators::Opers::pre_increment: {
-								current_scope.call("++", { source });
-								return state.to_return = source;
+								return state.to_return = current_scope.call("++", { source });
 							}
 							case GL::Engine::Operators::Opers::pre_decrement: {
-								current_scope.call("--", { source });
-								return state.to_return = source;
+								return state.to_return = current_scope.call("--", { source });
 							}
 							case GL::Engine::Operators::Opers::unary_minus: {
-								current_scope.call("-", { source });
-								return state.to_return = source;
+								return state.to_return = current_scope.call("-", { source });
 							}
 							case GL::Engine::Operators::Opers::unary_plus:
 							case GL::Engine::Operators::Opers::sum: {
-								current_scope.call("+", { source });
-								return state.to_return = source;
+								return state.to_return = current_scope.call("+", { source });
 							}
 							default:
-								break;
+								return state.to_return = current_scope.call(node.text, { source });
 							}
-
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
@@ -18945,8 +18965,8 @@ namespace GL {
 								for ((void)evaluate(node.children[0], state, new_scope); new_scope.cast<bool>(evaluate(node.children[1], state, new_scope)); (void)evaluate(node.children[2], state, new_scope)) {
 									if (state.throwing != throwing::Nothing) return state.to_return;
 
-									auto new_scope2 = new_scope.make_scope(); {
-										(void)evaluate(node.children[3], state, new_scope2);
+									//auto new_scope2 = new_scope.make_scope(); {
+										(void)evaluate(node.children[3], state, new_scope);
 										if (state.throwing == throwing::Continue) {
 											state.throwing = throwing::Nothing;
 											continue;
@@ -18956,7 +18976,7 @@ namespace GL {
 											break;
 										}
 										if (state.throwing != throwing::Nothing) return state.to_return;
-									}
+									//}
 								}
 							}
 							return state.to_return = nullptr;
@@ -19440,7 +19460,7 @@ namespace GL {
 
 
 int main() {
-	if (1) {
+	while (1) {
 		for (GL::string& Script : std::vector<GL::string>{
 #if 0
 R"(
@@ -19883,6 +19903,22 @@ R"(
 )", 
 #endif
 R"(
+	auto t0 = datetime::Now();
+	for (auto i = 0; i < 1'000'000; ++i) {
+		constexpr auto x0 = 100.0_ft; // 100 ft
+		constexpr auto v0 = 10_ft / 1_s; // 10 fps
+		constexpr auto a0 = v0 / 1_s; // 10 fps_sq
+		constexpr auto t = 5_s; // 5 s
+		constexpr auto d = v0 * t + t.pow(2) * a0 * 0.5; // 175 ft
+		constexpr auto x = x0 + d; // 275 ft		
+#if x != 275_ft
+	#error Constexpr resulted in the wrong answer
+#endif
+	}
+	return (datetime::Now() - t0)_ms
+)"
+#if 0
+, R"(
 	class MAP<T0, T1> {
 		map<T0, T1> _impl;
 		size_t size(MAP<T0, T1> const& self) {
@@ -19913,7 +19949,8 @@ R"(
 	}
 	return obj.to_string;
 )"
-#if 1
+#endif
+#if 0
 , R"(
 	namespace GUI {		
 		class Inner1<T> {
