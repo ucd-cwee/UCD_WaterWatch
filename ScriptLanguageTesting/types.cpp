@@ -247,7 +247,10 @@ namespace GL {
     };
 
     bool type::match_base_hash(type const& to_match) const {
-        return get_base(*this).match_base_hash(to_match.get_base_hash());
+        if (this->get_base_hash() == to_match.get_base_hash())
+            return true;
+        else 
+            return get_base(*this).match_base_hash(to_match.get_base_hash());
     };
     size_t type::size() const {
         return get_base(*this).T_size;

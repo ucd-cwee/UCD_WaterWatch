@@ -1058,63 +1058,151 @@ namespace GL {
 
             // "std::wrapper<std::string>::npos" -> ["std", "wrapper<std::string>", "npos"]
             const Breadcrumb* current_scope = &this->breadcrumb_m;
-            Breadcrumb* closest_scope;
-            bool accumulating = false;
-            GL::string accumulated;
-            (void)PossiblyScopedName.replace(" ", GL::string::empty_string()).with_split_nested(GL::string::namespace_colons(), "<", ">", [&](GL::string const& this_split, bool is_final) -> bool {
-                if (accumulating) {
-                    accumulated = accumulated + this_split;
-                    return false;
-                }
+            bool do_nested_search = false;
+            bool replace_spaces = false;
+            bool has_diamonds = false;
+            if ((PossiblyScopedName.find("<") != GL::string::npos) && (PossiblyScopedName.find(">") != GL::string::npos)) {
+                has_diamonds = true;
+                do_nested_search = true;
+            }
+            if (PossiblyScopedName.find(" ") != GL::string::npos) {
+                replace_spaces = true;
+                do_nested_search = true;
+            }
+            if (!do_nested_search 
+                && PossiblyScopedName.find("::") != GL::string::npos) {
+                do_nested_search = true;
+            }
+            if (do_nested_search) {
+                GL::string accumulated;
+                Breadcrumb* closest_scope;
+                bool accumulating = false;
+                if (replace_spaces) {
+                    (void)PossiblyScopedName.replace(" ", GL::string::empty_string()).with_split_nested(GL::string::namespace_colons(), "<", ">", [&](GL::string const& this_split, bool is_final) -> bool {
+                        if (accumulating) {
+                            accumulated = accumulated + this_split;
+                            return false;
+                        }
 
-                if (!is_final) {
-                    if (auto* found_scope = current_scope->this_m.scope->find_namespace(this_split, closest_scope); found_scope) {
-                        current_scope = found_scope;
-                    }
-                    else {
-                        // couldn't find this scope... see if we can "instance" it. 
-                        if (this_split.find("<") != GL::string::npos) {
-                            if (auto new_type = current_scope->this_m.scope->DetermineType(this_split); new_type != GL::type_of<GL::undefined>()) {
-                                if (auto* BC = dynamic_cast<RootScope*>(current_scope->root_m->this_m.scope)->try_find_class(new_type); BC) {
-                                    current_scope = BC;
+                        if (!is_final) {
+                            if (auto* found_scope = current_scope->this_m.scope->find_namespace(this_split, closest_scope); found_scope) {
+                                current_scope = found_scope;
+                            }
+                            else {
+                                // couldn't find this scope... see if we can "instance" it. 
+                                if (this_split.find("<") != GL::string::npos) {
+                                    if (auto new_type = current_scope->this_m.scope->DetermineType(this_split); new_type != GL::type_of<GL::undefined>()) {
+                                        if (auto* BC = dynamic_cast<RootScope*>(current_scope->root_m->this_m.scope)->try_find_class(new_type); BC) {
+                                            current_scope = BC;
+                                        }
+                                        else {
+                                            // cannot continue the search?
+                                            accumulating = true;
+                                            accumulated = accumulated + this_split;
+                                            return false;
+                                        }
+                                    }
+                                    else {
+                                        // cannot continue the search?
+                                        accumulating = true;
+                                        accumulated = accumulated + this_split;
+                                        return false;
+                                    }
                                 }
                                 else {
-                                    // cannot continue the search?
+                                    // cannot continue the search?        
                                     accumulating = true;
                                     accumulated = accumulated + this_split;
                                     return false;
                                 }
                             }
-                            else {
-                                // cannot continue the search?
-                                accumulating = true;
-                                accumulated = accumulated + this_split;
-                                return false;
-                            }
                         }
                         else {
-                            // cannot continue the search?        
-                            accumulating = true;
+                            accumulated = this_split;
+                            return true;
+                        }
+                        return false;
+                        });
+                }
+                else {
+                    (void)PossiblyScopedName.with_split_nested(GL::string::namespace_colons(), "<", ">", [&](GL::string const& this_split, bool is_final) -> bool {
+                        if (accumulating) {
                             accumulated = accumulated + this_split;
                             return false;
                         }
+
+                        if (!is_final) {
+                            if (auto* found_scope = current_scope->this_m.scope->find_namespace(this_split, closest_scope); found_scope) {
+                                current_scope = found_scope;
+                            }
+                            else {
+                                // couldn't find this scope... see if we can "instance" it. 
+                                if (this_split.find("<") != GL::string::npos) {
+                                    if (auto new_type = current_scope->this_m.scope->DetermineType(this_split); new_type != GL::type_of<GL::undefined>()) {
+                                        if (auto* BC = dynamic_cast<RootScope*>(current_scope->root_m->this_m.scope)->try_find_class(new_type); BC) {
+                                            current_scope = BC;
+                                        }
+                                        else {
+                                            // cannot continue the search?
+                                            accumulating = true;
+                                            accumulated = accumulated + this_split;
+                                            return false;
+                                        }
+                                    }
+                                    else {
+                                        // cannot continue the search?
+                                        accumulating = true;
+                                        accumulated = accumulated + this_split;
+                                        return false;
+                                    }
+                                }
+                                else {
+                                    // cannot continue the search?        
+                                    accumulating = true;
+                                    accumulated = accumulated + this_split;
+                                    return false;
+                                }
+                            }
+                        }
+                        else {
+                            accumulated = this_split;
+                            return true;
+                        }
+                        return false;
+                        });
+                }
+                // try and offer name correction for typenames
+                if (has_diamonds) {
+                    if (auto new_type = current_scope->this_m.scope->DetermineType(accumulated); new_type != GL::type_of<GL::undefined>()) {
+                        if (auto* BC = dynamic_cast<RootScope*>(current_scope->root_m->this_m.scope)->try_find_class(new_type); BC) {
+                            return std::pair<GL::string, const Breadcrumb*>{ BC->this_m.scope_name, current_scope };
+                        }
                     }
+                }
+                return std::pair<GL::string, const Breadcrumb*>{ accumulated, current_scope };
+            }
+            else {
+                if (replace_spaces) {
+                    if (has_diamonds) {
+                        if (auto new_type = current_scope->this_m.scope->DetermineType(PossiblyScopedName.replace(" ", GL::string::empty_string())); new_type != GL::type_of<GL::undefined>()) {
+                            if (auto* BC = dynamic_cast<RootScope*>(current_scope->root_m->this_m.scope)->try_find_class(new_type); BC) {
+                                return std::pair<GL::string, const Breadcrumb*>{ BC->this_m.scope_name, current_scope };
+                            }
+                        }
+                    }
+                    return std::pair<GL::string, const Breadcrumb*>{ PossiblyScopedName.replace(" ", GL::string::empty_string()), current_scope };
                 }
                 else {
-                    accumulated = this_split;
-                    return true;
-                }
-                return false;
-                });
-            // try and offer name correction for typenames
-            if (accumulated.find("<") != GL::string::npos) {
-                if (auto new_type = current_scope->this_m.scope->DetermineType(accumulated); new_type != GL::type_of<GL::undefined>()) {
-                    if (auto* BC = dynamic_cast<RootScope*>(current_scope->root_m->this_m.scope)->try_find_class(new_type); BC) {
-                        accumulated = BC->this_m.scope_name; // name correction was successful
+                    if (has_diamonds) {
+                        if (auto new_type = current_scope->this_m.scope->DetermineType(PossiblyScopedName); new_type != GL::type_of<GL::undefined>()) {
+                            if (auto* BC = dynamic_cast<RootScope*>(current_scope->root_m->this_m.scope)->try_find_class(new_type); BC) {
+                                return std::pair<GL::string, const Breadcrumb*>{ BC->this_m.scope_name, current_scope };
+                            }
+                        }
                     }
+                    return std::pair<GL::string, const Breadcrumb*>{ PossiblyScopedName, current_scope };
                 }
             }
-            return std::pair<GL::string, const Breadcrumb*>{ accumulated, current_scope };
         };
 
         size_t impl::BasicScope::get_unique_index() const {

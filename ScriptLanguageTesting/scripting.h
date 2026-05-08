@@ -286,8 +286,9 @@ namespace GL {
                     static GL::Proxy_Function temp{ nullptr };
                     for (auto& funcs_by_name : functions) {
                         if (*funcs_by_name.second) {
-                            GL::string const& name = *funcs_by_name.first;                                
-                            for (auto& funcs : *funcs_by_name.second->lock_shared()) {
+                            GL::string const& name = *funcs_by_name.first;  
+                            auto shared_locked = funcs_by_name.second->lock_shared();
+                            for (auto& funcs : *shared_locked) {
                                 GL::Proxy_Function const& func = funcs.second;
                                 if (to_do(func)) {
                                     return func;
@@ -602,7 +603,7 @@ namespace GL {
                         }
                         else {
                             params[pos] = const_cast<any::fast_any*>(&*begin);
-                            params[pos]->m_casted_type |= (func->m_signature.argument_types_m[pos] - GL::type::CppType - GL::type::TemplateType).get_qualifiers();
+                            params[pos]->m_casted_type |= (func->m_signature.argument_types_m[pos] - (GL::type::CppType | GL::type::TemplateType)).get_qualifiers();
                         }
                     }
                     GL::any::fast_any out{ func->operator()(&params[0], pos) };
@@ -1256,12 +1257,20 @@ namespace GL {
                 GL::any::fast_any call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params = {}) const;
                 // casts to the requested c++ type.
                 template <typename T> T cast(GL::any::fast_any const& got) const {
-                    if (!got.can_cast(GL::type_of<T>())) {
-                        if (auto converter = this->GetRoot()->get_converters().try_get_converter(got.m_casted_type, GL::type_of<std::decay_t<T>>())) {
+                    if constexpr (std::is_reference_v<T>) {
+                        return got.cast<T>();
+                    }
+                    else {
+                        if (T* out = got.cast<T*>()) {
+                            return *out;
+                        }
+                        else if (auto converter = this->GetRoot()->get_converters().try_get_converter(got.m_casted_type, GL::type_of<std::decay_t<T>>())) {
                             return converter->operator()(const_cast<GL::any::fast_any&>(got)).cast<T>();
                         }
+                        else {
+                            return got.cast<T>();
+                        }
                     }
-                    return got.cast<T>();
                 };
                 // casts to the requested c++ or scripting type.
                 GL::any::fast_any cast(GL::any::fast_any const& from, GL::type const& to) const {

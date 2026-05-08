@@ -177,8 +177,8 @@ namespace GL {
             return 0 == ((hash & impl::cached_type::MAGIC_MASK1) & ~((size_t)CppType << 59ull));
         };
         bool is_void() const noexcept {
-            thread_local size_t const h{ void_hash_code() };
-            return get_base_hash() == h;
+            // thread_local size_t const h{ void_hash_code() };
+            return get_base_hash() == void_hash_code();
         };
         bool is_template() const noexcept {
             return ((hash & ((size_t)TemplateType << 59ull)) > 0);
@@ -241,7 +241,7 @@ namespace GL {
 
     private:
         // Returns true if the types are similar enough to be casted for free (0 cost)
-        __declspec(noinline) static bool can_free_cast(type const& from, type const& to, bool allow_polymorphic = true) {
+        static bool can_free_cast(type const& from, type const& to, bool allow_polymorphic = true) {
             if (from.hash == to.hash) return true;
 
             if (from.get_base_hash() == to.get_base_hash()) {

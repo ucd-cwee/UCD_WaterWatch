@@ -8432,10 +8432,10 @@ namespace GL {
 		};
 		class AbstractSyntaxTreeNode {
 		public:
-			AbstractSyntaxTreeNode(Engine::AST_Node_Type id) : identifier{ id } {};
-			AbstractSyntaxTreeNode(Engine::AST_Node_Type id, GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children) : text(t_ast_node_text.to_string()), location(t_loc), identifier{ id }, children(t_children) {};
+			AbstractSyntaxTreeNode(Engine::AST_Node_Type id) : identifier{ id }, runtime(0) {};
+			AbstractSyntaxTreeNode(Engine::AST_Node_Type id, GL::string const& t_ast_node_text, Engine::Parse_Location const& t_loc, std::vector<AbstractSyntaxTreeNode> const& t_children) : text(t_ast_node_text.to_string()), location(t_loc), identifier{ id }, children(t_children), runtime(0) {};
 			AbstractSyntaxTreeNode() : AbstractSyntaxTreeNode(Engine::AST_Node_Type::Noop) {};
-			AbstractSyntaxTreeNode(AbstractSyntaxTreeNode const& rhs) : identifier(rhs.identifier), text(rhs.text), location(rhs.location), constant(rhs.constant), children(), output(rhs.output), tag(rhs.tag) {
+			AbstractSyntaxTreeNode(AbstractSyntaxTreeNode const& rhs) : identifier(rhs.identifier), text(rhs.text), location(rhs.location), constant(rhs.constant), children(), output(rhs.output), tag(rhs.tag), runtime(0) {
 				if (rhs.children.size() > 0) children = rhs.children;
 				// children.insert(children.end(), rhs.children.begin(), rhs.children.end());
 			};
@@ -8479,12 +8479,12 @@ namespace GL {
 				output = GL::type_of<GL::undefined>();
 			GL::any::fast_any
 				tag; // custom data, unique to the node type
-			GL::millisecond
-				runtime;
+			long long // GL::millisecond
+				runtime; // milliseconds
 			
-			GL::millisecond actual_runtime() const {
-				GL::millisecond out = runtime;
-				if (out == 0.0f) return out;
+			GL::millisecond actual_runtime() const {				
+				GL::millisecond out = (float)runtime;
+				if (out == 0) return out;
 
 				//for (auto& child : this->children)
 				//	out -= child.runtime;
@@ -17938,8 +17938,9 @@ namespace GL {
 				
 				// preevaluate means to only perform the Class, Namespace, Enums, FunctionDecl, 
 				GL::any::fast_any evaluate(AbstractSyntaxTreeNode& node, eval_state& state, GL::scope::impl::BasicScope& current_scope, bool in_class = false) {
-					long long start_time = GL::clock::ms();
-					defer(node.runtime += GL::millisecond((float)(long long)(GL::clock::ms() - start_time)));
+					long long start_time = GL::util::get_current_epoch();
+					defer(InterlockedAdd64(reinterpret_cast<volatile long long*>(&node.runtime), (GL::util::get_current_epoch() - start_time)));
+					// defer(node.runtime += GL::millisecond((float)(long long)(GL::clock::ms() - start_time)));
 
 					switch (node.identifier) {
 					case Engine::AST_Node_Type::PrevEvaluated: return nullptr;
@@ -18232,7 +18233,7 @@ namespace GL {
 								}
 							}
 						}
-						return state.to_return = evaluate(node.children.back(), state, new_scope);
+						return evaluate(node.children.back(), state, new_scope);
 					}
 					case Engine::AST_Node_Type::Scopeless_Block: {
 						for (size_t i = 0; i < (node.children.size() - 1); ++i) {
@@ -18264,17 +18265,17 @@ namespace GL {
 								}
 							}
 						}
-						return state.to_return = evaluate(node.children.back(), state, current_scope);
+						return evaluate(node.children.back(), state, current_scope);
 					}
 					case Engine::AST_Node_Type::Constant: {
-						return state.to_return = node.constant | GL::type::Const | GL::type::Reference;
+						return node.constant | (GL::type::Const | GL::type::Reference);
 					}
 					case Engine::AST_Node_Type::Id: { // x
 						if (node.constant) {
-							return state.to_return = node.constant | GL::type::Const | GL::type::Reference;
+							return node.constant | (GL::type::Const | GL::type::Reference);
 						}
 						else {
-							return state.to_return = current_scope.find_object(node.text);
+							return current_scope.find_object(node.text);
 						}
 					}
 					case Engine::AST_Node_Type::Var_Decl: {
@@ -18282,7 +18283,7 @@ namespace GL {
 							&& node.children[0].identifier == Engine::AST_Node_Type::Id
 							) {
 							current_scope.emplace_object_here(node.children[1].children[0].text, GL::var());
-							return state.to_return = nullptr;
+							return nullptr;
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
@@ -18294,7 +18295,7 @@ namespace GL {
 									// Constexpr value.
 									// this_class->add_member_object(node.children[1].children[0].text, (node.constant - GL::type::Const - GL::type::Reference).m_casted_type, node.constant | GL::type::Const | GL::type::Reference);
 									current_scope.emplace_object_here(node.children[1].children[0].text, node.constant | GL::type::Const | GL::type::Reference);
-									return state.to_return = nullptr;
+									return nullptr;
 								}
 
 								// auto x = 10;
@@ -18310,7 +18311,7 @@ namespace GL {
 										to_copy.m_casted_type - GL::type::Const - GL::type::Reference,
 										to_copy
 									);
-									return state.to_return = nullptr;
+									return nullptr;
 								}
 
 								// CustomType x;
@@ -18324,7 +18325,7 @@ namespace GL {
 									this_class->add_member_object(node.children[1].children[0].text,
 										this_t
 									);
-									return state.to_return = nullptr;
+									return nullptr;
 								}
 
 								// auto x = int();
@@ -18339,7 +18340,7 @@ namespace GL {
 										to_add.m_casted_type - GL::type::Const - GL::type::Reference,
 										to_add
 									);
-									return state.to_return = nullptr;
+									return nullptr;
 								}
 
 								// int x = 10.0f;
@@ -18365,7 +18366,7 @@ namespace GL {
 									else {
 										throw except::eval_error("Unable to copy variable to new object", node.location);
 									}
-									return state.to_return = nullptr;
+									return nullptr;
 								}
 
 								// CustomType x = 10.0f;
@@ -18382,7 +18383,7 @@ namespace GL {
 										this_t,
 										to_assign
 									);
-									return state.to_return = nullptr;
+									return nullptr;
 								}
 
 								// SOMETHING x = 10.0f;
@@ -18413,7 +18414,7 @@ namespace GL {
 											copied
 										);
 									}
-									return state.to_return = nullptr;
+									return nullptr;
 								}
 							}
 						}
@@ -18422,7 +18423,7 @@ namespace GL {
 							if (node.constant) {
 								// Constexpr value.
 								current_scope.emplace_object_here(node.children[1].children[0].text, node.constant | GL::type::Const | GL::type::Reference);
-								return state.to_return = nullptr;
+								return nullptr;
 							}
 
 							// auto x = 10;
@@ -18440,7 +18441,7 @@ namespace GL {
 								else {
 									throw except::eval_error("Unable to copy variable to new object", node.location);
 								}
-								return state.to_return = nullptr;
+								return nullptr;
 							}
 
 							// CustomType x;
@@ -18459,7 +18460,7 @@ namespace GL {
 									auto to_add = current_scope.call(node.children[0].text, {});
 									current_scope.emplace_object_here(node.children[1].children[0].text, to_add);
 								}
-								return state.to_return = nullptr;
+								return nullptr;
 							}
 
 							// auto x = int();
@@ -18474,7 +18475,7 @@ namespace GL {
 									return state.to_return;
 								}
 								current_scope.emplace_object_here(node.children[1].children[0].text, to_add);
-								return state.to_return = nullptr;
+								return nullptr;
 							}
 
 							// int x = 10.0f;
@@ -18501,7 +18502,7 @@ namespace GL {
 								else {
 									throw except::eval_error("Unable to copy variable to new object", node.location);
 								}
-								return state.to_return = nullptr;
+								return nullptr;
 							}
 
 							// CustomType x = 10.0f;
@@ -18522,7 +18523,7 @@ namespace GL {
 									auto to_copy = current_scope.call(node.children[0].text, { to_assign });
 									current_scope.emplace_object_here(node.children[1].children[0].text, to_copy);
 								}
-								return state.to_return = nullptr;
+								return nullptr;
 							}
 
 							// SOMETHING x = 10.0f;
@@ -18548,7 +18549,7 @@ namespace GL {
 									current_scope.call("=", { copied, to_assign });
 									current_scope.emplace_object_here(node.children[1].children[0].text, copied);
 								}
-								return state.to_return = nullptr;
+								return nullptr;
 							}
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
@@ -18570,11 +18571,11 @@ namespace GL {
 					}
 					case Engine::AST_Node_Type::Break: {
 						state.throwing = throwing::Break;
-						return state.to_return = nullptr;
+						return nullptr;
 					}
 					case Engine::AST_Node_Type::Continue: {
 						state.throwing = throwing::Continue;
-						return state.to_return = nullptr;
+						return nullptr;
 					}
 					case Engine::AST_Node_Type::Binary:
 					case Engine::AST_Node_Type::Equation: {
@@ -18590,11 +18591,11 @@ namespace GL {
 
 							if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
 								std::vector<any::fast_any> inputs{ assignee, assigner };
-								if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size())) {
-									return state.to_return = current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size());
-								}
+								//if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size())) {
+									return current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size());
+								//}
 							}
-							return state.to_return = current_scope.call(node.text, { assignee, assigner });
+							return current_scope.call(node.text, { assignee, assigner });
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
@@ -18602,17 +18603,18 @@ namespace GL {
 						if (node.children.size() == 1
 							&& node.constant
 						) {
-							auto assignee = evaluate(node.children[0], state, current_scope);
-							if (state.throwing != throwing::Nothing) {
-								return state.to_return;
+							std::array< any::fast_any, 2> inputs{
+								evaluate(node.children[0], state, current_scope),
+								node.constant | (GL::type::Const | GL::type::Reference)
+							};
+							if (state.throwing != throwing::Nothing) return state.to_return;
+
+							if (auto& f = node.tag.cast<FunctionCallInformation>().preprocessed_function; f) {
+								//if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size())) {
+									return current_scope.GetRoot()->get_converters().call_with_conversions(f.get(), &inputs[0], &inputs[0] + inputs.size());
+								//}
 							}
-							if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
-								std::vector<any::fast_any> inputs{ assignee, node.constant | GL::type::Const | GL::type::Reference };
-								if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size())) {
-									return state.to_return = current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size());
-								}
-							}
-							return state.to_return = current_scope.call(node.text, { assignee, node.constant | GL::type::Const | GL::type::Reference });
+							return current_scope.call_impl(node.text, &inputs[0], &inputs[0] + inputs.size());
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
@@ -18626,11 +18628,11 @@ namespace GL {
 							}
 							if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
 								std::vector<any::fast_any> inputs{ node.constant | GL::type::Const | GL::type::Reference, assignee };
-								if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size())) {
-									return state.to_return = current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size());
-								}
+								//if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size())) {
+									return current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size());
+								//}
 							}
-							return state.to_return = current_scope.call(node.text, { node.constant | GL::type::Const | GL::type::Reference, assignee });
+							return current_scope.call(node.text, { node.constant | GL::type::Const | GL::type::Reference, assignee });
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
@@ -18644,7 +18646,7 @@ namespace GL {
 							if (state.throwing != throwing::Nothing) {
 								return state.to_return;
 							}
-							return state.to_return = current_scope.call("&&", { assignee, assigner });
+							return current_scope.call("&&", { assignee, assigner });
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
@@ -18656,7 +18658,7 @@ namespace GL {
 							auto assigner = evaluate(node.children[1], state, current_scope);
 							if (state.throwing != throwing::Nothing) return state.to_return;
 							
-							return state.to_return = current_scope.call("||", { assignee, assigner });
+							return current_scope.call("||", { assignee, assigner });
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
@@ -18668,20 +18670,19 @@ namespace GL {
 						) {
 							auto function_name = node.children[0].text;
 							std::array<GL::any::fast_any, 16> inputs;
-							if (node.children[1].children.size() >= 17) {
-								throw except::eval_error("Too many parameters have been provided. Limit the number of parameters to 16 for a function call", node.location);
-							}
+							if (node.children[1].children.size() >= 17) throw except::eval_error("Too many parameters have been provided. Limit the number of parameters to 16 for a function call", node.location);
+							
 							for (int i = 0; i < node.children[1].children.size(); ++i) {
 								inputs[i] = evaluate(node.children[1].children[i], state, current_scope);
 								if (state.throwing != throwing::Nothing) return state.to_return;
 							}
 
-							if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
-								if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + node.children[1].children.size())) {
-									return state.to_return = current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + node.children[1].children.size());
-								}
+							if (auto& f = node.tag.cast<FunctionCallInformation>().preprocessed_function; f) {
+								//if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + node.children[1].children.size())) {
+									return current_scope.GetRoot()->get_converters().call_with_conversions(f.get(), &inputs[0], &inputs[0] + node.children[1].children.size());
+								//}
 							}
-							return state.to_return = current_scope.call_impl(function_name, &inputs[0], &inputs[0] + node.children[1].children.size());
+							return current_scope.call_impl(function_name, &inputs[0], &inputs[0] + node.children[1].children.size());
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
@@ -18706,11 +18707,11 @@ namespace GL {
 							}
 
 							if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
-								if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + (node.children[1].children[1].children.size() + 1))) {
-									return state.to_return = current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + (node.children[1].children[1].children.size() + 1));
-								}
+								//if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + (node.children[1].children[1].children.size() + 1))) {
+									return current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + (node.children[1].children[1].children.size() + 1));
+								//}
 							}
-							return state.to_return = current_scope.call_impl(function_name, &inputs[0], &inputs[0] + (node.children[1].children[1].children.size() + 1));
+							return current_scope.call_impl(function_name, &inputs[0], &inputs[0] + (node.children[1].children[1].children.size() + 1));
 						}
 						if (node.children.size() == 2
 							&& node.children[1].identifier == Engine::AST_Node_Type::Id
@@ -18723,7 +18724,7 @@ namespace GL {
 									return state.to_return;
 								}
 							}
-							return state.to_return = current_scope.call_impl(function_name, &inputs, &inputs + 1);
+							return current_scope.call_impl(function_name, &inputs, &inputs + 1);
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
@@ -18735,16 +18736,16 @@ namespace GL {
 							if (state.throwing != throwing::Nothing) return state.to_return;
 
 							if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
-								if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), to_cast)) {
-								    return state.to_return = current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), to_cast);
-								}
+								//if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), to_cast)) {
+								    return current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), to_cast);
+								//}
 							}
 
 							auto type = current_scope.DetermineType(node.children[0].text);
 							if (type == GL::type_of<GL::undefined>()) throw except::eval_error("Type-cast was unable to determine the requested type: " + node.children[0].text, node.location);
 
 							if (auto* BC = current_scope.GetRoot()->try_find_class(type)) {
-								return state.to_return = BC->this_m.scope->call(BC->this_m.scope_name, { to_cast });
+								return BC->this_m.scope->call(BC->this_m.scope_name, { to_cast });
 							}
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
@@ -18755,7 +18756,7 @@ namespace GL {
 							if (state.throwing != throwing::Nothing) return state.to_return;
 							auto Where = evaluate(node.children[1], state, current_scope);
 							if (state.throwing != throwing::Nothing) return state.to_return;
-							return state.to_return = current_scope.call("[]", { Who, Where });
+							return current_scope.call("[]", { Who, Where });
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
@@ -18767,10 +18768,10 @@ namespace GL {
 							if (new_scope.cast<bool>(condition)) {
 								auto then = evaluate(node.children[1], state, new_scope);
 								if (state.throwing != throwing::Nothing) return state.to_return;
-								return state.to_return = then;
+								return then;
 							}
 							else {
-								return state.to_return = nullptr;
+								return nullptr;
 							}
 						}
 						if (node.children.size() == 3) { // condition, then, else
@@ -18779,12 +18780,12 @@ namespace GL {
 							if (new_scope.cast<bool>(condition)) {
 								auto then = evaluate(node.children[1], state, new_scope);
 								if (state.throwing != throwing::Nothing) return state.to_return;
-								return state.to_return = then;
+								return then;
 							}
 							else {
 								auto then = evaluate(node.children[2], state, new_scope);
 								if (state.throwing != throwing::Nothing) return state.to_return;
-								return state.to_return = then;
+								return then;
 							}
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
@@ -18809,18 +18810,18 @@ namespace GL {
 								if (auto* BC = engine.try_find_class(*types.begin()); BC && BC->this_m.is_class()) {
 									auto new_vector = engine.call("vector<" + BC->this_m.scope_name + ">", {});
 									for (auto& x : inputs) engine.call("push_back", { new_vector, x });
-									return state.to_return = new_vector;
+									return new_vector;
 								}
 								else { // vector<var>		
 									auto new_vector = engine.call("vector<var>", {});
 									for (auto& x : inputs) engine.call("push_back", { new_vector, x });
-									return state.to_return = new_vector;
+									return new_vector;
 								}
 							}
 							else { // vector<var>
 								auto new_vector = engine.call("vector<var>", {});
 								for (auto& x : inputs) engine.call("push_back", { new_vector, x });
-								return state.to_return = new_vector;
+								return new_vector;
 							}
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
@@ -18830,7 +18831,7 @@ namespace GL {
 
 						if (node.children.size() == 0) {
 							auto new_map = engine.call("map<var,var>", {});
-							return state.to_return = new_map;
+							return new_map;
 						}
 
 						if ((node.children.size() == 1)
@@ -18892,7 +18893,7 @@ namespace GL {
 								engine.call("insert", { new_map, p.first, p.second });
 							}
 
-							return state.to_return = new_map;
+							return new_map;
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
@@ -18902,7 +18903,7 @@ namespace GL {
 							if (state.throwing != throwing::Nothing) return state.to_return;
 
 							if (node.tag.cast< PostfixInformation>().is_unit) {
-								return state.to_return = current_scope.call(node.tag.cast< PostfixInformation>().unit_name, { source });
+								return current_scope.call(node.tag.cast< PostfixInformation>().unit_name, { source });
 							}
 							else {
 								switch (node.tag.cast< PostfixInformation>().oper) {
@@ -18910,7 +18911,7 @@ namespace GL {
 									if (auto BC = current_scope.GetRoot()->try_find_class(source.m_casted_type)) {
 										auto copied = BC->this_m.scope->call(BC->this_m.scope_name, { source });
 										current_scope.call("++", { source });
-										return state.to_return = copied;
+										return copied;
 									}
 									break;
 								}
@@ -18918,7 +18919,7 @@ namespace GL {
 									if (auto BC = current_scope.GetRoot()->try_find_class(source.m_casted_type)) {
 										auto copied = BC->this_m.scope->call(BC->this_m.scope_name, { source });
 										current_scope.call("--", { source });
-										return state.to_return = copied;
+										return copied;
 									}
 									break;
 								}
@@ -18932,29 +18933,30 @@ namespace GL {
 					case Engine::AST_Node_Type::Prefix: {
 						if (node.children.size() == 1) {
 							auto source = evaluate(node.children[0], state, current_scope);
+							if (state.throwing != throwing::Nothing) return state.to_return;
 
 							if (node.tag.can_cast(GL::type_of<PrefixInformation>()) && node.tag.cast<PrefixInformation>().preprocessed_function) {
-								if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<PrefixInformation>().preprocessed_function.get(), source)) {
-									return state.to_return = current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<PrefixInformation>().preprocessed_function.get(), source);
-								}
+								//if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<PrefixInformation>().preprocessed_function.get(), source)) {
+									return current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<PrefixInformation>().preprocessed_function.get(), source);
+								//}
 							}
 
 							switch (node.tag.cast< PrefixInformation >().oper) {
 							case GL::Engine::Operators::Opers::pre_increment: {
-								return state.to_return = current_scope.call("++", { source });
+								return current_scope.call("++", { source });
 							}
 							case GL::Engine::Operators::Opers::pre_decrement: {
-								return state.to_return = current_scope.call("--", { source });
+								return current_scope.call("--", { source });
 							}
 							case GL::Engine::Operators::Opers::unary_minus: {
-								return state.to_return = current_scope.call("-", { source });
+								return current_scope.call("-", { source });
 							}
 							case GL::Engine::Operators::Opers::unary_plus:
 							case GL::Engine::Operators::Opers::sum: {
-								return state.to_return = current_scope.call("+", { source });
+								return current_scope.call("+", { source });
 							}
 							default:
-								return state.to_return = current_scope.call(node.text, { source });
+								return current_scope.call(node.text, { source });
 							}
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
@@ -18962,7 +18964,11 @@ namespace GL {
 					case Engine::AST_Node_Type::For: {
 						if (node.children.size() == 4) { // INIT_COMMAND, WHILE_CONDITION, CONTINUE_COMMAND, REPEAT_BLOCK
 							auto new_scope = current_scope.make_scope(); {
-								for ((void)evaluate(node.children[0], state, new_scope); new_scope.cast<bool>(evaluate(node.children[1], state, new_scope)); (void)evaluate(node.children[2], state, new_scope)) {
+								for (
+									(void)evaluate(node.children[0], state, new_scope); 
+									new_scope.cast<bool>(evaluate(node.children[1], state, new_scope)); 
+									(void)evaluate(node.children[2], state, new_scope)
+								) {
 									if (state.throwing != throwing::Nothing) return state.to_return;
 
 									//auto new_scope2 = new_scope.make_scope(); {
@@ -18979,7 +18985,7 @@ namespace GL {
 									//}
 								}
 							}
-							return state.to_return = nullptr;
+							return nullptr;
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
@@ -18989,8 +18995,8 @@ namespace GL {
 								while (new_scope.cast<bool>(evaluate(node.children[0], state, new_scope))) {
 									if (state.throwing != throwing::Nothing) return state.to_return;
 
-									auto new_scope2 = new_scope.make_scope(); {
-										(void)evaluate(node.children[1], state, new_scope2);
+									//auto new_scope2 = new_scope.make_scope(); {
+										(void)evaluate(node.children[1], state, new_scope);
 										if (state.throwing == throwing::Continue) {
 											state.throwing = throwing::Nothing;
 											continue;
@@ -19000,10 +19006,10 @@ namespace GL {
 											break;
 										}
 										if (state.throwing != throwing::Nothing) return state.to_return;
-									}
+									//}
 								}
 							}
-							return state.to_return = nullptr;
+							return nullptr;
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
@@ -19013,14 +19019,14 @@ namespace GL {
 							(void)evaluate(node.children[i], state, current_scope);
 							if (state.throwing == throwing::Break) {
 								state.throwing = throwing::Nothing;
-								return state.to_return = nullptr;
+								return nullptr;
 							}
 							if (state.throwing != throwing::Nothing) return state.to_return;							
 						}
-						state.to_return = evaluate(node.children.back(), state, current_scope);
+						evaluate(node.children.back(), state, current_scope);
 						if (state.throwing == throwing::Break) {
 							state.throwing = throwing::Nothing;
-							return state.to_return = nullptr;
+							return nullptr;
 						}
 						return state.to_return;
 					}
@@ -19028,8 +19034,6 @@ namespace GL {
 						auto& info = node.tag.cast< SwitchInformation>();
 
 						if (node.children.size() > 1) {
-							state.to_return = nullptr;
-
 							auto switch_on = evaluate(node.children.front(), state, current_scope);
 							if (state.throwing != throwing::Nothing) return state.to_return;
 							
@@ -19065,17 +19069,17 @@ namespace GL {
 								}
 								if (starting_child_index == 0) {
 									// no matching hash, AND, no default. Therefore, this should compile down to nothing. 
-									return state.to_return = nullptr;
+									return nullptr;
 								}
 							}
 
 							for (size_t i = starting_child_index; i < node.children.size(); ++i) {
 								if (node.children[i].identifier == Engine::AST_Node_Type::Case) {
 									if (node.children[i].children.size() == 2) {
-										state.to_return = evaluate(node.children[i].children[1], state, current_scope);
+										evaluate(node.children[i].children[1], state, current_scope);
 										if (state.throwing == throwing::Break) {
 											state.throwing = throwing::Nothing;
-											return state.to_return = nullptr;
+											return nullptr;
 										}
 										if (state.throwing != throwing::Nothing) return state.to_return;
 										continue;
@@ -19083,10 +19087,10 @@ namespace GL {
 								}
 								else if (node.children[i].identifier == Engine::AST_Node_Type::Default) {
 									if (node.children[i].children.size() == 1) {
-										state.to_return = evaluate(node.children[i].children[0], state, current_scope);
+										evaluate(node.children[i].children[0], state, current_scope);
 										if (state.throwing == throwing::Break) {
 											state.throwing = throwing::Nothing;
-											return state.to_return = nullptr;
+											return nullptr;
 										}
 										if (state.throwing != throwing::Nothing) return state.to_return;
 										continue;
@@ -19108,7 +19112,7 @@ namespace GL {
 							auto new_node = Parse(script);
 							auto r = evaluate(new_node, state, current_scope);
 							if (state.throwing != throwing::Nothing) return state.to_return;
-							return state.to_return = r;
+							return r;
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
@@ -19159,7 +19163,7 @@ namespace GL {
 											}
 										}
 									}
-									return state.to_return = nullptr;
+									return nullptr;
 								}
 								else if (node.children[0].identifier == Engine::AST_Node_Type::Assign_Retroactively
 									&& node.children[0].children.size() == 2
@@ -19191,7 +19195,7 @@ namespace GL {
 											}
 										}
 									}
-									return state.to_return = nullptr;
+									return nullptr;
 								}
 								else if (node.children[0].identifier == Engine::AST_Node_Type::Assign_Retroactively
 									&& node.children[0].children.size() == 3
@@ -19224,7 +19228,7 @@ namespace GL {
 										// auto new_scope_2 = new_scope.make_scope();
 										// auto returned = evaluate(node.children[child_index].children[0], state, new_scope_2);
 										// if (state.throwing != throwing::Nothing) return state.to_return;
-										// return state.to_return = returned;
+										// return returned;
 									}
 								}
 							}
@@ -19236,20 +19240,20 @@ namespace GL {
 										state.throwing = throwing::Nothing;
 										auto returned = evaluate(*finally_node, state, new_scope_2);
 										if (state.throwing != throwing::Nothing) {
-											return state.to_return = returned;
+											return returned;
 										}
 										else {
 											state.throwing = throwing::Return;
-											return state.to_return = temp_hold;
+											return temp_hold;
 										}
 									}
 									else if (state.throwing == throwing::Nothing){
 										auto returned = evaluate(*finally_node, state, new_scope_2);
 										if (state.throwing != throwing::Nothing) {
-											return state.to_return = returned;
+											return returned;
 										}
 										else {
-											return state.to_return = returned;
+											return returned;
 										}
 									}
 									else { // error being thrown?
@@ -19950,7 +19954,7 @@ R"(
 	return obj.to_string;
 )"
 #endif
-#if 0
+#if 1
 , R"(
 	namespace GUI {		
 		class Inner1<T> {
