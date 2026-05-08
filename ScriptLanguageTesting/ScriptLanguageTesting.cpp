@@ -13207,7 +13207,7 @@ namespace GL {
 
 							if (node.children.size() >= 2
 								&& node.children[0].output != GL::type_of<GL::undefined>()
-								&& !node.children[0].output.can_free_cast(GL::type_of<GL::var const&>())
+								// && !node.children[0].output.can_free_cast(GL::type_of<GL::var const&>())
 								&& node.children[1].identifier == Engine::AST_Node_Type::Var_Decl
 								&& node.children[1].children.size() == 1
 								&& node.children[1].children[0].identifier == Engine::AST_Node_Type::Id
@@ -18589,13 +18589,13 @@ namespace GL {
 								return state.to_return;
 							}
 
-							if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
-								std::vector<any::fast_any> inputs{ assignee, assigner };
+							std::vector<any::fast_any> inputs{ assignee, assigner };
+							//if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
 								//if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size())) {
-									return current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size());
+									//return current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size());
 								//}
-							}
-							return current_scope.call(node.text, { assignee, assigner });
+							//}
+							return current_scope.call_impl(node.text, &inputs[0], &inputs[0] + inputs.size());
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
@@ -18609,11 +18609,11 @@ namespace GL {
 							};
 							if (state.throwing != throwing::Nothing) return state.to_return;
 
-							if (auto& f = node.tag.cast<FunctionCallInformation>().preprocessed_function; f) {
+							//if (auto& f = node.tag.cast<FunctionCallInformation>().preprocessed_function; f) {
 								//if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size())) {
-									return current_scope.GetRoot()->get_converters().call_with_conversions(f.get(), &inputs[0], &inputs[0] + inputs.size());
+									//return current_scope.GetRoot()->get_converters().call_with_conversions(f.get(), &inputs[0], &inputs[0] + inputs.size());
 								//}
-							}
+							//}
 							return current_scope.call_impl(node.text, &inputs[0], &inputs[0] + inputs.size());
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
@@ -18626,13 +18626,13 @@ namespace GL {
 							if (state.throwing != throwing::Nothing) {
 								return state.to_return;
 							}
-							if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
-								std::vector<any::fast_any> inputs{ node.constant | GL::type::Const | GL::type::Reference, assignee };
+							std::vector<any::fast_any> inputs{ node.constant | GL::type::Const | GL::type::Reference, assignee };
+							//if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {								
 								//if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size())) {
-									return current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size());
+									//return current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + inputs.size());
 								//}
-							}
-							return current_scope.call(node.text, { node.constant | GL::type::Const | GL::type::Reference, assignee });
+							//}
+							return current_scope.call_impl(node.text, &inputs[0], &inputs[0] + inputs.size());
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
@@ -18677,11 +18677,11 @@ namespace GL {
 								if (state.throwing != throwing::Nothing) return state.to_return;
 							}
 
-							if (auto& f = node.tag.cast<FunctionCallInformation>().preprocessed_function; f) {
+							//if (auto& f = node.tag.cast<FunctionCallInformation>().preprocessed_function; f) {
 								//if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + node.children[1].children.size())) {
-									return current_scope.GetRoot()->get_converters().call_with_conversions(f.get(), &inputs[0], &inputs[0] + node.children[1].children.size());
+									//return current_scope.GetRoot()->get_converters().call_with_conversions(f.get(), &inputs[0], &inputs[0] + node.children[1].children.size());
 								//}
-							}
+							//}
 							return current_scope.call_impl(function_name, &inputs[0], &inputs[0] + node.children[1].children.size());
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
@@ -18706,11 +18706,11 @@ namespace GL {
 								if (state.throwing != throwing::Nothing) return state.to_return;
 							}
 
-							if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
+							//if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
 								//if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + (node.children[1].children[1].children.size() + 1))) {
-									return current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + (node.children[1].children[1].children.size() + 1));
+									//return current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), &inputs[0], &inputs[0] + (node.children[1].children[1].children.size() + 1));
 								//}
-							}
+							//}
 							return current_scope.call_impl(function_name, &inputs[0], &inputs[0] + (node.children[1].children[1].children.size() + 1));
 						}
 						if (node.children.size() == 2
@@ -18735,17 +18735,17 @@ namespace GL {
 							auto to_cast = evaluate(node.children[1], state, current_scope);
 							if (state.throwing != throwing::Nothing) return state.to_return;
 
-							if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
+							//if (node.tag.can_cast(GL::type_of<FunctionCallInformation>()) && node.tag.cast<FunctionCallInformation>().preprocessed_function) {
 								//if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), to_cast)) {
-								    return current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), to_cast);
+								    //return current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<FunctionCallInformation>().preprocessed_function.get(), to_cast);
 								//}
-							}
+							//}
 
 							auto type = current_scope.DetermineType(node.children[0].text);
 							if (type == GL::type_of<GL::undefined>()) throw except::eval_error("Type-cast was unable to determine the requested type: " + node.children[0].text, node.location);
 
 							if (auto* BC = current_scope.GetRoot()->try_find_class(type)) {
-								return BC->this_m.scope->call(BC->this_m.scope_name, { to_cast });
+								return BC->this_m.scope->call_impl(BC->this_m.scope_name, &to_cast, &to_cast + 1);
 							}
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
@@ -18935,11 +18935,11 @@ namespace GL {
 							auto source = evaluate(node.children[0], state, current_scope);
 							if (state.throwing != throwing::Nothing) return state.to_return;
 
-							if (node.tag.can_cast(GL::type_of<PrefixInformation>()) && node.tag.cast<PrefixInformation>().preprocessed_function) {
+							//if (node.tag.can_cast(GL::type_of<PrefixInformation>()) && node.tag.cast<PrefixInformation>().preprocessed_function) {
 								//if (current_scope.GetRoot()->get_converters().can_call_with_conversions(node.tag.cast<PrefixInformation>().preprocessed_function.get(), source)) {
-									return current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<PrefixInformation>().preprocessed_function.get(), source);
+									//return current_scope.GetRoot()->get_converters().call_with_conversions(node.tag.cast<PrefixInformation>().preprocessed_function.get(), source);
 								//}
-							}
+							//}
 
 							switch (node.tag.cast< PrefixInformation >().oper) {
 							case GL::Engine::Operators::Opers::pre_increment: {
@@ -18963,29 +18963,349 @@ namespace GL {
 					}
 					case Engine::AST_Node_Type::For: {
 						if (node.children.size() == 4) { // INIT_COMMAND, WHILE_CONDITION, CONTINUE_COMMAND, REPEAT_BLOCK
-							auto new_scope = current_scope.make_scope(); {
-								for (
-									(void)evaluate(node.children[0], state, new_scope); 
-									new_scope.cast<bool>(evaluate(node.children[1], state, new_scope)); 
-									(void)evaluate(node.children[2], state, new_scope)
-								) {
+							if (node.tag.cast<ForLoopInformation>().parallel_hint) {
+								auto new_scope = current_scope.make_scope(); {
+									(void)evaluate(node.children[0], state, new_scope);
+									if (state.throwing != throwing::Nothing) return state.to_return;
+									try {
+										GL::parallel::While([&]() -> bool { return new_scope.cast<bool>(evaluate(node.children[1], state, new_scope)); }, [&]() {
+											eval_state local_state;
+											auto new_scope2 = new_scope.make_scope(); {
+												(void)evaluate(node.children[3], local_state, new_scope2);
+												if (local_state.throwing == throwing::Continue) {
+													local_state.throwing = throwing::Nothing;
+												}
+												if (local_state.throwing == throwing::Break) {
+													local_state.throwing = throwing::Nothing;
+													throw local_state;
+												}
+												if (local_state.throwing != throwing::Nothing) throw local_state;
+
+												(void)evaluate(node.children[2], local_state, new_scope2);
+												if (local_state.throwing != throwing::Nothing) throw local_state.to_return;
+											}
+										});
+									}
+									catch (eval_state& local_state) {
+										state = local_state;
+										if (state.throwing != throwing::Nothing) return state.to_return;
+									}
+								}
+								return nullptr;
+							}
+							// default, serialized approach
+							if (1) {
+								auto new_scope = current_scope.make_scope(); {
+									for (
+										(void)evaluate(node.children[0], state, new_scope);
+										new_scope.cast<bool>(evaluate(node.children[1], state, new_scope));
+										(void)evaluate(node.children[2], state, new_scope)
+									) {
+										if (state.throwing != throwing::Nothing) return state.to_return;
+
+										auto new_scope2 = new_scope.make_scope(); {
+											(void)evaluate(node.children[3], state, new_scope2);
+											if (state.throwing == throwing::Continue) {
+												state.throwing = throwing::Nothing;
+												continue;
+											}
+											if (state.throwing == throwing::Break) {
+												state.throwing = throwing::Nothing;
+												break;
+											}
+											if (state.throwing != throwing::Nothing) return state.to_return;
+										}
+									}
+								}
+								return nullptr;
+							}							
+						}
+						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
+					}
+					case Engine::AST_Node_Type::Ranged_For: {
+						if (node.children.size() == 3) { // DECL, RANGE_CONDITION, REPEAT_BLOCK
+							if (node.tag.cast<ForLoopInformation>().parallel_hint) {
+								auto new_scope = current_scope.make_scope(); {
+									auto iter_list = evaluate(node.children[1], state, new_scope);
 									if (state.throwing != throwing::Nothing) return state.to_return;
 
-									//auto new_scope2 = new_scope.make_scope(); {
-										(void)evaluate(node.children[3], state, new_scope);
-										if (state.throwing == throwing::Continue) {
-											state.throwing = throwing::Nothing;
-											continue;
+									if ((node.children[0].identifier == Engine::AST_Node_Type::Id
+										&& node.children[0].children.size() == 0)
+										|| (node.children[0].identifier == Engine::AST_Node_Type::Var_Decl
+											&& node.children[0].children.size() == 1
+											&& node.children[0].children[0].identifier == Engine::AST_Node_Type::Id
+											&& node.children[0].children[0].children.size() == 0)
+									) { // for (x : [...]){ ... }
+										GL::string var_name;
+										if ((node.children[0].identifier == Engine::AST_Node_Type::Id
+											&& node.children[0].children.size() == 0)) {
+											var_name = node.children[0].text;
 										}
-										if (state.throwing == throwing::Break) {
-											state.throwing = throwing::Nothing;
-											break;
+										else if ((node.children[0].identifier == Engine::AST_Node_Type::Var_Decl
+											&& node.children[0].children.size() == 1
+											&& node.children[0].children[0].identifier == Engine::AST_Node_Type::Id
+											&& node.children[0].children[0].children.size() == 0)) {
+											var_name = node.children[0].children[0].text;
 										}
-										if (state.throwing != throwing::Nothing) return state.to_return;
-									//}
+										else {
+											throw except::eval_error("Something went wrong with the evalutation", node.location);
+										}
+
+										if (1) {
+											auto ToDo = [&var_name, this, &node](std::pair<GL::scope::impl::BasicScope*, GL::any::fast_any>& iterator) -> void {
+												eval_state local_state; 
+												auto new_scope_2 = iterator.first->make_scope(); {
+													new_scope_2.insert_object_here(var_name, new_scope_2.call("get", { iterator.second }) | GL::type::Reference);
+
+													(void)evaluate(node.children[2], local_state, new_scope_2);
+													if (local_state.throwing == throwing::Break) {
+														local_state.throwing = throwing::Nothing;
+														throw local_state;
+													}
+													if (local_state.throwing == throwing::Continue) {
+														local_state.throwing = throwing::Nothing;
+													}
+													if (local_state.throwing != throwing::Nothing) {
+														throw local_state;
+													}
+												}
+											};
+
+											auto begin = new_scope.call("begin", { iter_list });
+											auto end = new_scope.call("end", { iter_list });
+											size_t count = 0;
+											for (auto begin2 = new_scope.call("begin", { iter_list }); new_scope.call<bool>("!=", { begin2, end }); new_scope.call("++", { begin2 })) count++;																						
+											
+											using iterType = std::pair<GL::scope::impl::BasicScope*, GL::any::fast_any>;
+											struct IterData {
+												const decltype(ToDo)* _to_do;
+												iterType _begin;
+
+												static void DoTask(GL::parallel::impl::job_argument const& _args) {
+													IterData* data = reinterpret_cast<IterData*>(_args.task_memory);
+													iterType& iter = *static_cast<iterType*>(_args.group_memory);
+													if (_args.group_index == 0) {
+														// start of a group, so help it
+														new (&iter) iterType{ data->_begin };
+														iter.second = iter.first->call("+", { iter.first->call("begin", { iter.second }), GL::any::fast_any::instance(_args.job_index) });
+													}
+													else {
+														// within a group, we know the jobs are done in sequence, so we can safely increment by 1.
+														iter.first->call("++", { iter.second });
+													}
+													// user-defined task
+													(*data->_to_do)(iter);
+												};
+												static void GroupStart(void* const&) {
+													// do nothing
+												};
+												static void GroupEnd(void* const& p) {
+													// delete
+													((iterType*)p)->~iterType();
+												};
+											} data{ &ToDo, { &new_scope, iter_list } };
+
+											GL::parallel::impl::dispatch_context ctx{ 0, nullptr, nullptr };
+											GL::parallel::impl::Dispatch(
+												ctx,
+												count,
+												&IterData::DoTask,
+												reinterpret_cast<void*>(&data),
+												sizeof(iterType),
+												&IterData::GroupStart,
+												&IterData::GroupEnd
+											);
+											try {
+												GL::parallel::impl::Wait(ctx);
+											}
+											catch (eval_state& local_state) {
+												state = local_state;
+												return state.to_return;
+											}
+										}
+										return nullptr;
+									}
+									else if (node.children[0].identifier == Engine::AST_Node_Type::Assign_Retroactively
+										&& node.children[0].children.size() == 2
+										&& node.children[0].children[1].identifier == Engine::AST_Node_Type::Var_Decl
+										&& node.children[0].children[1].children.size() == 1
+										&& node.children[0].children[1].children[0].identifier == Engine::AST_Node_Type::Id
+										&& node.children[0].children[1].children[0].children.size() == 0
+									) { // for (int x : [...]){ ... }
+									    GL::string var_name = node.children[0].children[1].children[0].text;
+
+										if (1) {
+											auto ToDo = [&var_name, this, &node](std::pair<GL::scope::impl::BasicScope*, GL::any::fast_any>& iterator) -> void {
+												eval_state local_state;
+												auto new_scope_2 = iterator.first->make_scope(); {
+													(void)evaluate(node.children[0], local_state, new_scope_2);
+													if (local_state.throwing != throwing::Nothing) throw local_state;
+													auto var = new_scope_2.find_object(node.children[0].children[1].children[0].text);
+													new_scope_2.call("=", { var, new_scope_2.call("get", { iterator.second }) | GL::type::Reference });
+
+													(void)evaluate(node.children[2], local_state, new_scope_2);
+													if (local_state.throwing == throwing::Break) {
+														local_state.throwing = throwing::Nothing;
+														throw local_state;
+													}
+													if (local_state.throwing == throwing::Continue) {
+														local_state.throwing = throwing::Nothing;
+													}
+													if (local_state.throwing != throwing::Nothing) {
+														throw local_state;
+													}
+												}
+											};
+
+											auto begin = new_scope.call("begin", { iter_list });
+											auto end = new_scope.call("end", { iter_list });
+											size_t count = 0;
+											for (auto begin2 = new_scope.call("begin", { iter_list }); new_scope.call<bool>("!=", { begin2, end }); new_scope.call("++", { begin2 })) count++;
+
+											using iterType = std::pair<GL::scope::impl::BasicScope*, GL::any::fast_any>;
+											struct IterData {
+												const decltype(ToDo)* _to_do;
+												iterType _begin;
+
+												static void DoTask(GL::parallel::impl::job_argument const& _args) {
+													IterData* data = reinterpret_cast<IterData*>(_args.task_memory);
+													iterType& iter = *static_cast<iterType*>(_args.group_memory);
+													if (_args.group_index == 0) {
+														// start of a group, so help it
+														new (&iter) iterType{ data->_begin };
+														iter.second = iter.first->call("+", { iter.first->call("begin", { iter.second }), GL::any::fast_any::instance(_args.job_index) });
+													}
+													else {
+														// within a group, we know the jobs are done in sequence, so we can safely increment by 1.
+														iter.first->call("++", { iter.second });
+													}
+													// user-defined task
+													(*data->_to_do)(iter);
+												};
+												static void GroupStart(void* const&) {
+													// do nothing
+												};
+												static void GroupEnd(void* const& p) {
+													// delete
+													((iterType*)p)->~iterType();
+												};
+											} data{ &ToDo, { &new_scope, iter_list } };
+
+											GL::parallel::impl::dispatch_context ctx{ 0, nullptr, nullptr };
+											GL::parallel::impl::Dispatch(
+												ctx,
+												count,
+												&IterData::DoTask,
+												reinterpret_cast<void*>(&data),
+												sizeof(iterType),
+												&IterData::GroupStart,
+												&IterData::GroupEnd
+											);
+											try {
+												GL::parallel::impl::Wait(ctx);
+											}
+											catch (eval_state& local_state) {
+												state = local_state;
+												return state.to_return;
+											}
+										}
+
+										return nullptr;
+									}
+									else if (node.children[0].identifier == Engine::AST_Node_Type::Assign_Retroactively
+										&& node.children[0].children.size() == 3
+									) { // nonsense									
+										throw except::eval_error("Cannot declare an assigned variable within a ranged-for-loop declaration, such as `for (int i = 0 : [...]){ ... }`. Insead, use a normal variable declaration, such as `for (int i : [...]){...}`", node.location);
+									}
 								}
 							}
-							return nullptr;
+							else {
+								auto new_scope = current_scope.make_scope(); {
+									auto iter_list = evaluate(node.children[1], state, new_scope);
+									if (state.throwing != throwing::Nothing) return state.to_return;
+
+									if ((node.children[0].identifier == Engine::AST_Node_Type::Id
+										&& node.children[0].children.size() == 0)
+										|| (node.children[0].identifier == Engine::AST_Node_Type::Var_Decl
+											&& node.children[0].children.size() == 1
+											&& node.children[0].children[0].identifier == Engine::AST_Node_Type::Id
+											&& node.children[0].children[0].children.size() == 0)
+										) { // for (x : [...]){ ... }
+										GL::string var_name;
+										if ((node.children[0].identifier == Engine::AST_Node_Type::Id
+											&& node.children[0].children.size() == 0)) {
+											var_name = node.children[0].text;
+										}
+										else if ((node.children[0].identifier == Engine::AST_Node_Type::Var_Decl
+											&& node.children[0].children.size() == 1
+											&& node.children[0].children[0].identifier == Engine::AST_Node_Type::Id
+											&& node.children[0].children[0].children.size() == 0)) {
+											var_name = node.children[0].children[0].text;
+										}
+										else {
+											throw except::eval_error("Something went wrong with the evalutation", node.location);
+										}
+
+										for (auto iterator = new_scope.call("begin", { iter_list }), iterator_end = new_scope.call("end", { iter_list }); new_scope.call<bool>("!=", { iterator, iterator_end }); new_scope.call("++", { iterator })) {
+											if (state.throwing != throwing::Nothing) return state.to_return;
+											auto new_scope_2 = new_scope.make_scope(); {
+												new_scope_2.insert_object_here(var_name, new_scope.call("get", { iterator }) | GL::type::Reference);
+
+												(void)evaluate(node.children[2], state, new_scope_2);
+												if (state.throwing == throwing::Break) {
+													state.throwing = throwing::Nothing;
+													break;
+												}
+												if (state.throwing == throwing::Continue) {
+													state.throwing = throwing::Nothing;
+													continue;
+												}
+												if (state.throwing != throwing::Nothing) {
+													return state.to_return;
+												}
+											}
+										}
+										return nullptr;
+									}
+									else if (node.children[0].identifier == Engine::AST_Node_Type::Assign_Retroactively
+										&& node.children[0].children.size() == 2
+										&& node.children[0].children[1].identifier == Engine::AST_Node_Type::Var_Decl
+										&& node.children[0].children[1].children.size() == 1
+										&& node.children[0].children[1].children[0].identifier == Engine::AST_Node_Type::Id
+										&& node.children[0].children[1].children[0].children.size() == 0
+										) { // for (int x : [...]){ ... }
+										(void)evaluate(node.children[0], state, new_scope);
+										if (state.throwing != throwing::Nothing) return state.to_return;
+										auto var = new_scope.find_object(node.children[0].children[1].children[0].text);
+
+										for (auto iterator = new_scope.call("begin", { iter_list }), iterator_end = new_scope.call("end", { iter_list }); new_scope.call<bool>("!=", { iterator, iterator_end }); new_scope.call("++", { iterator })) {
+											if (state.throwing != throwing::Nothing) return state.to_return;
+											auto new_scope_2 = new_scope.make_scope(); {
+												new_scope.call("=", { var, new_scope.call("get", { iterator }) | GL::type::Reference });
+
+												(void)evaluate(node.children[2], state, new_scope_2);
+												if (state.throwing == throwing::Break) {
+													state.throwing = throwing::Nothing;
+													break;
+												}
+												if (state.throwing == throwing::Continue) {
+													state.throwing = throwing::Nothing;
+													continue;
+												}
+												if (state.throwing != throwing::Nothing) {
+													return state.to_return;
+												}
+											}
+										}
+										return nullptr;
+									}
+									else if (node.children[0].identifier == Engine::AST_Node_Type::Assign_Retroactively
+										&& node.children[0].children.size() == 3
+										) { // nonsense									
+										throw except::eval_error("Cannot declare an assigned variable within a ranged-for-loop declaration, such as `for (int i = 0 : [...]){ ... }`. Insead, use a normal variable declaration, such as `for (int i : [...]){...}`", node.location);
+									}
+								}
+							}
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
@@ -19113,97 +19433,6 @@ namespace GL {
 							auto r = evaluate(new_node, state, current_scope);
 							if (state.throwing != throwing::Nothing) return state.to_return;
 							return r;
-						}
-						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
-					}
-					case Engine::AST_Node_Type::Ranged_For: {
-						if (node.children.size() == 3) { // DECL, RANGE_CONDITION, REPEAT_BLOCK
-							auto new_scope = current_scope.make_scope(); {
-								auto iter_list = evaluate(node.children[1], state, new_scope);
-								if (state.throwing != throwing::Nothing) return state.to_return;
-
-								if ((node.children[0].identifier == Engine::AST_Node_Type::Id 
-									&& node.children[0].children.size() == 0)
-									|| (node.children[0].identifier == Engine::AST_Node_Type::Var_Decl
-										&& node.children[0].children.size() == 1
-										&& node.children[0].children[0].identifier == Engine::AST_Node_Type::Id
-										&& node.children[0].children[0].children.size() == 0)
-								) { // for (x : [...]){ ... }
-									GL::string var_name;
-									if ((node.children[0].identifier == Engine::AST_Node_Type::Id
-										&& node.children[0].children.size() == 0)) {
-										var_name = node.children[0].text;
-									}
-									else if ((node.children[0].identifier == Engine::AST_Node_Type::Var_Decl
-										&& node.children[0].children.size() == 1
-										&& node.children[0].children[0].identifier == Engine::AST_Node_Type::Id
-										&& node.children[0].children[0].children.size() == 0)){
-										var_name = node.children[0].children[0].text;
-									}
-									else {
-										throw except::eval_error("Something went wrong with the evalutation", node.location);
-									}
-
-									for (auto iterator = new_scope.call("begin", { iter_list }), iterator_end = new_scope.call("end", { iter_list }); new_scope.call<bool>("!=", { iterator, iterator_end }); new_scope.call("++", { iterator })) {
-										if (state.throwing != throwing::Nothing) return state.to_return;										
-										auto new_scope_2 = new_scope.make_scope(); {
-											new_scope_2.insert_object_here(var_name, new_scope.call("get", { iterator }) | GL::type::Reference);
-
-											(void)evaluate(node.children[2], state, new_scope_2);
-											if (state.throwing == throwing::Break) {
-												state.throwing = throwing::Nothing;
-												break;
-											}
-											if (state.throwing == throwing::Continue) {
-												state.throwing = throwing::Nothing;
-												continue;
-											}
-											if (state.throwing != throwing::Nothing) {
-												return state.to_return;
-											}
-										}
-									}
-									return nullptr;
-								}
-								else if (node.children[0].identifier == Engine::AST_Node_Type::Assign_Retroactively
-									&& node.children[0].children.size() == 2
-									&& node.children[0].children[1].identifier == Engine::AST_Node_Type::Var_Decl
-									&& node.children[0].children[1].children.size() == 1
-									&& node.children[0].children[1].children[0].identifier == Engine::AST_Node_Type::Id
-									&& node.children[0].children[1].children[0].children.size() == 0
-								) { // for (int x : [...]){ ... }
-									(void)evaluate(node.children[0], state, new_scope);
-									if (state.throwing != throwing::Nothing) return state.to_return;
-									auto var = new_scope.find_object(node.children[0].children[1].children[0].text);
-
-									for (auto iterator = new_scope.call("begin", { iter_list }), iterator_end = new_scope.call("end", { iter_list }); new_scope.call<bool>("!=", { iterator, iterator_end }); new_scope.call("++", { iterator })) {
-										if (state.throwing != throwing::Nothing) return state.to_return;
-										auto new_scope_2 = new_scope.make_scope(); {
-											new_scope.call("=", { var, new_scope.call("get", { iterator }) | GL::type::Reference });
-
-											(void)evaluate(node.children[2], state, new_scope_2);
-											if (state.throwing == throwing::Break) {
-												state.throwing = throwing::Nothing;
-												break;
-											}
-											if (state.throwing == throwing::Continue) {
-												state.throwing = throwing::Nothing;
-												continue;
-											}
-											if (state.throwing != throwing::Nothing) {
-												return state.to_return;
-											}
-										}
-									}
-									return nullptr;
-								}
-								else if (node.children[0].identifier == Engine::AST_Node_Type::Assign_Retroactively
-									&& node.children[0].children.size() == 3
-								) { // nonsense									
-									throw except::eval_error("Cannot declare an assigned variable within a ranged-for-loop declaration, such as `for (int i = 0 : [...]){ ... }`. Insead, use a normal variable declaration, such as `for (int i : [...]){...}`", node.location);
-								}						
-							}
-							
 						}
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
@@ -19380,12 +19609,11 @@ namespace GL {
 
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
-					case Engine::AST_Node_Type::Parallel_For: {
+					case Engine::AST_Node_Type::Parallel_Ranged_For: {
 
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
-					case Engine::AST_Node_Type::Parallel_Ranged_For: {
-
+					case Engine::AST_Node_Type::Parallel_For: {
 						throw except::eval_error("Parameters for " + std::string(node.identifier.ToString()) + " were not handled: " + node.to_string("", *current_scope.GetRoot()), node.location);
 					}
 					case Engine::AST_Node_Type::Value_Range: {
@@ -19906,7 +20134,34 @@ R"(
 	return [ Enum6::from_string("a"), Enum6::from_string("b"), Enum6::from_string("c"), Enum6::from_string("d"), Enum6::from_string("e"), Enum6::a.name() ];
 )", 
 #endif
-R"(
+R"(	
+	auto t0 = datetime::Now();
+	vector<int> out;
+	for (int i : 0..100){
+		out.push_back((int)i);		
+	}
+	return [out, (datetime::Now() - t0)_ms];
+)", R"(	
+	auto t0 = datetime::Now();
+	vector<int> out;
+	parallel_for (int i : 0..100){
+		out.push_back((int)i);		
+	}
+	return [out, (datetime::Now() - t0)_ms];
+)", R"(	
+	auto t0 = datetime::Now();
+	vector<int> out;
+	parallel_for (i : 0..100){
+		out.push_back((int)i);		
+	}
+	return [out, (datetime::Now() - t0)_ms];
+)", R"(
+	vector<int> vec;
+	vec.push_back(10);
+	vec.push_back(10.0);
+	vec.push_back(10.0_ms);
+	return vec;
+)", R"(
 	auto t0 = datetime::Now();
 	for (auto i = 0; i < 1'000'000; ++i) {
 		constexpr auto x0 = 100.0_ft; // 100 ft
@@ -19920,6 +20175,107 @@ R"(
 #endif
 	}
 	return (datetime::Now() - t0)_ms
+)", R"(
+	auto t0 = datetime::Now();
+	parallel_for (value i = 0; i < 1'000'000; ++i) {
+		constexpr auto x0 = 100.0_ft; // 100 ft
+		constexpr auto v0 = 10_ft / 1_s; // 10 fps
+		constexpr auto a0 = v0 / 1_s; // 10 fps_sq
+		constexpr auto t = 5_s; // 5 s
+		constexpr auto d = v0 * t + t.pow(2) * a0 * 0.5; // 175 ft
+		constexpr auto x = x0 + d; // 275 ft		
+#if x != 275_ft
+	#error Constexpr resulted in the wrong answer
+#endif
+	}
+	return (datetime::Now() - t0)_ms
+)", R"(
+	auto t0 = datetime::Now();
+	for ( i : 0..1'000'000 ) {
+		constexpr auto x0 = 100.0_ft; // 100 ft
+		constexpr auto v0 = 10_ft / 1_s; // 10 fps
+		constexpr auto a0 = v0 / 1_s; // 10 fps_sq
+		constexpr auto t = 5_s; // 5 s
+		constexpr auto d = v0 * t + t.pow(2) * a0 * 0.5; // 175 ft
+		constexpr auto x = x0 + d; // 275 ft		
+#if x != 275_ft
+	#error Constexpr resulted in the wrong answer
+#endif
+	}
+	return (datetime::Now() - t0)_ms
+)", R"(
+	auto t0 = datetime::Now();
+	parallel_for ( i : 0..1'000'000 ) {
+		constexpr auto x0 = 100.0_ft; // 100 ft
+		constexpr auto v0 = 10_ft / 1_s; // 10 fps
+		constexpr auto a0 = v0 / 1_s; // 10 fps_sq
+		constexpr auto t = 5_s; // 5 s
+		constexpr auto d = v0 * t + t.pow(2) * a0 * 0.5; // 175 ft
+		constexpr auto x = x0 + d; // 275 ft		
+#if x != 275_ft
+	#error Constexpr resulted in the wrong answer
+#endif
+	}
+	return (datetime::Now() - t0)_ms
+)", R"(
+	auto t0 = datetime::Now();
+	for (auto i = 0; i < 1'000'000; ++i) {
+		auto x0 = 100.0_ft; // 100 ft
+		auto v0 = 10_ft / 1_s; // 10 fps
+		auto a0 = v0 / 1_s; // 10 fps_sq
+		auto t = 5_s; // 5 s
+		auto d = v0 * t + t.pow(2) * a0 * 0.5; // 175 ft
+		auto x = x0 + d; // 275 ft
+	}
+	return (datetime::Now() - t0)_ms
+)", R"(
+	auto t0 = datetime::Now();
+	parallel_for (value i = 0; i < 1'000'000; ++i) {
+		auto x0 = 100.0_ft; // 100 ft
+		auto v0 = 10_ft / 1_s; // 10 fps
+		auto a0 = v0 / 1_s; // 10 fps_sq
+		auto t = 5_s; // 5 s
+		auto d = (v0 * t) + t.pow(2) * a0 * 0.5; // 175 ft
+		auto x = x0 + d; // 275 ft
+	}
+	return (datetime::Now() - t0)_ms
+)", R"(
+	auto t0 = datetime::Now();
+	parallel_for ( i : 0..1'000'000 ) {
+		auto x0 = 100.0_ft; // 100 ft
+		auto v0 = 10_ft / 1_s; // 10 fps
+		auto a0 = v0 / 1_s; // 10 fps_sq
+		auto t = 5_s; // 5 s
+		auto d = (v0 * t) + t.pow(2) * a0 * 0.5; // 175 ft
+		auto x = x0 + d; // 275 ft
+	}
+	return (datetime::Now() - t0)_ms
+)", R"(
+	auto t0 = datetime::Now();
+	vector<int> vec;
+	for (auto i = 0; i < 100; ++i) {
+		auto x0 = 100.0_ft; // 100 ft
+		auto v0 = 10_ft / 1_s; // 10 fps
+		auto a0 = v0 / 1_s; // 10 fps_sq
+		auto t = 5_s; // 5 s
+		auto d = v0 * t + t.pow(2) * a0 * 0.5; // 175 ft
+		auto x = x0 + d; // 275 ft
+		vec.push_back((int)i);
+	}
+	return vec
+)", R"(
+	auto t0 = datetime::Now();
+	vector<int> vec;
+	parallel_for (value i = 0; i < 100; ++i) {
+		auto x0 = 100.0_ft; // 100 ft
+		auto v0 = 10_ft / 1_s; // 10 fps
+		auto a0 = v0 / 1_s; // 10 fps_sq
+		auto t = 5_s; // 5 s
+		auto d = (v0 * t) + t.pow(2) * a0 * 0.5; // 175 ft
+		auto x = x0 + d; // 275 ft
+		vec.push_back(i);
+	}
+	return vec
 )"
 #if 0
 , R"(
@@ -19954,7 +20310,7 @@ R"(
 	return obj.to_string;
 )"
 #endif
-#if 1
+#if 0
 , R"(
 	namespace GUI {		
 		class Inner1<T> {
@@ -20266,7 +20622,6 @@ R"(
 			}			
 			GL::Engine::ScriptParser::Parser parser(root);
 			auto compiled = parser.compile(Script, root);
-			
 		    try {
 				GL::Engine::eval_state evaluation_state;
 				auto returned = parser.Eval(compiled, evaluation_state, root);

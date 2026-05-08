@@ -826,7 +826,7 @@ namespace GL {
         template <typename T>
         static GL::shared_ptr<GL::any> object_access(GL::string const& member_name, T const& rhs) {
             if constexpr (std::is_same_v<T, GL::any::fast_any> || std::is_same_v<T, GL::any>) {
-                if (rhs.can_cast(GL::type_of<GL::dynamic_object&>())) {
+                //if (rhs.can_cast(GL::type_of<GL::dynamic_object&>())) {
                     if (GL::shared_ptr<GL::any>* p = rhs.cast<GL::dynamic_object>().try_at(member_name); p) {
                         return *p;
                     }
@@ -834,7 +834,7 @@ namespace GL {
                         GL::string err = GL::string("Could not find object \"") + member_name + "\" within " + rhs.m_casted_type.name();
                         throw std::runtime_error(err.to_string());
                     }
-                }
+                //}
                 GL::string err = GL::string("Could not cast from ") + rhs.m_casted_type.name() + " to " + GL::type_of< GL::dynamic_object&>().name();
                 throw std::runtime_error(err.to_string());
             }
