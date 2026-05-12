@@ -5,8 +5,9 @@
 #include <memory>
 #include <ShlDisp.h>
 #include <winnt.h>
-#include "../GpuProgramming/matrix.h"
-#include "atomic_allocator.h"
+// #include "../GpuProgramming/matrix.h"
+// #include "atomic_allocator.h"
+#include "basic_atomic_allocator.h"
 
 namespace /* atomic_shared_ptr */ GL {
     constexpr size_t MAGIC_LEN = 16;
@@ -31,15 +32,6 @@ namespace /* atomic_shared_ptr */ GL {
         // slight optimization by defering deletion of shared pointers to a specialized thread. 
         static void DeferredDeletion(control_block_base* to_delete);
 
-    private:
-        template <size_t sz> static auto& AllocatorImpl() {
-            static GL::atomic_parallel_allocator<unsigned char[sz], 1024, true, false> out;
-            return out;
-        };
-    public:
-        template <size_t sz> static auto& Allocator() {
-            return AllocatorImpl<(sz + 15) & ~15>();
-        };
     };
     
     // specialized, derived class for control blocks with specialized types.
@@ -48,18 +40,16 @@ namespace /* atomic_shared_ptr */ GL {
         explicit control_block(T* _data) : control_block_base(reinterpret_cast<void*>(_data)) {}
         ~control_block() = default;
 
-        void Delete() override {
+        __declspec(noinline) void Delete() override {
             delete static_cast<T*>(this->data);
         };
-        void DeleteSelf(control_block_base* p) override {
-            return Allocator<sizeof(control_block<T>)>().Free(p);
+        __declspec(noinline) void DeleteSelf(control_block_base* p) override {
+            delete reinterpret_cast<control_block<T>*>(p);
         };
 
     public:
         template<class... _Types> static control_block<T>* AllocateSelf(T* _data) {
-            auto* p = Allocator<sizeof(control_block<T>)>().Alloc();
-            new (reinterpret_cast<control_block<T>*>(&(*p)[0])) control_block<T>(_data);
-            return reinterpret_cast<control_block<T>*>(p);
+            return new control_block<T>(_data);
         };
 
     };
@@ -73,80 +63,40 @@ namespace /* atomic_shared_ptr */ GL {
         std::function<void(T*)> 
             delete_func;
 
-        void Delete() override {
+        __declspec(noinline) void Delete() override {
             delete_func(static_cast<T*>(this->data));
         };
-        void DeleteSelf(control_block_base* p) override {
-            reinterpret_cast<deleter_control_block*>(p)->~deleter_control_block();
-            return Allocator<sizeof(deleter_control_block<T>)>().Free(p);
+        __declspec(noinline) void DeleteSelf(control_block_base* p) override {
+            delete reinterpret_cast<deleter_control_block<T>*>(p);
         };
 
     public:
-        template<class... _Types> static deleter_control_block<T>* AllocateSelf(T* data, std::function<void(T*)>&& deleter) {
-            auto* p = Allocator<sizeof(deleter_control_block<T>)>().Alloc();
-            new (reinterpret_cast<deleter_control_block<T>*>(&(*p)[0])) deleter_control_block<T>(data, std::move(deleter));
-            return reinterpret_cast<deleter_control_block<T>*>(p);
+        template<class... _Types> static deleter_control_block<T>* AllocateSelf(T* data, std::function<void(T*)>&& deleter) {            
+            return new deleter_control_block<T>(data, std::move(deleter));
         };
     };
 
     // specialized, derived class for control blocks with specialized types.
-#if 0
-    template<typename T> struct embedded_control_block final : public control_block_base {        
-        template<class... _Types> explicit embedded_control_block(_Types&&... _Args) : control_block_base(static_cast<void*>(reinterpret_cast<T*>(&obj[0]))) {
-            if constexpr ((sizeof...(_Args) > 0) || !std::is_pod<T>::value) {
-                new (reinterpret_cast<T*>(&obj[0])) T(_STD forward<_Types>(_Args)...);
-            }
-            else {
-                std::memset(&obj[0], 0, sizeof(obj));
-            }
-        }
-        ~embedded_control_block() = default;
 
-        unsigned char
-            obj[sizeof(T)];
-
-        void Delete() override {
-            if constexpr (!std::is_pod_v<T>) {
-                reinterpret_cast<T*>(&obj[0])->~T();
-            }
-        };
-
-        void DeleteSelf(control_block_base* p) override {
-            return Allocator<sizeof(embedded_control_block<T>)>().Free(p);
-        };
-
-    public:
-        template<class... _Types> static embedded_control_block<T>* AllocateSelf(_Types&&... _Args) {
-            auto* p = Allocator<sizeof(embedded_control_block<T>)>().Alloc();
-            new (reinterpret_cast<embedded_control_block<T>*>(&(*p)[0])) embedded_control_block<T>(_STD forward<_Types>(_Args)...);
-            return reinterpret_cast<embedded_control_block<T>*>(p);
-        };
-
-    };
-#else
     template<typename T> struct embedded_control_block final : public control_block_base {
         template<class... _Types> explicit embedded_control_block(_Types&&... _Args) : control_block_base(static_cast<void*>(reinterpret_cast<T*>(&obj))), obj(_STD forward<_Types>(_Args)...) {}
         ~embedded_control_block() = default;
         
         T obj;
 
-        void Delete() override {
+        __declspec(noinline) void Delete() override {
             obj.~T();
         };
-
-        void DeleteSelf(control_block_base* p) override {
-            return Allocator<sizeof(embedded_control_block<T>)>().Free(p);
+        __declspec(noinline) void DeleteSelf(control_block_base* p) override {
+            delete reinterpret_cast<embedded_control_block<T>*>(p);
         };
 
     public:
         template<class... _Types> static embedded_control_block<T>* AllocateSelf(_Types&&... _Args) {
-            auto* p = Allocator<sizeof(embedded_control_block<T>)>().Alloc();
-            new (reinterpret_cast<embedded_control_block<T>*>(&(*p)[0])) embedded_control_block<T>(_STD forward<_Types>(_Args)...);
-            return reinterpret_cast<embedded_control_block<T>*>(p);
+            return new embedded_control_block<T>(_STD forward<_Types>(_Args)...);
         };
 
     };
-#endif
     // shared pointer that manages lifetime of the provided class. NOT THREAD-SAFE. May be modified. 
     template<typename T> class shared_ptr {
         template<typename A> friend class shared_ptr;
@@ -239,7 +189,7 @@ namespace /* atomic_shared_ptr */ GL {
             data = nullptr;
             return *this;
         }
-        ~shared_ptr() {
+        __declspec(noinline) ~shared_ptr() {
             if (controlBlock) {
                 control_block_base::DeferredDeletion(controlBlock);
             }

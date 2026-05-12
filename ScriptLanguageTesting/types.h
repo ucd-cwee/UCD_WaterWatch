@@ -3,6 +3,7 @@
 #include <vector>
 #include <set>
 #include <map>
+#include "util.h"
 #include "Strings.h"
 #include "atomic_shared_ptr.h"
 #include <boost/type_index.hpp>

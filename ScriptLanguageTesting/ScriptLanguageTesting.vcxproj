@@ -184,9 +184,6 @@
     <ClCompile Include="util.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\GpuProgramming\GpuProgramming.vcxproj">
-      <Project>{5b15c29f-cb79-4aa9-b470-a01cbb101d57}</Project>
-    </ProjectReference>
     <ProjectReference Include="..\WindowsPlatformTools\WindowsPlatformTools.vcxproj">
       <Project>{6d90b501-45bf-4777-8ee1-be7f74a8d6d1}</Project>
     </ProjectReference>
@@ -207,6 +204,7 @@
     <ClInclude Include="functions.h" />
     <ClInclude Include="Parallel.h" />
     <ClInclude Include="scripting.h" />
+    <ClInclude Include="ScriptLanguage_V2.h" />
     <ClInclude Include="shared_ptr.h" />
     <ClInclude Include="strings.h" />
     <ClInclude Include="thread_object.h" />

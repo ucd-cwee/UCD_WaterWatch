@@ -35,5 +35,6 @@
     <ClInclude Include="atomic_tree.h" />
     <ClInclude Include="constexpr_math.h" />
     <ClInclude Include="basic_atomic_allocator.h" />
+    <ClInclude Include="ScriptLanguage_V2.h" />
   </ItemGroup>
 </Project>

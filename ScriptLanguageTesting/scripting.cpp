@@ -1,7 +1,7 @@
 #pragma once
 #include "scripting.h"
-#include "../GpuProgramming/matrix.h"
-#include "datetime.h"
+// #include "datetime.h"
+#include <queue>
 
 namespace GL {
 	namespace scope {
@@ -52,7 +52,7 @@ namespace GL {
         GL::Proxy_Function const& impl::Functions::add_function(GL::string name_m, GL::Proxy_Function&& func) {
             return functions[name_m].lock()->insert({ func->m_signature.get_hash(), std::move(func) }).first->second;
         };
-        GL::Proxy_Function const& impl::Functions::add_function(GL::Proxy_Function&& func, std::remove_pointer_t<typename decltype(functions)::Iterator::value_type::second_type>::shared_locked& locked) {
+        GL::Proxy_Function const& impl::Functions::add_function(GL::Proxy_Function&& func, std::remove_pointer_t<typename decltype(functions)::iterator::value_type::second_type>::shared_locked& locked) {
             return locked->insert({ func->m_signature.get_hash(), std::move(func) }).first->second;
         };
         void impl::Functions::UniformCostSearchNodeBestPath::get_impl(std::vector<GL::type>& out) const {
@@ -674,7 +674,7 @@ namespace GL {
             }
         };
         impl::BasicScope::check_cache& impl::BasicScope::GetCheckMap() {
-            thread_local check_cache out;
+            static thread_local check_cache out;
             out.clear();
             return out;
         };
@@ -880,12 +880,12 @@ namespace GL {
             if (NS) {
                 auto& current_cache = NS->namespace_search_cache.TryGetCache<0>(NS->cache_version);
                 if (current_cache) {
-                    if (auto** cache = current_cache->try_at(Name.hash())) {
-                        return (*cache);
+                    if (auto f = current_cache->find(Name.hash()), e = current_cache->end(); f != e) {
+                        return f->second;
                     }
                 }
                 else {
-                    NS->namespace_search_cache.EmplaceCache<0>(NS->cache_version, GL::make_shared< GL::epoch_map<Breadcrumb*, size_t> >());
+                    NS->namespace_search_cache.EmplaceCache<0>(NS->cache_version, GL::make_shared< concurrency::concurrent_unordered_map<size_t, Breadcrumb*> >());
                 }
             }
 
@@ -919,7 +919,7 @@ namespace GL {
             })) {
                 if (NS) {
                     if (auto& current_cache = NS->namespace_search_cache.TryGetCache<0>(NS->cache_version); current_cache) {
-                        current_cache->insert_fast(Name.hash(), (Breadcrumb*)BC);
+                        current_cache->insert({ Name.hash(), (Breadcrumb*)BC });
                     }
                 }
                 return BC;
@@ -927,7 +927,7 @@ namespace GL {
             else {
                 if (NS) {
                     if (auto& current_cache = NS->namespace_search_cache.TryGetCache<0>(NS->cache_version); current_cache) {
-                        current_cache->insert_fast(Name.hash(), (Breadcrumb*)nullptr);
+                        current_cache->insert({ Name.hash(), (Breadcrumb*)nullptr });
                     }
                 }
                 return nullptr;
@@ -1040,7 +1040,7 @@ namespace GL {
             if (PossiblyScopedName.begins_with(GL::string::namespace_colons()))
                 return this->GetRoot()->ParsePossiblyScopedName(PossiblyScopedName.remove_leading(':')); // this search needs to start from the root
 
-            thread_local int recursion_depth{ 0 };
+            static thread_local int recursion_depth{ 0 };
             class recursion_depth_manager {
             private:
                 int& r;
@@ -2349,31 +2349,32 @@ namespace GL {
 
             // units 
             if (1) {
+// The bug is located here - fix this.  
 #define DerivedUnitType(type, category, abbreviation, Ratio) \
         this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable(GL::type_of< type >().name(), []() -> type { return type{ 0.0f }; }, GL::function_signature::Constructor | GL::function_signature::Async, {}, {}, GL::type_of< type >())); \
         this->make_class(GL::type_of< GL::value >()).add_function(GL::make_converter<GL::type, GL::value>()); \
         this->make_class(GL::type_of< GL::type >()).add_function(GL::make_converter<GL::value, GL::type>()); \
         this->make_class(GL::type_of< GL::type >()).add_function(GL::make_callable("to_hash", [](GL::type const& rhs) -> size_t { return std::hash<float>()((float)rhs); }))
 
-#define DerivedUnitTypeWithMetricPrefix(type, prefix) \
+#define DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, prefix, prefix_abbrev) \
         DerivedUnitType(prefix ## type, 0, 0, 0)
 
 #define DerivedUnitTypeWithMetricPrefixes(type, category, abbreviation, ratio) \
     DerivedUnitType(type, category, abbreviation, ratio); \
-	DerivedUnitTypeWithMetricPrefix(type, femto); \
-	DerivedUnitTypeWithMetricPrefix(type, pico); \
-	DerivedUnitTypeWithMetricPrefix(type, nano); \
-	DerivedUnitTypeWithMetricPrefix(type, micro); \
-	DerivedUnitTypeWithMetricPrefix(type, milli); \
-	DerivedUnitTypeWithMetricPrefix(type, centi); \
-	DerivedUnitTypeWithMetricPrefix(type, deci); \
-	DerivedUnitTypeWithMetricPrefix(type, deca); \
-	DerivedUnitTypeWithMetricPrefix(type, hecto); \
-	DerivedUnitTypeWithMetricPrefix(type, kilo); \
-	DerivedUnitTypeWithMetricPrefix(type, mega); \
-	DerivedUnitTypeWithMetricPrefix(type, giga); \
-	DerivedUnitTypeWithMetricPrefix(type, tera); \
-	DerivedUnitTypeWithMetricPrefix(type, peta)
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, femto, f); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, pico, p); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, nano, n); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, micro, u); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, milli, m); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, centi, c); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, deci, d); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, deca, da); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, hecto, h); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, kilo, k); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, mega, M); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, giga, G); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, tera, T); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, peta, P)
 
                 DerivedUnitList; // this loops through the definitions for DerivedUnitTypeWithMetricPrefixes() and DerivedUnitType() for all units. Change thosse macro definitions to change the implimentations. 
 
@@ -2562,7 +2563,7 @@ namespace GL {
                 var_class.add_function(GL::make_callable("valid", [](GL::var const& rhs) -> bool { return rhs.get_type().get_base_hash() != GL::type_of<GL::var>().get_base_hash(); }, GL::function_signature::Async));
 
                 var_class.add_function(GL::make_callable("to_string", [](GL::var const& rhs) -> GL::string {  
-                    thread_local int recursion_depth{ 0 };
+                    static thread_local int recursion_depth{ 0 };
                     class recursion_depth_manager {
                     private:
                         int& r;
@@ -2604,7 +2605,7 @@ namespace GL {
                     return GL::string::empty_string();
                 }, GL::function_signature::Async | GL::function_signature::Explicit));
                 var_class.add_function(GL::make_callable("to_hash", [](GL::var const& rhs) -> size_t { 
-                    thread_local int recursion_depth{ 0 };
+                    static thread_local int recursion_depth{ 0 };
                     class recursion_depth_manager {
                     private:
                         int& r;
@@ -2663,7 +2664,8 @@ namespace GL {
                 Class.add_function(GL::make_callable("to_string", [](class_t const& rhs) -> GL::string { return (class_t)rhs; }));
                 Class.add_function(GL::make_callable("to_hash", [](class_t const& rhs) -> size_t { return std::hash<class_t>()(rhs); }));
             }
-            
+
+#if 0
             // datetime
             if (1) {
                 using class_t = GL::datetime;
@@ -2726,6 +2728,7 @@ namespace GL {
                 Class.add_function(GL::make_callable("to_string", [](class_t const& rhs) -> GL::string { return rhs; }));
                 Class.add_function(GL::make_callable("to_hash", [](class_t const& rhs) -> size_t { return std::hash<long long>()(rhs); }));
             }
+#endif
 
             // pair<T0,T1>
             if (1) {
@@ -3315,12 +3318,13 @@ namespace GL {
                 Class.add_function(GL::make_callable("to_hash", [](class_t const& rhs) -> size_t { return std::hash<class_t>()(rhs); }));
             }
 
+#if 0
             // map<T0, T1>
             if (1) {
                 auto& BaseClass = this->make_class("map");
                 BaseClass.template_types = { { "T0", GL::is_template::type<0>("T0") }, { "T1", GL::is_template::type<1>("T1") } };
 
-                using impl_t = GL::epoch_map<std::pair<GL::any, GL::any>, size_t>;
+                using impl_t = concurrency::concurrent_unordered_map<size_t, std::pair<GL::any, GL::any>>;
                 if (1) {
                     // teach it how to create the generic map
                     GL::type_of<impl_t>().try_update_name("map_impl");
@@ -3329,42 +3333,42 @@ namespace GL {
                     AnyMap.add_function(GL::make_callable(AnyMap.this_type.name(), [&AnyMap](impl_t const& rhs) -> GL::shared_ptr<impl_t> {
                         auto out = GL::make_shared<impl_t>();
                         for (auto& x : rhs) {
-                            out->insert_fast(*x.first, {
+                            out->insert({ x.first, {
                                 [&]() -> GL::any::fast_any {
-                                    if (auto* BC = AnyMap.GetRoot()->try_find_class(x.second->first.m_casted_type)) {
-                                        return BC->this_m.scope->call(BC->this_m.scope_name, { x.second->first.fast() });
+                                    if (auto* BC = AnyMap.GetRoot()->try_find_class(x.second.first.m_casted_type)) {
+                                        return BC->this_m.scope->call(BC->this_m.scope_name, { x.second.first.fast() });
                                     }
                                     return GL::any::fast_any();
                                 }(), [&]() {
-                                    if (auto* BC = AnyMap.GetRoot()->try_find_class(x.second->second.m_casted_type)) {
-                                        return BC->this_m.scope->call(BC->this_m.scope_name, { x.second->second.fast() });
+                                    if (auto* BC = AnyMap.GetRoot()->try_find_class(x.second.second.m_casted_type)) {
+                                        return BC->this_m.scope->call(BC->this_m.scope_name, { x.second.second.fast() });
                                     }
                                     return GL::any::fast_any();
                                 }()
-                            });
+                            } });
                         }
                         return out;
                         }, GL::function_signature::Constructor + GL::function_signature::Async));
                     AnyMap.GetRoot()->add_function(GL::make_callable("=", [&AnyMap](GL::any::fast_any Lhs, impl_t const& rhs) -> GL::any::fast_any {
                         auto& out = Lhs.cast<impl_t&>();
                         for (auto& x : rhs) {
-                            auto& destination = out.get_or_make(*x.first, [&]() -> std::pair<GL::any, GL::any> { return {
+                            auto& destination = out.get_or_make(x.first, [&]() -> std::pair<GL::any, GL::any> { return {
                                     [&]() -> GL::any::fast_any {
-                                        if (auto* BC = AnyMap.GetRoot()->try_find_class(x.second->first.m_casted_type)) {
-                                            return BC->this_m.scope->call(BC->this_m.scope_name, { x.second->first.fast() });
+                                        if (auto* BC = AnyMap.GetRoot()->try_find_class(x.second.first.m_casted_type)) {
+                                            return BC->this_m.scope->call(BC->this_m.scope_name, { x.second.first.fast() });
                                         }
                                         return GL::any::fast_any();
                                     }(),
                                     [&]() {
-                                        if (auto* BC = AnyMap.GetRoot()->try_find_class(x.second->second.m_casted_type)) {
-                                            return BC->this_m.scope->call(BC->this_m.scope_name, { x.second->second.fast() });
+                                        if (auto* BC = AnyMap.GetRoot()->try_find_class(x.second.second.m_casted_type)) {
+                                            return BC->this_m.scope->call(BC->this_m.scope_name, { x.second.second.fast() });
                                         }
                                         return GL::any::fast_any();
                                     }()
                                 };
                             });
-                            AnyMap.GetRoot()->call("=", { destination.first.fast(), x.second->first.fast() });
-                            AnyMap.GetRoot()->call("=", { destination.second.fast(), x.second->second.fast() });
+                            AnyMap.GetRoot()->call("=", { destination.first.fast(), x.second.first.fast() });
+                            AnyMap.GetRoot()->call("=", { destination.second.fast(), x.second.second.fast() });
                         }
                         return Lhs;
                         }, GL::function_signature::Async, {}, { { "lhs", GL::type_of<impl_t&>() }, { "rhs", GL::type_of<impl_t const&>() } }, GL::type_of<impl_t&>()));
@@ -3373,8 +3377,8 @@ namespace GL {
                     AnyMap.add_function(GL::make_callable("to_string", [](impl_t const& rhs) -> GL::string {
                         GL::string out;
                         for (auto& obj : rhs) {
-                            auto& first = obj.second->first;
-                            auto& second = obj.second->second;
+                            auto& first = obj.second.first;
+                            auto& second = obj.second.second;
 
                             auto first_str = GL::scope::GetCurrentCaller()->call<GL::string>("to_string", { first.fast() });
                             auto second_str = GL::scope::GetCurrentCaller()->call<GL::string>("to_string", { second.fast() });
@@ -3386,8 +3390,8 @@ namespace GL {
                     AnyMap.add_function(GL::make_callable("to_hash", [](impl_t const& rhs) -> size_t {
                         size_t out = 0;
                         for (auto& obj : rhs) {
-                            auto& first = obj.second->first;
-                            auto& second = obj.second->second;
+                            auto& first = obj.second.first;
+                            auto& second = obj.second.second;
 
                             auto first_hash = GL::scope::GetCurrentCaller()->call<size_t>("to_hash", { first.fast() });
                             auto second_hash = GL::scope::GetCurrentCaller()->call<size_t>("to_hash", { second.fast() });
@@ -3404,6 +3408,8 @@ namespace GL {
                     if (auto* implp = lhs.cast<GL::dynamic_object>().try_at("~impl"); implp && *implp) {
                         auto& impl = (*implp)->cast<impl_t>();                            
                         auto hash = GL::scope::GetCurrentCaller()->GetRoot()->call<size_t>("to_hash", { rhs });
+
+
                         if (auto* p = impl.try_at(hash); p) {
                             return p->second.fast() | GL::type::Reference | GL::type::Const;
                         }
@@ -3623,7 +3629,9 @@ namespace GL {
 
                 BaseClass.initialize_basic_member_functions();
             }
+#endif
 
+#if 0
             // queue<T0>
             if (1) {
                 auto& BaseClass = this->make_class("queue");
@@ -3679,7 +3687,9 @@ namespace GL {
                     throw std::runtime_error("Could not instantiate the map internals");
                 }, GL::function_signature::Async, {}, { { "lhs", BaseClass.this_type | GL::type::Reference } , { "obj", GL::is_template::type<0>("T0") | GL::type::Const | GL::type::Reference } }));
             }
+#endif
 
+#if 0
             // GPU-accelerated arrays
             if (1) {
                 // initialize the classes and their names
@@ -3881,6 +3891,7 @@ namespace GL {
 #undef add_matrix
 
             }
+#endif
 		};
         void impl::RootScope::preload_conversions() {
             for (auto& _type : all_convertable_types()) {

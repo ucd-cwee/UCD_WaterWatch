@@ -758,5 +758,3 @@ namespace GL {
 		}
 	}
 }
-
-

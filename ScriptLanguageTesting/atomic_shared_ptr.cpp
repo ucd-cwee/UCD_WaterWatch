@@ -1,4 +1,3 @@
-
 #include "atomic_shared_ptr.h"
 #include "atomic_stack.h"
 

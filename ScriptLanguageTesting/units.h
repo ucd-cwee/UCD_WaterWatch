@@ -1,12 +1,12 @@
 #pragma once
+
 #define DECL_UNIT_LITERALS
 #include "Strings.h"
-#include "atomic_maps.h"
 #include "types.h"
 #include <concurrent_unordered_map.h>
+#include <array>
 #include <limits>
 #include <sstream>
-#include "atomic_tree.h"
 
 namespace GL {
 #ifdef DECL_UNIT_LITERALS 
@@ -22,21 +22,12 @@ namespace GL {
     public:
         class Categories {
         public:
-            class length {
-            public: static constexpr std::array<double, 6> unitType_m{ 1, 0, 0, 0, 0, 0 };
-            };
-            class mass {
-            public: static constexpr std::array<double, 6> unitType_m{ 0, 1, 0, 0, 0, 0 };
-            };
-            class time {
-            public: static constexpr std::array<double, 6> unitType_m{ 0, 0, 1, 0, 0, 0 };
-            };
-            class current {
-            public: static constexpr std::array<double, 6> unitType_m{ 0, 0, 0, 1, 0, 0 };
-            };
-            class dollar {
-            public: static constexpr std::array<double, 6> unitType_m{ 0, 0, 0, 0, 1, 0 };
-            };
+            class length {      public: static constexpr std::array<double, 6> unitType_m{ 1, 0, 0, 0, 0, 0 }; };
+            class mass {        public: static constexpr std::array<double, 6> unitType_m{ 0, 1, 0, 0, 0, 0 }; };
+            class time {        public: static constexpr std::array<double, 6> unitType_m{ 0, 0, 1, 0, 0, 0 }; };
+            class current {     public: static constexpr std::array<double, 6> unitType_m{ 0, 0, 0, 1, 0, 0 }; };
+            class temperature { public: static constexpr std::array<double, 6> unitType_m{ 0, 0, 0, 0, 1, 0 }; };
+            class angle {       public: static constexpr std::array<double, 6> unitType_m{ 0, 0, 0, 0, 0, 1 }; };
             class frequency {
             public: static constexpr std::array<double, 6> unitType_m{ 0, 0, -1, 0, 0, 0 };
             };
@@ -85,13 +76,6 @@ namespace GL {
             class density {
             public: static constexpr std::array<double, 6> unitType_m{ -3, 1, 0, 0, 0, 0 };
             };
-            class temperature {
-            public: static constexpr std::array<double, 6> unitType_m{ 0, 0, 0, 0, 1, 0 };
-            };
-            class angle {
-            public: static constexpr std::array<double, 6> unitType_m{ 0, 0, 0, 0, 0, 1 };
-            };
-
         };
         union package {
         public:
@@ -146,7 +130,7 @@ namespace GL {
                 hash{ std::numeric_limits< uint32_t>::max() };
             concurrency::concurrent_unordered_map<uint16_t, impl_unit>
                 implimented_units;
-            GL::epoch_search_tree<impl_unit* , double>
+            concurrency::concurrent_unordered_map<double, impl_unit*>
                 sorted_units;
 
             si_unit() = default;
@@ -189,12 +173,12 @@ namespace GL {
                 }
             };
             impl_unit* try_get_nearest_impl_unit(double ratio) {
-                if (auto [node, locking] = sorted_units.NodeFindSmallestLargerEqual(ratio, false); node) {
-                    return *node->object();
+                const auto [equalOrGreater, Greater] = sorted_units.equal_range(ratio);
+                auto end = sorted_units.end();
+                if (equalOrGreater != end) {
+                    return equalOrGreater->second;
                 }
-                else {
-                    return nullptr;
-                }
+                return nullptr;
             };
             impl_unit& get_impl_unit(double ratio, GL::string const& name, GL::string const& abbreviation) {
                 uint16_t impl_hash = (((hash == 0) || (ratio == 0)) ? 0 : si_unit::calc_impl_hash(ratio));
@@ -212,7 +196,7 @@ namespace GL {
                         out.name = name;
                         out.abbreviation = abbreviation;
                         out.default_bits = default_bits;
-                        sorted_units.Add(&out, ratio);
+                        sorted_units.insert({ ratio, &out });
                     }
                 }
                 return out;
@@ -233,7 +217,7 @@ namespace GL {
                         out.name = name;
                         out.abbreviation = abbreviation;
                         out.default_bits = default_bits;
-                        sorted_units.Add(&out, ratio);
+                        sorted_units.insert({ ratio, &out });
                     }
                 }
                 return out;
@@ -1151,7 +1135,29 @@ namespace GL {
 
 #define CalculateMetricPrefixV(metric) ((long double)std::metric::num / (long double)std::metric::den)
 #define DerivedUnitList \
+    DerivedUnitType(radian, angle, rad, 1.0); \
     DerivedUnitTypeWithMetricPrefixes(meter, length, m, 1.0); \
+    DerivedUnitTypeWithMetricPrefixes(second, time, s, 1.0); \
+	DerivedUnitTypeWithMetricPrefixes(gram, mass, g, 1.0 / 1000.0); \
+	DerivedUnitTypeWithMetricPrefixes(ampere, current, A, 1.0); \
+	DerivedUnitType(celsius, temperature, degC, 1.0); \
+	DerivedUnitTypeWithMetricPrefixes(hertz, frequency, Hz, 1.0 / Conversion<second>(1.0)); \
+	DerivedUnitType(meters_per_second, velocity, mps, Conversion<meter>(1.0) / Conversion<second>(1.0)); \
+	DerivedUnitType(meters_per_second_squared, acceleration, mps_sq, Conversion<meter>(1.0) / (Conversion<second>(1.0) * Conversion<second>(1.0))); \
+	DerivedUnitTypeWithMetricPrefixes(newton, force, N, Conversion<kilogram>(1.0)* Conversion<meters_per_second_squared>(1.0)); \
+	DerivedUnitTypeWithMetricPrefixes(pascals, pressure, Pa, 1.0); \
+	DerivedUnitType(coulomb, charge, C, 1.0); \
+	DerivedUnitTypeWithMetricPrefixes(watt, power, W, 1.0); \
+	DerivedUnitType(joule, energy, J, 1.0); \
+	DerivedUnitTypeWithMetricPrefixes(volt, voltage, V, 1.0); \
+	DerivedUnitTypeWithMetricPrefixes(ohm, impedance, Ohm, 1.0); \
+	DerivedUnitType(siemens, conductance, S, 1.0); \
+    DerivedUnitType(square_meter, area, sq_m, 1.0); \
+	DerivedUnitType(cubic_meter, volume, cu_m, 1.0); \
+	DerivedUnitType(gram_per_second, fillrate, gs, 1.0 / 1000.0); \
+	DerivedUnitType(cubic_meter_per_second, flowrate, cms, 1.0); \
+	DerivedUnitType(kilograms_per_cubic_meter, density, kg_per_cu_m, 1.0); \
+    DerivedUnitType(degree, angle, deg, Conversion<radian>(3.141592653589793238462643383279502884197169399375105820974944 / 180.0)); \
     DerivedUnitType(foot, length, ft, Conversion<meter>(381.0 / 1250.0)); \
 	DerivedUnitType(inch, length, in, Conversion<foot>(1.0 / 12.0)); \
 	DerivedUnitType(furlong, length, fur, Conversion<foot>(660)); \
@@ -1159,7 +1165,6 @@ namespace GL {
 	DerivedUnitType(nautical_mile, length, nmi, Conversion<meter>(1852.0)); \
 	DerivedUnitType(astronical_unit, length, au, Conversion<meter>(149597870700.0)); \
 	DerivedUnitType(yard, length, yd, Conversion<foot>(3.0)); \
-	DerivedUnitTypeWithMetricPrefixes(gram, mass, g, 1.0 / 1000.0); \
 	DerivedUnitType(metric_ton, mass, t, Conversion<kilogram>(1000.0)); \
 	DerivedUnitType(pound, mass, lb, Conversion<kilogram>(45359237.0 / 100000000.0)); \
 	DerivedUnitType(long_ton, mass, ln_t, Conversion<pound>(2240.0)); \
@@ -1168,18 +1173,14 @@ namespace GL {
 	DerivedUnitType(ounce, mass, oz, Conversion<pound>(1.0 / 16.0)); \
 	DerivedUnitType(carat, mass, ct, Conversion<milligram>(200.0)); \
 	DerivedUnitType(slug, mass, slug, Conversion<kilogram>(145939029.0 / 10000000.0)); \
-	DerivedUnitTypeWithMetricPrefixes(second, time, s, 1.0); \
 	DerivedUnitType(minute, time, min, Conversion<second>(60.0)); \
 	DerivedUnitType(hour, time, hr, Conversion<minute>(60.0)); \
 	DerivedUnitType(day, time, d, Conversion<hour>(24.0)); \
 	DerivedUnitType(week, time, wk, Conversion<day>(7.0)); \
-	DerivedUnitType(year, time, yr, Conversion<day>(365.25)); /* includes additional day for every 4 years */ \
+	DerivedUnitType(year, time, yr, Conversion<day>(365.2425)); /* includes additional day for every 4 years */ \
 	DerivedUnitType(month, time, mnth, Conversion<year>(1.0 / 12.0)); \
 	DerivedUnitType(julian_year, time, a_j, Conversion<second>(31557600.0)); \
 	DerivedUnitType(gregorian_year, time, a_g, Conversion<second>(31556952.0)); \
-	DerivedUnitTypeWithMetricPrefixes(ampere, current, A, 1.0); \
-	DerivedUnitTypeWithMetricPrefixes(hertz, frequency, Hz, 1.0); \
-	DerivedUnitType(meters_per_second, velocity, mps, Conversion<meter>(1.0) / Conversion<second>(1.0)); \
 	DerivedUnitType(feet_per_second, velocity, fps, Conversion<foot>(1.0) / Conversion<second>(1.0)); \
 	DerivedUnitType(feet_per_minute, velocity, fpm, Conversion<foot>(1.0) / Conversion<minute>(1.0)); \
     DerivedUnitType(inches_per_day, velocity, ipd, Conversion<inch>(1.0) / Conversion<day>(1.0)); \
@@ -1187,25 +1188,19 @@ namespace GL {
 	DerivedUnitType(miles_per_hour, velocity, mph, Conversion<mile>(1.0) / Conversion<hour>(1.0)); \
 	DerivedUnitType(kilometers_per_hour, velocity, kph, Conversion<kilometer>(1.0) / Conversion<hour>(1.0)); \
 	DerivedUnitType(knot, velocity, kts, Conversion<nautical_mile>(1.0) / Conversion<hour>(1.0)); \
-	DerivedUnitType(meters_per_second_squared, acceleration, mps_sq, Conversion<meter>(1.0) / (Conversion<second>(1.0) * Conversion<second>(1.0))); \
 	DerivedUnitType(feet_per_second_squared, acceleration, fps_sq, Conversion<foot>(1.0) / (Conversion<second>(1.0) * Conversion<second>(1.0))); \
 	DerivedUnitType(standard_gravity, acceleration, SG, Conversion<meters_per_second_squared>(980665.0 / 100000.0)); \
-	DerivedUnitTypeWithMetricPrefixes(newton, force, N, Conversion<kilogram>(1.0)* Conversion<meters_per_second_squared>(1.0)); \
 	DerivedUnitType(pound_f, force, lbf, Conversion<slug>(1.0)* Conversion<feet_per_second_squared>(1.0)); \
 	DerivedUnitType(dyne, force, dyn, Conversion<newton>(1.0 / 100000.0)); \
 	DerivedUnitType(kilopond, force, kp, Conversion<standard_gravity>(1.0)* Conversion<kilogram>(1.0)); \
 	DerivedUnitType(poundal, force, pdl, Conversion<pound>(1.0)* Conversion<foot>(1.0) / (Conversion<second>(1.0) * Conversion<second>(1.0))); \
-	DerivedUnitTypeWithMetricPrefixes(pascals, pressure, Pa, 1.0); \
 	DerivedUnitType(bar, pressure, bar, Conversion<kilopascals>(100.0)); \
 	DerivedUnitType(atmosphere, pressure, atm, Conversion<pascals>(101325.0)); \
 	DerivedUnitType(pounds_per_square_inch, pressure, psi, Conversion<pound_f>(1.0) / (Conversion<inch>(1.0) * Conversion<inch>(1.0))); \
 	DerivedUnitType(head, pressure, ft_water, Conversion<pound_f>(62.43) / (Conversion<foot>(1.0) * Conversion<foot>(1.0))); \
 	DerivedUnitType(torr, pressure, torr, Conversion<atmosphere>(1.0 / 760.0)); \
-	DerivedUnitType(coulomb, charge, C, 1.0); \
 	DerivedUnitTypeWithMetricPrefixes(ampere_hour, charge, Ah, Conversion< ampere>(1.0)* Conversion<hour>(1.0)); \
-	DerivedUnitTypeWithMetricPrefixes(watt, power, W, 1.0); \
 	DerivedUnitType(horsepower, power, hp, Conversion<watt>(7457.0 / 10.0)); \
-	DerivedUnitType(joule, energy, J, 1.0); \
 	DerivedUnitType(calorie, energy, cal, Conversion<joule>(4184.0 / 1000.0)); \
 	DerivedUnitType(watt_minute, energy, Wm, Conversion<watt>(1.0)* Conversion<minute>(1.0)); \
 	DerivedUnitTypeWithMetricPrefixes(watt_hour, energy, Wh, Conversion<watt>(1.0)* Conversion<hour>(1.0)); \
@@ -1215,17 +1210,12 @@ namespace GL {
 	DerivedUnitType(british_thermal_unit_59, energy, BTU59, Conversion<joule>(1054804.0 / 1000.0)); \
 	DerivedUnitType(therm, energy, thm, Conversion<british_thermal_unit_59>(100000.0)); \
 	DerivedUnitType(foot_pound, energy, ftlbf, Conversion<joule>(13558179483314004.0 / 10000000000000000.0)); \
-	DerivedUnitTypeWithMetricPrefixes(volt, voltage, V, 1.0); \
-	DerivedUnitTypeWithMetricPrefixes(ohm, impedance, Ohm, 1.0); \
-	DerivedUnitType(siemens, conductance, S, 1.0);  \
-	DerivedUnitType(square_meter, area, sq_m, 1.0); \
 	DerivedUnitType(square_foot, area, sq_ft, Conversion<foot>(1.0)* Conversion<foot>(1.0)); \
 	DerivedUnitType(square_inch, area, sq_in, Conversion<inch>(1.0)* Conversion<inch>(1.0)); \
 	DerivedUnitType(square_mile, area, sq_mi, Conversion<mile>(1.0)* Conversion<mile>(1.0)); \
 	DerivedUnitType(square_kilometer, area, sq_km, Conversion<kilometer>(1.0)* Conversion<kilometer>(1.0)); \
 	DerivedUnitType(hectare, area, ha, Conversion<square_meter>(1000.0)); \
 	DerivedUnitType(acre, area, acre, Conversion<square_foot>(43560.0)); \
-	DerivedUnitType(cubic_meter, volume, cu_m, 1.0); \
 	DerivedUnitType(cubic_millimeter, volume, cu_mm, CUBED(Conversion<millimeter>(1.0))); \
 	DerivedUnitType(cubic_kilometer, volume, cu_km, CUBED(Conversion<kilometer>(1.0))); \
 	DerivedUnitTypeWithMetricPrefixes(liter, volume, L, CUBED(Conversion<decimeter>(1.0))); \
@@ -1257,13 +1247,11 @@ namespace GL {
 	DerivedUnitType(sack, volume, sacks, Conversion<bushel>(3.0)); \
 	DerivedUnitType(shot, volume, shots, Conversion<fluid_ounce>(3.0 / 2.0)); \
 	DerivedUnitType(strike, volume, strikes, Conversion<bushel>(2.0)); \
-	DerivedUnitType(gram_per_second, fillrate, gs, 1.0 / 1000.0); \
 	DerivedUnitType(metric_ton_per_second, fillrate, mTs, Conversion<metric_ton>(1.0) / Conversion<second>(1.0)); \
 	DerivedUnitType(metric_ton_per_minute, fillrate, mTm, Conversion<metric_ton>(1.0) / Conversion<minute>(1.0)); \
 	DerivedUnitType(metric_ton_per_hour, fillrate, mTh, Conversion<metric_ton>(1.0) / Conversion<hour>(1.0)); \
 	DerivedUnitType(metric_ton_per_day, fillrate, mTd, Conversion<metric_ton>(1.0) / Conversion<day>(1.0)); \
 	DerivedUnitType(metric_ton_per_year, fillrate, mTy, Conversion<metric_ton>(1.0) / Conversion<year>(1.0)); \
-	DerivedUnitType(cubic_meter_per_second, flowrate, cms, 1.0); \
 	DerivedUnitType(cubic_meter_per_hour, flowrate, cmh, Conversion<cubic_meter>(1.0) / Conversion<hour>(1.0)); \
 	DerivedUnitType(cubic_meter_per_day, flowrate, cmd, Conversion<cubic_meter>(1.0) / Conversion<day>(1.0)); \
 	DerivedUnitType(cubic_millimeter_per_second, flowrate, cmms, Conversion<cubic_millimeter>(1.0) / Conversion<second>(1.0)); \
@@ -1295,7 +1283,6 @@ namespace GL {
 	DerivedUnitType(acre_foot_per_hour, flowrate, ac_ft_h, Conversion<acre_foot>(1.0) / Conversion<hour>(1.0)); \
 	DerivedUnitType(acre_foot_per_day, flowrate, ac_ft_d, Conversion<acre_foot>(1.0) / Conversion<day>(1.0)); \
 	DerivedUnitType(acre_foot_per_year, flowrate, ac_ft_y, Conversion<acre_foot>(1.0) / Conversion<year>(1.0)); \
-	DerivedUnitType(kilograms_per_cubic_meter, density, kg_per_cu_m, 1.0); \
 	DerivedUnitType(grams_per_milliliter, density, g_per_mL, Conversion<gram>(1.0) / Conversion<milliliter>(1.0)); \
 	DerivedUnitType(kilograms_per_liter, density, kg_per_L, Conversion<kilogram>(1.0) / Conversion<liter>(1.0)); \
 	DerivedUnitType(ounces_per_cubic_foot, density, oz_per_cu_ft, Conversion<ounce>(1.0) / Conversion<cubic_foot>(1.0)); \
@@ -1304,10 +1291,7 @@ namespace GL {
 	DerivedUnitType(pounds_per_cubic_foot, density, lb_per_cu_ft, Conversion<pound>(1.0) / Conversion<cubic_foot>(1.0)); \
 	DerivedUnitType(pounds_per_cubic_inch, density, lb_per_cu_in, Conversion<pound>(1.0) / Conversion<cubic_inch>(1.0)); \
 	DerivedUnitType(pounds_per_gallon, density, lb_per_gal, Conversion<pound>(1.0) / Conversion<gallon>(1.0)); \
-	DerivedUnitType(slugs_per_cubic_foot, density, slug_per_cu_ft, Conversion<slug>(1.0) / Conversion<cubic_foot>(1.0)); \
-	DerivedUnitType(celsius, temperature, degC, 1.0); \
-    DerivedUnitType(radian, angle, rad, 1.0); \
-    DerivedUnitType(degree, angle, deg, Conversion<radian>(3.141592653589793238462643383279502884197169399375105820974944 / 180.0));
+	DerivedUnitType(slugs_per_cubic_foot, density, slug_per_cu_ft, Conversion<slug>(1.0) / Conversion<cubic_foot>(1.0));
 
 #define DerivedUnitType(type, category, abbreviation, Ratio) \
 	class type final : public value { \
@@ -1322,7 +1306,7 @@ namespace GL {
         ~type() = default; \
 	};
 
-#define DerivedUnitTypeWithMetricPrefix(type, prefix) \
+#define DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, prefix, p_abbreviation) \
     class prefix ## type final : public value { \
     private: \
         static package unique_pkg(); \
@@ -1337,20 +1321,20 @@ namespace GL {
 
 #define DerivedUnitTypeWithMetricPrefixes(type, category, abbreviation, ratio) \
     DerivedUnitType(type, category, abbreviation, ratio); \
-	DerivedUnitTypeWithMetricPrefix(type, femto); \
-	DerivedUnitTypeWithMetricPrefix(type, pico); \
-	DerivedUnitTypeWithMetricPrefix(type, nano); \
-	DerivedUnitTypeWithMetricPrefix(type, micro); \
-	DerivedUnitTypeWithMetricPrefix(type, milli); \
-	DerivedUnitTypeWithMetricPrefix(type, centi); \
-	DerivedUnitTypeWithMetricPrefix(type, deci); \
-	DerivedUnitTypeWithMetricPrefix(type, deca); \
-	DerivedUnitTypeWithMetricPrefix(type, hecto); \
-	DerivedUnitTypeWithMetricPrefix(type, kilo); \
-	DerivedUnitTypeWithMetricPrefix(type, mega); \
-	DerivedUnitTypeWithMetricPrefix(type, giga); \
-	DerivedUnitTypeWithMetricPrefix(type, tera); \
-	DerivedUnitTypeWithMetricPrefix(type, peta)
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, femto, f); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, pico, p); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, nano, n); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, micro, u); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, milli, m); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, centi, c); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, deci, d); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, deca, da); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, hecto, h); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, kilo, k); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, mega, M); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, giga, G); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, tera, T); \
+	DerivedUnitTypeWithMetricPrefix(type, category, abbreviation, ratio, peta, P)
 
     DerivedUnitList; // this loops through the definitions for DerivedUnitTypeWithMetricPrefixes() and DerivedUnitType() for all units. Change thosse macro definitions to change the implimentations. 
 
@@ -1488,8 +1472,8 @@ namespace GL {
                 using namespace literals;
                 return 1.1E-5_sq_ft / 1_s; 
             };
-
         };
+
         __forceinline value value::sin() const {
             value::package copied = this->packed;
             if (copied.m_bits.si_unit == 0) {
@@ -1528,5 +1512,6 @@ namespace GL {
         };
 
     };
+
 
 #endif

@@ -254,9 +254,24 @@ namespace GL {
 				iteratorType _start;
 
 				static void DoTask(impl::job_argument const& _args) {
-					IterData* data = reinterpret_cast<IterData*>(_args.task_memory);
-					iteratorType t{ static_cast<iteratorType>(_args.job_index) + data->_start };
-					(*data->_to_do)(t);
+					IterData* data{ reinterpret_cast<IterData*>(_args.task_memory) };
+					// using f_t = impl::function_traits<decltype(std::function(std::declval<F>()))>;
+
+					//if constexpr (std::tuple_size_v<decltype(impl::function_traits(ToDo))::arguments> == 0) {
+					//	(*data->_to_do)();
+					//	return;
+					//}
+					//else if constexpr (std::is_reference_v<std::tuple_element_t<0, impl::function_traits<F>::arguments> > 
+					//	&& !std::is_const_v<std::tuple_element_t<0, impl::function_traits<F>::arguments>> 
+					//) {
+					//	iteratorType t(static_cast<iteratorType>(_args.job_index) + data->_start);
+					//	(*data->_to_do)(t);
+					//	return;
+					//}
+					//else {
+						(*data->_to_do)(static_cast<iteratorType>(_args.job_index) + data->_start);
+						//return;
+					//}
 				};
 			} data { &ToDo, start };
 

@@ -1,9 +1,9 @@
 #pragma once
 #include "types.h"
 #include "Parallel.h"
-#include "units.h"
-#include "../GpuProgramming/matrix.h"
-#include "constexpr_math.h"
+// #include "units.h"
+// #include "../GpuProgramming/matrix.h"
+// #include "constexpr_math.h"
 
 // GL::Proxy_Functions, which wrap other functions into a shareable interface
 namespace GL {
@@ -2011,11 +2011,19 @@ namespace GL {
                 std::is_same_v<T, unsigned long> ||
                 std::is_same_v<T, unsigned long long> ||
                 std::is_same_v<T, unsigned char> ||
-                std::is_same_v<T, unsigned int> ||
-                std::is_same_v<T, GL::value> ||
-                std::is_base_of<GL::value, T>::value;
+                std::is_same_v<T, unsigned int> 
+                || std::is_same_v<T, GL::value> 
+                || std::is_base_of<GL::value, T>::value
+                ;
         };
     };
+
+    namespace util {
+        template <typename FloatingPoint>
+        constexpr FloatingPoint constexpr_abs(FloatingPoint x, typename std::enable_if<std::is_floating_point<FloatingPoint>::value>::type* = nullptr) {
+            return x >= 0 ? x : x < 0 ? -x : x;
+        };
+    }
 
 #pragma warning(push)
 #pragma warning(disable : 4244) // suppressing warning on casting size_t to double, etc.
@@ -2052,7 +2060,7 @@ namespace GL {
                 out->m_signature.state_m |= (/*GL::function_signature::Async | */GL::function_signature::Static);
                 out->m_signature.state_m |= GL::function_signature::NoCost;
                 if constexpr ((std::is_pod<From>::value || details::is_numeric_type<From>()) && (std::is_pod<To>::value || details::is_numeric_type<To>())) {
-                    constexpr short sz_diff = cx::abs((float)(short)sizeof(From) - (float)(short)sizeof(To));
+                    constexpr short sz_diff = util::constexpr_abs((float)(short)sizeof(From) - (float)(short)sizeof(To));
                     if constexpr (sz_diff >= 6) {
                         out->m_signature.numConversions = 3;
                     }

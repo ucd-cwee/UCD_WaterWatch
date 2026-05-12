@@ -1,4 +1,5 @@
 #pragma once
+#include <xutility>
 #include <ShlDisp.h>
 #include <winnt.h>
 

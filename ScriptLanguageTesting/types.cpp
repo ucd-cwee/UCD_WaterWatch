@@ -1,8 +1,6 @@
 #include "types.h"
-#include "atomic_maps.h"
 #include "ticket_dispensor.h"
 #include "atomic_vector.h"
-#include "atomic_tree.h"
 #include <queue>
 #include <map>
 
@@ -280,7 +278,7 @@ namespace GL {
         GL::type_of<GL::type>().try_update_name("type");
         GL::type_of<GL::var>().try_update_name("var");
         GL::type_of<GL::value>().try_update_name("value"); // the implimentations of units (meter, foot, etc) each correct their own name during definition.         
-        
+
         GL::type_of<GL::undefined>().try_update_name("undefined");
 
         return true;
