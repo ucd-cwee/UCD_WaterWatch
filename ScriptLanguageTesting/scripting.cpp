@@ -612,11 +612,8 @@ namespace GL {
             return can_call_with_conversions(func, &param, &param + 1);
         };
 
-        GL::any* impl::BasicScope::GetObject_Impl(GL::string const& sv) {
-            if (objects_m) {
-                auto locked = objects_m.lock_shared();
-                if (auto f = locked->find(sv), e = locked->end(); f != e) return &f->second;
-            }
+        GL::any::fast_any* impl::BasicScope::GetObject_Impl(GL::string const& sv) {
+            if (auto f = objects_m.find(sv), e = objects_m.end(); f != e) return &f->second;            
             return nullptr;
         };
         bool impl::BasicScope::AddUsing_Impl(Breadcrumb* scope) {
@@ -1220,7 +1217,7 @@ namespace GL {
             }
             return false;
         }        
-        bool impl::BasicScope::insert_object_here(GL::string const& sv, GL::any&& Obj) {
+        bool impl::BasicScope::insert_object_here(GL::string const& sv, GL::any::fast_any&& Obj) {
             if (this->EmplaceObject_Impl<false>(sv, std::move(Obj))) {
                 // check the cache to make sure we aren't changing something from "empty" to "existing"
                 if (this->is_root()) {
@@ -1244,7 +1241,7 @@ namespace GL {
             }
             return false;
         };        
-        bool impl::BasicScope::emplace_object_here(GL::string const& sv, GL::any&& Obj) {
+        bool impl::BasicScope::emplace_object_here(GL::string const& sv, GL::any::fast_any&& Obj) {
             if (this->EmplaceObject_Impl<true>(sv, std::move(Obj))) {
                 // check the cache to make sure we aren't changing something from "empty" to "existing"
                 if (this->is_root()) {
@@ -1268,7 +1265,7 @@ namespace GL {
             }
             return false;
         };        
-        GL::any* impl::BasicScope::find_object_here(GL::string const& sv) const {
+        GL::any::fast_any* impl::BasicScope::find_object_here(GL::string const& sv) const {
             return const_cast<BasicScope*>(this)->GetObject_Impl(sv);
         };
         impl::Breadcrumb* impl::BasicScope::find_namespace(GL::string const& Name) const {
@@ -1325,7 +1322,7 @@ namespace GL {
             return nullptr;
         };
         std::pair<GL::any::fast_any, bool> impl::BasicScope::try_find_object(GL::string const& PossiblyScopedName, Breadcrumb* search_from) const {
-            GL::any
+            GL::any::fast_any
                 * p = nullptr;
             if (search_from) {
                 if (p = search_from->this_m.scope->find_object_here(PossiblyScopedName); p) {
@@ -1828,8 +1825,8 @@ namespace GL {
                             }
                         }
                         if (1) {
-                            auto objects = this->objects_m.lock_shared();
-                            for (auto& obj : *objects) {
+                            auto& objects = this->objects_m;
+                            for (auto& obj : objects) {
                                 auto& replace_me = obj.second.m_casted_type;
                                 if (auto [newT, successful] = TryFinalizeType(replace_me, new_class.get()); successful) {
                                     auto this_static_obj_type = newT + (obj.second.m_casted_type - GL::type::CppType - GL::type::TemplateType).get_qualifiers();
@@ -2470,13 +2467,13 @@ namespace GL {
                 //}));
 
                 auto& constants_NS = this->make_namespace("constants");
-                constants_NS.insert_object_here("pi", GL::constants::pi());
-                constants_NS.insert_object_here("viscosity", GL::constants::viscosity());
-                constants_NS.insert_object_here("half_pi", GL::constants::half_pi());
-                constants_NS.insert_object_here("g", GL::constants::g());
-                constants_NS.insert_object_here("G", GL::constants::G());
-                constants_NS.insert_object_here("d", GL::constants::d());
-                constants_NS.insert_object_here("c", GL::constants::c());
+                constants_NS.insert_object_here("pi", GL::any::fast_any::instance(GL::constants::pi()));
+                constants_NS.insert_object_here("viscosity", GL::any::fast_any::instance(GL::constants::viscosity()));
+                constants_NS.insert_object_here("half_pi", GL::any::fast_any::instance(GL::constants::half_pi()));
+                constants_NS.insert_object_here("g", GL::any::fast_any::instance(GL::constants::g()));
+                constants_NS.insert_object_here("G", GL::any::fast_any::instance(GL::constants::G()));
+                constants_NS.insert_object_here("d", GL::any::fast_any::instance(GL::constants::d()));
+                constants_NS.insert_object_here("c", GL::any::fast_any::instance(GL::constants::c()));
             }
 
             // types
@@ -3288,7 +3285,7 @@ namespace GL {
                     static GL::any::fast_any out{ GL::any::ref(colons).fast() + GL::type::Reference };
                     return out;
                 }, GL::function_signature::Static, {}, {}, Class.this_type | GL::type::Reference));
-                Class.insert_object_here("npos", GL::any::ref(class_t::npos));
+                Class.insert_object_here("npos", GL::any::ref(class_t::npos).fast());
                 Class.add_function(GL::decl_func(&class_t::remove_leading));
                 Class.add_function(GL::decl_func(&class_t::remove_leading_and_trailing));                
                 Class.add_function(GL::make_callable("remove_prefix", [](GL::any::fast_any lhs, class_t const& rhs) -> GL::any::fast_any { lhs.cast<class_t&>().remove_prefix(rhs); return lhs; }, 0, {}, { { "lhs", Class.this_type | GL::type::Reference }, { "rhs", Class.this_type | GL::type::Reference | GL::type::Const } }, Class.this_type | GL::type::Reference));

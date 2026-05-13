@@ -658,30 +658,27 @@ namespace GL {
             protected:
                 Breadcrumb
                     breadcrumb_m;
-                GL::deferred<concurrency::concurrent_unordered_map<Breadcrumb*, GL::callback<NamespaceScope>::ScopedListener>>
+                GL::deferred<std::unordered_map<Breadcrumb*, GL::callback<NamespaceScope>::ScopedListener>>
                     using_m; // NOTE: calling "using" should split a normal, BasicScope - e.g. using statements are appended staticly at compile time, NOT at runtime. 
-                GL::shared_lockable<std::map<GL::string, GL::any>> // concurrency::concurrent_unordered_map
+                std::map<GL::string, GL::any::fast_any> 
                     objects_m; // NOTE: adding objects should be appended staticly at compile time, NOT at runtime. E.g. the names are known, even if the types are not yet known. 
 
                 virtual void invalidate_cache(long* parent_alive = nullptr, size_t call_number = 0) {};
-                template <bool overwriteIfExists> bool EmplaceObject_Impl(GL::string const& sv, GL::any&& Obj) {
+                template <bool overwriteIfExists> bool EmplaceObject_Impl(GL::string const& sv, GL::any::fast_any&& Obj) {
                     if constexpr (overwriteIfExists) {
-                        auto locked = objects_m.lock();
-                        locked->operator[](sv) = std::move(Obj);
+                        objects_m.emplace(sv, std::move(Obj));
                     }
                     else {
                         if (1) {
-                            auto locked = objects_m.lock_shared();
-                            if (auto f = locked->find(sv), e = locked->end(); f != e) return false;
+                            if (auto f = objects_m.find(sv), e = objects_m.end(); f != e) return false;
                         }
                         if (1) {
-                            auto locked = objects_m.lock();
-                            locked->operator[](sv) = std::move(Obj);
+                            objects_m.emplace(sv, std::move(Obj));
                         }
                     }
                     return true;
                 };
-                GL::any* GetObject_Impl(GL::string const& sv);
+                GL::any::fast_any* GetObject_Impl(GL::string const& sv);
                 virtual bool AddUsing_Impl(Breadcrumb* scope);
 
             private:
@@ -786,9 +783,7 @@ namespace GL {
                             GetNamespace()->invalidate_cache();
                         }
                     }
-                    if (objects_m) {
-                        objects_m.lock()->clear();
-                    }
+                    objects_m.clear();
                     //}
                 };
 
@@ -819,7 +814,7 @@ namespace GL {
                 /// <param name="sv"></param>
                 /// <param name="Obj"></param>
                 /// <returns>bool</returns>
-                bool insert_object_here(GL::string const& sv, GL::any&& Obj);
+                bool insert_object_here(GL::string const& sv, GL::any::fast_any&& Obj);
 
                 /// <summary>
                 /// Emplace an object into this scope whether or not it exists. Does not search neighbors or review the object name.
@@ -827,18 +822,18 @@ namespace GL {
                 /// <param name="sv"></param>
                 /// <param name="Obj"></param>
                 /// <returns>bool</returns>
-                bool emplace_object_here(GL::string const& sv, GL::any&& Obj);
+                bool emplace_object_here(GL::string const& sv, GL::any::fast_any&& Obj);
 
                 /// <summary>
                 /// Try to find an object in this scope. Does not search neighbors or review the object name. Since objects cannot be removed, it safely returns a pointer. 
                 /// </summary>
                 /// <returns>ObjectWrapper</returns>
-                GL::any* find_object_here(GL::string const& sv) const;
+                GL::any::fast_any* find_object_here(GL::string const& sv) const;
 
                 // should be in the form of: [](auto const& iter) -> bool {}
                 template <typename T> bool for_each_object_here(T const& Func) const {
-                    auto objects = this->objects_m.lock_shared();
-                    for (auto iter = objects->begin(), end = objects->end(); iter != end; ++iter) {
+                    auto& objects = this->objects_m;
+                    for (auto iter = objects.begin(), end = objects.end(); iter != end; ++iter) {
                         if (Func(*iter)) return true;
                     }
                     return false;
