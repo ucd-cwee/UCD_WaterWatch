@@ -16,6 +16,7 @@
 #include <tuple>
 #include "ticket_dispensor.h"
 #include "atomic_vector.h"
+#include <concurrent_vector.h>
 #pragma endregion
 
 // Good Language namespace
@@ -621,8 +622,7 @@ namespace GL {
 
 		public:			
 			std::weak_ptr<job> self;
-			GL::atomic_vector< std::weak_ptr<job_base> > children;
-			// std::atomic<size_t> num_children;
+			concurrency::concurrent_vector< std::weak_ptr<job_base> > children;
 
 		protected:
 			std::atomic<bool> dispatch_once;
@@ -632,9 +632,9 @@ namespace GL {
 
 			// called once the dispatched job ends
 			static void Callback(void* _args) {
-				if (auto* data = reinterpret_cast<job*>(_args))
+				if (auto* data = reinterpret_cast<job*>(_args); data != nullptr)
 					for (auto& x : data->children)
-						if (auto p = x.lock())
+						if (auto p = x.lock(); p != nullptr)
 							(void)p->dispatch();
 			};
 
@@ -694,7 +694,6 @@ namespace GL {
 				, ctx{ 0, nullptr, &job::Callback, reinterpret_cast<void*>(this) } 
 				, parent{  }
 				, todo{ std::move(_todo) }
-				//, num_children{ 0 }
 			{ 
 				if constexpr (!this_is_job_start) {
 					parent = _parent->self.lock();
@@ -755,7 +754,7 @@ namespace GL {
 
 		public:
 			std::weak_ptr<jobs> self;
-			GL::atomic_vector< std::weak_ptr<job_base> > children;
+			concurrency::concurrent_vector< std::weak_ptr<job_base> > children;
 
 		protected:		
 			std::atomic<bool> dispatch_once;
@@ -767,10 +766,10 @@ namespace GL {
 
 			// called once the dispatched job ends
 			static void Callback(void* _args) {
-				if (auto* data = reinterpret_cast<jobs*>(_args))
-					for (auto& x : data->children) 
-						if (auto p = x.lock()) 
-							(void)p->dispatch();				
+				if (auto* data = reinterpret_cast<jobs*>(_args); data != nullptr)
+					for (auto& x : data->children)
+						if (auto p = x.lock(); p != nullptr)
+							(void)p->dispatch();
 			};
 
 			template <size_t i>
@@ -893,23 +892,15 @@ namespace GL {
 		template<typename F, typename Parent = void> __forceinline decltype(auto) task(F&& ToDo, Parent* parent = nullptr) {
 			auto out = std::make_shared<job<F, Parent>>(std::move(ToDo), std::move(parent));
 			out->self = out;
-			if constexpr (!std::is_same_v<void, Parent>) {
-				parent->children.push_back(out);
-			}
-			else {
-				out->dispatch();
-			}
+			if constexpr (!std::is_same_v<void, Parent>) parent->children.push_back(out);			
+			else out->dispatch();			
 			return out;
 		};
 		template<typename F, typename Parent = void> __forceinline decltype(auto) task(size_t start, size_t end, F&& ToDo, Parent* parent = nullptr) {
 			auto out = std::make_shared < jobs<F, Parent> >(start, end, std::move(ToDo), std::move(parent));
 			out->self = out;
-			if constexpr (!std::is_same_v<void, Parent>) {
-				parent->children.push_back(out);
-			}
-			else {
-				out->dispatch();
-			}
+			if constexpr (!std::is_same_v<void, Parent>) parent->children.push_back(out);			
+			else out->dispatch();			
 			return out;
 		};
 		// task(...).and_then([](){ ... });
