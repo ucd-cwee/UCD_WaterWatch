@@ -20,7 +20,8 @@
 #include "aba_problem.h"
 #include "util.h"
 #include "Parallel.h"
-
+#include "units.h"
+#include "Stopwatch.h"
 //#include "stopwatch.h"
 //#include "strings.h"
 //#include "types.h"
@@ -60,13 +61,53 @@ int main() {
         }
     }   
 #endif
-    for (int j = 0; j < 1000000; ++j) {
-        auto f = [](int i) {};
-        GL::parallel::impl::function_traits<decltype(f)>::arguments;
+    using namespace GL::literals;
+    struct F {
+        static void ToDo(GL::foot const& i) {
+            if (i > 0ull) throw std::runtime_error("e");
+        };
+        static GL::meter AsyncTest(GL::foot const& i) {
+            return i;
+        };
+    };
 
-        GL::parallel::For(0, 1000000, [](int i) {
-            if (i < 0) throw std::runtime_error("e");
+    while (1) {
+        auto task_sequence = GL::parallel::task([]() -> GL::millisecond {
+            std::cout << "First...\n";
+            return GL::millisecond(0);
+        })->and_then([](GL::second t0) -> GL::millisecond {
+            std::cout << "Second...\n";
+            return t0;
+        })->and_then(0, 10'000, [](size_t i, GL::millisecond& t0, GL::job_base& parent) -> GL::any::fast_any {
+            t0 += 1;
+            return parent.result;
+        })->and_then([](GL::any::fast_any const& t0) {
+            if (t0.cast<GL::millisecond>() != 10'000_ms) throw "SHOULD HAVE MATCHED";
+            std::cout << "Third and done.\n";
         });
+        
+        std::atomic<long long> progress = 0;
+        auto task_1 = GL::parallel::task(0, 10'000, [&progress]() {
+            if (++progress % 1000 == 0) {
+                std::cout << GL::printf("%i percent\n", (int)(100.0f * ((float)progress.load() / 10'000.0f)));
+            }
+            GL::stopwatch sw; sw.reset();
+            while (sw.check() < 0.001) {}
+        });
+
+        std::cout << "All jobs submitted.\n";
+    }
+
+    for (int j = 0; j < 1'000'000; ++j) {
+        auto future1 = GL::parallel::async(&F::AsyncTest, 10_ft);
+        if (GL::type_of<GL::meter>() != future1.as_promise().Type()) throw "SHOULD HAVE MATCHED";
+        if (future1.get_ref() != 10_ft) throw "SHOULD HAVE MATCHED";
+
+        auto future2 = GL::parallel::async([](GL::millisecond const& t) {
+            ::Sleep((long long)t.operator float());
+        }, 0.01_s);
+
+        GL::parallel::For(0, -1'000'000, &F::ToDo);
     }
     return 0;
 };

@@ -425,6 +425,9 @@ namespace GL {
                 if (compare_exchange_p(Old, New)) {
                     return Old;
                 }
+                else {
+                    std::this_thread::yield();
+                }
             }
         };
         template <typename F> package UpdatePackage(F const& update_func) {
@@ -434,12 +437,15 @@ namespace GL {
                 if (compare_exchange_p(Old, update_func(Old))) {
                     return Old;
                 }
+                else {
+                    std::this_thread::yield();
+                }
             }
         };
 
         template<typename Func> static bool do_comparison(Func const& toDo, value const& A, value const& V) noexcept {
-            auto LHS = A.load();
-            auto RHS = V.load();
+            auto LHS = A.packed;
+            auto RHS = V.packed;
 
             if (identical_units(LHS, RHS)) {
                 return toDo(LHS.m_bits.val, RHS.m_bits.val);
@@ -661,7 +667,8 @@ namespace GL {
         };
 
     protected:
-        explicit value(package&& from) : packed(std::move(from)) {};
+        // explicit value(package const& from) : packed(from) {};
+        explicit value(package&& from) : packed(std::forward<package>(from)) {};
         void TrySetTo(value const& RHS) {
             if (this == &RHS) return;
 
@@ -708,7 +715,7 @@ namespace GL {
             return *this;
         };
         value& operator=(value&& RHS) noexcept {
-            TrySetTo(std::move(RHS));
+            TrySetTo(std::forward<value>(RHS));
             return *this;
         };
         ~value() = default;

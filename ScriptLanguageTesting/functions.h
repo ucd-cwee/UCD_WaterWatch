@@ -758,7 +758,7 @@ namespace GL {
             virtual GL::any::fast_any do_call(any::fast_any** begin) const {
                 return {};
             };
-            Proxy_Function_Base(function_signature&& p_signature) : m_signature(std::move(p_signature)) {}
+            Proxy_Function_Base(function_signature&& p_signature) : m_signature(std::forward<function_signature>(p_signature)) {}
 
         };
     };
@@ -812,7 +812,7 @@ namespace GL {
                 argT(14);
                 argT(15);
 #undef argT
-                return function_signature(GL::string::empty_string(), GL::type_of<returnType>(), args, std::move(defaults));
+                return function_signature(GL::string::empty_string(), GL::type_of<returnType>(), args, std::forward<std::vector<any>>(defaults));
             };
         public:
             Explicit_Function_Impl(Explicit_Function_Impl const& from)
@@ -822,7 +822,7 @@ namespace GL {
 
         public:
             Explicit_Function_Impl(Callable F_p, std::vector<any>&& defaults = {})
-                : Proxy_Function_Base(CreateSignature(std::move(defaults)))
+                : Proxy_Function_Base(CreateSignature(std::forward<std::vector<any>>(defaults)))
                 , F_m(std::move(F_p))
             {};
             virtual ~Explicit_Function_Impl() = default;
@@ -855,7 +855,7 @@ namespace GL {
                 std::vector<std::pair<GL::string, GL::type>>
                     args;
                 args.push_back({ "parent", GL::type_of<const Class&>() });
-                return function_signature(GL::string::empty_string(), GL::type_of<actualT&>(), args, std::move(defaults));
+                return function_signature(GL::string::empty_string(), GL::type_of<actualT&>(), args, std::forward<std::vector<any>>(defaults));
             };
 
         public:
@@ -866,7 +866,7 @@ namespace GL {
 
         public:
             Attribute_Access_Impl(T Class::* t_attr, std::vector<any>&& defaults = {})
-                : Proxy_Function_Base(CreateSignature(std::move(defaults)))
+                : Proxy_Function_Base(CreateSignature(std::forward<std::vector<any>>(defaults)))
                 , m_attr(t_attr)
             {};
             virtual ~Attribute_Access_Impl() = default;
@@ -949,7 +949,7 @@ namespace GL {
                 argT(14);
                 argT(15);
 #undef argT
-                return function_signature(GL::string::empty_string(), GL::type_of<returnType>(), args, std::move(defaults));
+                return function_signature(GL::string::empty_string(), GL::type_of<returnType>(), args, std::forward<std::vector<any>>(defaults));
             };
         public:
             Static_Function_Impl(Static_Function_Impl const& from)
@@ -959,7 +959,7 @@ namespace GL {
 
         public:
             Static_Function_Impl(R(*f)(T...), std::vector<any>&& defaults = {})
-                : Proxy_Function_Base(CreateSignature(std::move(defaults)))
+                : Proxy_Function_Base(CreateSignature(std::forward<std::vector<any>>(defaults)))
                 , F_m(std::move(f)) {};
             virtual ~Static_Function_Impl() = default;
             virtual GL::shared_ptr<details::Proxy_Function_Base> duplicate() const override {
@@ -1010,7 +1010,7 @@ namespace GL {
                 argT(14);
                 argT(15);
 #undef argT
-                return function_signature(GL::string::empty_string(), GL::type_of<returnType>(), args, std::move(defaults));
+                return function_signature(GL::string::empty_string(), GL::type_of<returnType>(), args, std::forward<std::vector<any>>(defaults));
             };
         public:
             Default_Member_Function_Impl(Default_Member_Function_Impl const& from)
@@ -1020,7 +1020,7 @@ namespace GL {
 
         public:
             Default_Member_Function_Impl(R(Class::* f)(T...), std::vector<any>&& defaults = {})
-                : Proxy_Function_Base(CreateSignature(std::move(defaults)))
+                : Proxy_Function_Base(CreateSignature(std::forward<std::vector<any>>(defaults)))
                 , m_attr(std::move(f)) {};
             virtual ~Default_Member_Function_Impl() = default;
             virtual GL::shared_ptr<details::Proxy_Function_Base> duplicate() const override {
@@ -1248,7 +1248,7 @@ namespace GL {
                 argT(14);
                 argT(15);
 #undef argT
-                return function_signature(GL::string::empty_string(), GL::type_of<returnType>(), args, std::move(defaults));
+                return function_signature(GL::string::empty_string(), GL::type_of<returnType>(), args, std::forward<std::vector<any>>(defaults));
             };
         public:
             Const_Member_Function_Impl(Const_Member_Function_Impl const& from)
@@ -1258,7 +1258,7 @@ namespace GL {
 
         public:
             Const_Member_Function_Impl(R(Class::* f)(T...) const, std::vector<any>&& defaults = {})
-                : Proxy_Function_Base(CreateSignature(std::move(defaults)))
+                : Proxy_Function_Base(CreateSignature(std::forward<std::vector<any>>(defaults)))
                 , m_attr(std::move(f)) {};
             virtual ~Const_Member_Function_Impl() = default;
             virtual GL::shared_ptr<details::Proxy_Function_Base> duplicate() const override {
@@ -1812,7 +1812,7 @@ namespace GL {
 
         template<typename Ret, typename Class, typename... Param>
         Proxy_Function Member_Function_Impl(Ret(Class::* f)(Param...) const, std::vector<any>&& defaults) {
-            auto out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::make_shared_forwarded(Const_Member_Function_Impl(f, std::move(defaults))));
+            auto out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::make_shared_forwarded(Const_Member_Function_Impl(f, std::forward<std::vector<any>>(defaults))));
             out->m_signature.state_m |= function_signature::Constant;
             // out->m_signature.state_m |= function_signature::Async; // const member functions (e.g. std::string::length) are assumed to be async-friendly. 
             return out;
@@ -1820,7 +1820,7 @@ namespace GL {
         
         template<typename Ret, typename Class, typename... Param>
         Proxy_Function Member_Function_Impl(Ret(Class::* f)(Param...), std::vector<any>&& defaults) {
-            auto out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::make_shared_forwarded(Default_Member_Function_Impl(f, std::move(defaults))));
+            auto out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::make_shared_forwarded(Default_Member_Function_Impl(f, std::forward<std::vector<any>>(defaults))));
             return out;
         };
     };

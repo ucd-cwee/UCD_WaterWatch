@@ -180,11 +180,11 @@ namespace GL {
 
 			/* job arguments used to perform work as part of a loop over a Task */
 			struct job_argument {
-				long long
+				size_t
 					job_index;		// job index relative to dispatch (like SV_DispatchThreadID in HLSL)
 				long long
 					group_id;		// group index relative to dispatch (like SV_GroupID in HLSL)
-				long long
+				size_t
 					group_index;	// job index relative to group (like SV_GroupIndex in HLSL)
 				void*
 					group_memory;		// stack memory shared within the current group (jobs within a group execute serially)
@@ -246,43 +246,63 @@ namespace GL {
 			};
 		};
 
-		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
-		If the todo(i) returns anything, it will be collected into a vector at the end. */
-		template<typename iteratorType, class F> decltype(auto) For(iteratorType start, iteratorType end, F const& ToDo) {
-			struct IterData {
-				const F* _to_do;
-				iteratorType _start;
+		/* parallel_for (auto i = start; i < end; i++){ todo(i); } */
+		template<typename iteratorType, class F> void For(iteratorType start, iteratorType end, F const& ToDo) {
+			if (end >= start) {
+				using f_t = impl::function_traits<decltype(std::function(ToDo))>;
+				impl::dispatch_context ctx{ 0, nullptr, nullptr };
+				if (start == static_cast<iteratorType>(0)) {
+					struct IterData {
+						const F& _to_do;
+						const iteratorType& _start;
 
-				static void DoTask(impl::job_argument const& _args) {
-					IterData* data{ reinterpret_cast<IterData*>(_args.task_memory) };
-					// using f_t = impl::function_traits<decltype(std::function(std::declval<F>()))>;
+						static void DoTask(impl::job_argument const& _args) {
+							const IterData& data = *static_cast<const IterData*>(_args.task_memory);
+							if constexpr (std::tuple_size_v<f_t::arguments> == 0) {
+								(void)data._to_do();
+							}
+							else if constexpr (std::is_reference_v<std::tuple_element_t<0, f_t::arguments> > && !std::is_const_v< std::remove_reference_t<std::tuple_element_t<0, f_t::arguments>>>) {
+								iteratorType t = static_cast<iteratorType>(_args.job_index);
+								(void)data._to_do(t);
+							}
+							else {
+								(void)data._to_do(static_cast<iteratorType>(_args.job_index));
+							}
+						};
+					} data{ ToDo, start };
+					impl::Dispatch(ctx, static_cast<size_t>(end - start), &IterData::DoTask, static_cast<void*>(&data));
+				}
+				else {
+					struct IterData {
+						const F& _to_do;
+						const iteratorType& _start;
 
-					//if constexpr (std::tuple_size_v<decltype(impl::function_traits(ToDo))::arguments> == 0) {
-					//	(*data->_to_do)();
-					//	return;
-					//}
-					//else if constexpr (std::is_reference_v<std::tuple_element_t<0, impl::function_traits<F>::arguments> > 
-					//	&& !std::is_const_v<std::tuple_element_t<0, impl::function_traits<F>::arguments>> 
-					//) {
-					//	iteratorType t(static_cast<iteratorType>(_args.job_index) + data->_start);
-					//	(*data->_to_do)(t);
-					//	return;
-					//}
-					//else {
-						(*data->_to_do)(static_cast<iteratorType>(_args.job_index) + data->_start);
-						//return;
-					//}
-				};
-			} data { &ToDo, start };
-
-			impl::dispatch_context ctx{ 0, nullptr, nullptr };
-			impl::Dispatch(ctx, static_cast<size_t>(static_cast<size_t>(end) - static_cast<size_t>(start)), &IterData::DoTask, reinterpret_cast<void*>(&data));
-			impl::Wait(ctx);
+						static void DoTask(impl::job_argument const& _args) {
+							const IterData& data = *static_cast<const IterData*>(_args.task_memory);
+							if constexpr (std::tuple_size_v<f_t::arguments> == 0) {
+								(void)data._to_do();
+							}
+							else if constexpr (std::is_reference_v<std::tuple_element_t<0, f_t::arguments> > && !std::is_const_v< std::remove_reference_t<std::tuple_element_t<0, f_t::arguments>>>) {
+								iteratorType t = static_cast<iteratorType>(_args.job_index) + data._start;
+								(void)data._to_do(t);
+							}
+							else {
+								(void)data._to_do(static_cast<iteratorType>(_args.job_index) + data._start);
+							}
+						};
+					} data{ ToDo, start };
+					impl::Dispatch(ctx, static_cast<size_t>(end - start), &IterData::DoTask, static_cast<void*>(&data));
+				}
+				impl::Wait(ctx);
+			}
+			else {
+				For(end, start, ToDo);
+			}
 		};
 
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
 		If the todo(i) returns anything, it will be collected into a vector at the end. */
-		template<typename iteratorType, class F> decltype(auto) For(iteratorType start, iteratorType end, iteratorType step, F const& ToDo) {
+		template<typename iteratorType, class F> void For(iteratorType start, iteratorType end, iteratorType step, F const& ToDo) {
 			struct IterData {
 				const F* _to_do;
 				iteratorType _start;
@@ -593,15 +613,16 @@ namespace GL {
 			template<typename G, typename ParentB> friend class job;
 			template<typename G, typename ParentB> friend class jobs;
 		public:
-			using returnType = typename impl::function_traits<decltype(std::function(std::declval<F>()))>::result_type;
+			using functionType = impl::function_traits<decltype(std::function(std::declval<F>()))>;
+			using returnType = typename functionType::result_type;
 			static constexpr bool this_returns_void = std::is_same_v<returnType, void>;
-			static constexpr size_t this_num_args = std::tuple_size_v<typename impl::function_traits<decltype(std::function(std::declval<F>()))>::arguments>;
+			static constexpr size_t this_num_args = std::tuple_size_v<typename functionType::arguments>;
 			static constexpr bool this_is_job_start = std::is_same_v<void, Parent>;
 
 		public:			
 			std::weak_ptr<job> self;
 			GL::atomic_vector< std::weak_ptr<job_base> > children;
-			std::atomic<size_t> num_children;
+			// std::atomic<size_t> num_children;
 
 		protected:
 			std::atomic<bool> dispatch_once;
@@ -611,64 +632,57 @@ namespace GL {
 
 			// called once the dispatched job ends
 			static void Callback(void* _args) {
-				job* data;
-				size_t s, sz;
-				if (data = reinterpret_cast<job*>(_args)) {
-					std::this_thread::yield(); // helps with scheduling
-					sz = data->num_children.load();
-					for (s = 0; s < sz; ++s) {
-						auto& x = data->children[s];
-						if (auto p = x.lock()) {
-							p->dispatch();
-						}						
+				if (auto* data = reinterpret_cast<job*>(_args))
+					for (auto& x : data->children)
+						if (auto p = x.lock())
+							(void)p->dispatch();
+			};
+
+			template <size_t i>
+			static decltype(auto) Argument(impl::job_argument const& _args) {
+				if constexpr (this_num_args > i) {
+					using arg = typename std::tuple_element_t<i, typename functionType::arguments>;
+					static constexpr bool arg_is_jobBase = std::is_same_v<std::remove_const_t <arg>, job_base&>;
+					static constexpr bool arg_is_any = std::is_same_v<std::decay_t<arg>, GL::any>;
+					static constexpr bool arg_is_fast_any = std::is_same_v<std::decay_t <arg>, GL::any::fast_any>;
+					
+					job* data = reinterpret_cast<job*>(_args.task_memory);
+					if constexpr (arg_is_jobBase) {
+						return *dynamic_cast<job_base*>(data->parent.get());
+					}
+					else if constexpr (arg_is_any || arg_is_fast_any) {
+						return data->parent->result;
+					}
+					else if constexpr (!this_is_job_start) {
+						return data->parent->result.cast<typename Parent::returnType>();
+					}
+					else {
+						return;
 					}
 				}
+				else {
+					return;
+				}
 			};
+
 			static void DoTask(impl::job_argument const& _args) {
 				job* data = reinterpret_cast<job*>(_args.task_memory);
 
-				if constexpr (!this_is_job_start) 
-					data->parent->wait();				
-
 				if constexpr (this_is_job_start || (this_num_args == 0)) {
 					if constexpr (this_returns_void) data->todo();
-					else data->result = GL::any(data->todo()).fast();
+					else data->result = GL::any::fast_any::instance(data->todo());
 				}
 				else {
 					if constexpr (this_num_args == 1) {
-					    using arg0 = typename std::tuple_element_t<0, typename impl::function_traits<decltype(std::function(std::declval<F>()))>::arguments>;
-						static constexpr bool arg0_jobBase = std::is_same_v<std::remove_const_t < arg0>, job_base&>;
-
-						if constexpr (arg0_jobBase) {
-							if constexpr (this_returns_void) data->todo(*dynamic_cast<job_base*>(&*data->parent));
-							else data->result = GL::any(data->todo(*dynamic_cast<job_base*>(&*data->parent))).fast();
-						}
-						else {
-							if constexpr (this_returns_void) data->todo(data->parent->result.cast());
-							else data->result = GL::any(data->todo(data->parent->result.cast())).fast();
-						}
+						if constexpr (this_returns_void) data->todo(Argument<0>(_args));
+						else data->result = GL::any::fast_any::instance(data->todo(Argument<0>(_args)));
 					}
 					else if constexpr (this_num_args == 2) {
-						using arg0 = typename std::tuple_element_t<0, typename impl::function_traits<decltype(std::function(std::declval<F>()))>::arguments>;
-						static constexpr bool arg0_jobBase = std::is_same_v<std::remove_const_t < arg0 >, job_base&>;
-
-						using arg1 = typename std::tuple_element_t<1, typename impl::function_traits<decltype(std::function(std::declval<F>()))>::arguments>;
-						static constexpr bool arg1_jobBase = std::is_same_v<std::remove_const_t < arg1 >, job_base&>;
-
-						if constexpr (arg0_jobBase) {
-							if constexpr (this_returns_void) data->todo(*dynamic_cast<job_base*>(&*data->parent), data->parent->result.cast());
-							else data->result = GL::any(data->todo(*dynamic_cast<job_base*>(&*data->parent), data->parent->result.cast())).fast();
-						}
-						else if constexpr (arg1_jobBase) {
-							if constexpr (this_returns_void) data->todo(data->parent->result.cast(), *dynamic_cast<job_base*>(&*data->parent));
-							else data->result = GL::any(data->todo(data->parent->result.cast(), *dynamic_cast<job_base*>(&*data->parent))).fast();
-						}
-						else {
-							static_assert("Not able to process async 'job' task with 2 arguments when none of them are the parent's job_base& reference");
-						}
+						if constexpr (this_returns_void) data->todo(Argument<0>(_args), Argument<1>(_args));
+						else data->result = GL::any::fast_any::instance(data->todo(Argument<0>(_args), Argument<1>(_args)));
 					}
 					else {
-						static_assert("Not able to process async 'job' task with more than 2 arguments");
+						static_assert("Not able to process async 'job' task with more than 2 arguments. One argument may the a jobBase&, and the other argument may recieve the return of the parent job.");
 					}
 				}
 			};
@@ -680,7 +694,7 @@ namespace GL {
 				, ctx{ 0, nullptr, &job::Callback, reinterpret_cast<void*>(this) } 
 				, parent{  }
 				, todo{ std::move(_todo) }
-				, num_children{ 0 }
+				//, num_children{ 0 }
 			{ 
 				if constexpr (!this_is_job_start) {
 					parent = _parent->self.lock();
@@ -695,10 +709,11 @@ namespace GL {
 				impl::Wait(ctx, false);
 			};
 
-			bool dispatch() override {
+			bool dispatch() override {				
 				static bool expected{ false };
 				if (!dispatch_once.load()) {
 					if (dispatch_once.compare_exchange_strong(expected, true)) {
+						if constexpr (!this_is_job_start) parent->wait();
 						impl::DispatchOnce(ctx, &job::DoTask, reinterpret_cast<void*>(this));
 						return true;
 					}
@@ -711,12 +726,18 @@ namespace GL {
 				return *dynamic_cast<job_base*>(this);
 			};
 			job_base* parent_ptr() const  override {
-				if constexpr (this_is_job_start)
-					return nullptr;
-				else
-					return dynamic_cast<job_base*>(const_cast<Parent*>(&*parent));
+				if constexpr (this_is_job_start) return nullptr;
+				else return dynamic_cast<job_base*>(const_cast<Parent*>(&*parent));
 			};
+			// task(...).and_then([](){ ... });
+			// task([]() -> int { return 0; }).and_then([](int prev_job_result){ ... });
+			// task(...).and_then([](job_base& prev_job){ ... });
+			// task([]() -> int { return 0; }).and_then([](int prev_job_result, job_base& prev_job){ ... });
 			template<typename G> decltype(auto) and_then(G&& ToDo);
+			// task(...).and_then(0, 100, [](size_t index){ ... });
+			// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result){ ... });
+			// task(...).and_then(0, 100, [](size_t index, job_base& prev_job){ ... });
+			// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result, job_base& prev_job){ ... });
 			template<typename G> decltype(auto) and_then(size_t start, size_t end, G&& ToDo);
 		};
 
@@ -726,15 +747,15 @@ namespace GL {
 			template<typename G, typename ParentB> friend class job;
 			template<typename G, typename ParentB> friend class jobs;
 		public:
-			using returnType = typename impl::function_traits<decltype(std::function(std::declval<F>()))>::result_type;
+			using functionType = impl::function_traits<decltype(std::function(std::declval<F>()))>;
+			using returnType = typename functionType::result_type;
 			static constexpr bool this_returns_void = std::is_same_v<returnType, void>;
-			static constexpr size_t this_num_args = std::tuple_size_v<typename impl::function_traits<decltype(std::function(std::declval<F>()))>::arguments>;
+			static constexpr size_t this_num_args = std::tuple_size_v<typename functionType::arguments>;
 			static constexpr bool this_is_job_start = std::is_same_v<void, Parent>;
 
 		public:
 			std::weak_ptr<jobs> self;
 			GL::atomic_vector< std::weak_ptr<job_base> > children;
-			std::atomic<size_t> num_children;
 
 		protected:		
 			std::atomic<bool> dispatch_once;
@@ -746,92 +767,73 @@ namespace GL {
 
 			// called once the dispatched job ends
 			static void Callback(void* _args) {
-				jobs* data;
-				size_t s, sz;
-				if (data = reinterpret_cast<jobs*>(_args)) {
-					std::this_thread::yield(); // helps with scheduling
-					sz = data->num_children.load();
-					for (s = 0; s < sz; ++s) {
-						auto& x = data->children[s];
-						if (auto p = x.lock()) {
-							p->dispatch();
-						}						
-					}
-				}
+				if (auto* data = reinterpret_cast<jobs*>(_args))
+					for (auto& x : data->children) 
+						if (auto p = x.lock()) 
+							(void)p->dispatch();				
 			};
+
+			template <size_t i>
+			static decltype(auto) Argument(impl::job_argument const& _args) {
+				if constexpr (this_num_args > i) {
+					using arg = typename std::tuple_element_t<i, typename functionType::arguments>;
+					static constexpr bool arg_is_jobBase = std::is_same_v<std::remove_const_t <arg>, job_base&>;
+					static constexpr bool arg_is_any = std::is_same_v<std::decay_t<arg>, GL::any>;
+					static constexpr bool arg_is_fast_any = std::is_same_v<std::decay_t <arg>, GL::any::fast_any>;
+
+					jobs* data = reinterpret_cast<jobs*>(_args.task_memory);
+					if constexpr (arg_is_jobBase) return *dynamic_cast<job_base*>(data->parent.get());					
+					else if constexpr (arg_is_any || arg_is_fast_any) return data->parent->result;					
+					else if constexpr (!this_is_job_start) return data->parent->result.cast<typename Parent::returnType>();					
+					else return;					
+				}
+				else return;				
+			};
+
 			static void DoTask(impl::job_argument const& _args) {
 				jobs* data = reinterpret_cast<jobs*>(_args.task_memory);
-
-				if constexpr (!this_is_job_start) 
-					data->parent->wait();				
 
 				if constexpr (this_num_args == 0) {
 					if constexpr (this_returns_void) (void)data->todo();
 					else {
-						if (_args.job_index == 0) data->result = GL::any(data->todo()).fast();
+						if (_args.job_index == 0) data->result = GL::any::fast_any::instance(data->todo());
 						else (void)data->todo();
 					}
 				}
 				else {
 					size_t t{ static_cast<size_t>(_args.job_index) + data->start };
-
-					if constexpr (this_num_args == 1) {
-						// first item must be the size_t
-						if constexpr (this_returns_void) (void)data->todo(t);
-						else {
-							if (_args.job_index == 0) data->result = GL::any(data->todo(t)).fast();							
-							else (void)data->todo(t);							
-						}
-					} 
-					else {
-						if constexpr (this_num_args == 2) {
-							// first item must be the size_t
-							// next may be the job_base or parent result
-							static constexpr bool arg1_jobBase = std::is_same_v<std::remove_const_t < typename std::tuple_element_t<1, typename impl::function_traits<decltype(std::function(std::declval<F>()))>::arguments> >, job_base&>;
-
-							if constexpr (arg1_jobBase) {
-								if constexpr (this_returns_void) (void)data->todo(t, *dynamic_cast<job_base*>(&*data->parent));
-								else {
-									if (_args.job_index == 0) data->result = GL::any(data->todo(t, *dynamic_cast<job_base*>(&*data->parent))).fast();
-									else (void)data->todo(t, *dynamic_cast<job_base*>(&*data->parent));
-								}
-							}
-							else {
-								if constexpr (this_returns_void) (void)data->todo(t, data->parent->result.cast());
-								else {
-									if (_args.job_index == 0) data->result = GL::any(data->todo(t, data->parent->result.cast())).fast();
-									else (void)data->todo(t, data->parent->result.cast());
-								}
-							}
-						}
-						else if constexpr (this_num_args == 3) {
-							// first item must be the size_t
-							// next may be the job_base or parent result
-							// next may be the remainder
-							static constexpr bool arg1_jobBase = std::is_same_v<std::remove_const_t < typename std::tuple_element_t<1, typename impl::function_traits<decltype(std::function(std::declval<F>()))>::arguments> >, job_base&>;
-							static constexpr bool arg2_jobBase = std::is_same_v<std::remove_const_t < typename std::tuple_element_t<2, typename impl::function_traits<decltype(std::function(std::declval<F>()))>::arguments> >, job_base&>;
-
-							if constexpr (arg1_jobBase) {
-								if constexpr (this_returns_void) (void)data->todo(t, *dynamic_cast<job_base*>(&*data->parent), data->parent->result.cast());
-								else {
-									if (_args.job_index == 0) data->result = GL::any(data->todo(t, *dynamic_cast<job_base*>(&*data->parent), data->parent->result.cast())).fast();
-									else (void)data->todo(t, *dynamic_cast<job_base*>(&*data->parent), data->parent->result.cast());
-								}
-							}
-							else {
-								if constexpr (this_returns_void) (void)data->todo(t, data->parent->result.cast(), *dynamic_cast<job_base*>(&*data->parent));
-								else {
-									if (_args.job_index == 0) data->result = GL::any(data->todo(t, data->parent->result.cast(), *dynamic_cast<job_base*>(&*data->parent))).fast();
-									else (void)data->todo(t, data->parent->result.cast(), *dynamic_cast<job_base*>(&*data->parent));
-								}
-							}
-						}
-						else {
-							static_assert("Not able to process async 'jobs' task with more than 3 arguments");
+					// first item must be the size_t
+					using arg = typename std::tuple_element_t<0, typename functionType::arguments>;
+					if constexpr (!std::is_same_v<std::decay_t<arg>, size_t>) {
+						if constexpr (!std::is_constructible_v<arg, size_t>) {
+							static_assert("The [optional] first argument to a jobs task must be a size_t index or castable from a size_t index.");
 						}
 					}
 
-
+					if constexpr (this_num_args == 1) {
+						if constexpr (this_returns_void) (void)data->todo(t);
+						else {
+							if (_args.job_index == 0) data->result = GL::any::fast_any::instance(data->todo(t));
+							else (void)data->todo(t);
+						}
+					}
+					else if constexpr (this_num_args == 2) {
+						if constexpr (this_returns_void) (void)data->todo(t, Argument<1>(_args));
+						else {
+							if (_args.job_index == 0) data->result = GL::any::fast_any::instance(data->todo(t, Argument<1>(_args)));
+							else (void)data->todo(t, Argument<1>(_args));
+						}
+					}
+					else if constexpr (this_num_args == 3) {
+						if constexpr (this_returns_void) (void)data->todo(t, Argument<1>(_args), Argument<2>(_args));
+						else {
+							if (_args.job_index == 0) data->result = GL::any::fast_any::instance(data->todo(t, Argument<1>(_args), Argument<2>(_args)));
+							else (void)data->todo(t, Argument<1>(_args), Argument<2>(_args));
+						}
+					}
+					else {
+						static_assert("Not able to process async 'jobs' task with more than 3 arguments");
+					}
 				}
 			};
 
@@ -844,25 +846,23 @@ namespace GL {
 				, ctx{ 0, nullptr, &jobs::Callback, reinterpret_cast<void*>(this) }
 				, parent{  }
 				, todo{ std::move(_todo) }
-				, num_children{ 0 }
 			{
-				if constexpr (!this_is_job_start) {
-					parent = _parent->self.lock();
-				}
+				if constexpr (!this_is_job_start) parent = _parent->self.lock();				
 			};
 			jobs(jobs&&) = delete;
 			jobs(jobs const&) = delete;
 			jobs& operator=(jobs&&) = delete;
 			jobs& operator=(jobs const&) = delete;
-			~jobs() {
+			virtual ~jobs() {
 				dispatch();
 				impl::Wait(ctx, false);
 			};
 
-			bool dispatch() override {
+			bool dispatch() override {				
 				static bool expected{ false };
 				if (!dispatch_once.load()) {
 					if (dispatch_once.compare_exchange_strong(expected, true)) {
+						if constexpr (!this_is_job_start) parent->wait();
 						impl::Dispatch(ctx, end - start, &jobs::DoTask, reinterpret_cast<void*>(this));
 						return true;
 					}
@@ -875,26 +875,26 @@ namespace GL {
 				return *dynamic_cast<job_base*>(this);
 			};
 			job_base* parent_ptr() const override {
-				if constexpr (this_is_job_start)
-					return nullptr;
-				else
-					return dynamic_cast<job_base*>(const_cast<Parent*>(&*parent));
+				if constexpr (this_is_job_start) return nullptr;
+				else return dynamic_cast<job_base*>(const_cast<Parent*>(&*parent));
 			};
-
+			// task(...).and_then([](){ ... });
+			// task([]() -> int { return 0; }).and_then([](int prev_job_result){ ... });
+			// task(...).and_then([](job_base& prev_job){ ... });
+			// task([]() -> int { return 0; }).and_then([](int prev_job_result, job_base& prev_job){ ... });
 			template<typename G> decltype(auto) and_then(G&& ToDo);
+			// task(...).and_then(0, 100, [](size_t index){ ... });
+			// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result){ ... });
+			// task(...).and_then(0, 100, [](size_t index, job_base& prev_job){ ... });
+			// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result, job_base& prev_job){ ... });
 			template<typename G> decltype(auto) and_then(size_t start, size_t end, G&& ToDo);
 		};
-
+				
 		template<typename F, typename Parent = void> __forceinline decltype(auto) task(F&& ToDo, Parent* parent = nullptr) {
 			auto out = std::make_shared<job<F, Parent>>(std::move(ToDo), std::move(parent));
 			out->self = out;
 			if constexpr (!std::is_same_v<void, Parent>) {
-				auto index = parent->children.push_back(out);
-				while (true) {
-					auto prev = parent->num_children.load();
-					if (prev < index) parent->num_children.compare_exchange_weak(prev, index);					
-					else break;					
-				}
+				parent->children.push_back(out);
 			}
 			else {
 				out->dispatch();
@@ -905,28 +905,38 @@ namespace GL {
 			auto out = std::make_shared < jobs<F, Parent> >(start, end, std::move(ToDo), std::move(parent));
 			out->self = out;
 			if constexpr (!std::is_same_v<void, Parent>) {
-				auto index = parent->children.push_back(out);
-				while (true) {
-					auto prev = parent->num_children.load();
-					if (prev < index) parent->num_children.compare_exchange_weak(prev, index);					
-					else break;					
-				}
+				parent->children.push_back(out);
 			}
 			else {
 				out->dispatch();
 			}
 			return out;
 		};
-
+		// task(...).and_then([](){ ... });
+		// task([]() -> int { return 0; }).and_then([](int prev_job_result){ ... });
+		// task(...).and_then([](job_base& prev_job){ ... });
+		// task([]() -> int { return 0; }).and_then([](int prev_job_result, job_base& prev_job){ ... });
 		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) job<F, Parent>::and_then(G&& ToDo) {
 			return task(std::move(ToDo), this);
 		};
+		// task(...).and_then(0, 100, [](size_t index){ ... });
+		// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result){ ... });
+		// task(...).and_then(0, 100, [](size_t index, job_base& prev_job){ ... });
+		// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result, job_base& prev_job){ ... });
 		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) job<F, Parent>::and_then(size_t start, size_t end, G&& ToDo) {
 			return task(start, end, std::move(ToDo), this);
 		};
+		// task(...).and_then([](){ ... });
+		// task([]() -> int { return 0; }).and_then([](int prev_job_result){ ... });
+		// task(...).and_then([](job_base& prev_job){ ... });
+		// task([]() -> int { return 0; }).and_then([](int prev_job_result, job_base& prev_job){ ... });
 		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) jobs<F, Parent>::and_then(G&& ToDo) {
 			return task(std::move(ToDo), this);
 		};
+		// task(...).and_then(0, 100, [](size_t index){ ... });
+		// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result){ ... });
+		// task(...).and_then(0, 100, [](size_t index, job_base& prev_job){ ... });
+		// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result, job_base& prev_job){ ... });
 		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) jobs<F, Parent>::and_then(size_t start, size_t end, G&& ToDo) {
 			return task(start, end, std::move(ToDo), this);
 		};
@@ -952,16 +962,12 @@ namespace GL {
 			promise(promise&&) = default;
 			promise& operator=(promise const&) = default;
 			promise& operator=(promise&&) = default;
-			virtual ~promise() {};
+			virtual ~promise() = default;
 
 			/* Returns true if this promise has been initialized correctly. Otherwise, false. */
 			bool valid() const noexcept { return (bool)_state; };
 			/* Wait until the requested job is completed. Repeated or simultaneous waiting is OK. */
-			void wait() {
-				if (_state) {
-					_state->wait();
-				}
-			};
+			void wait() { if (_state) _state->wait(); };
 			/* Get the result, waiting if necessary. */
 			GL::any::fast_any get_any() const noexcept {
 				if (_state) {
@@ -971,9 +977,7 @@ namespace GL {
 				return GL::any::fast_any();
 			};
 			/* Get the anticipated return type, without needing to wait for the result. */
-			GL::type Type() const {
-				return _type;
-			};
+			GL::type Type() const { return _type; };
 		};
 
 		/* Specialized form of a promise, which can be used to handle type-casting for lambdas automatically, while still being useful for waiting on and getting the results of any job. */
@@ -986,7 +990,7 @@ namespace GL {
 			future(future&&) = default;
 			future& operator=(future const&) = default;
 			future& operator=(future&&) = default;
-			virtual ~future() {};
+			virtual ~future() = default;
 
 			/* Cast-down to a generic promise that erases the information on the return type. Useful for sharing tasks between libraries where type info itself cannot be shared. */
 			promise as_promise() const { return promise(reinterpret_cast<const promise&>(*this)); };
@@ -1025,103 +1029,100 @@ namespace GL {
 
 		/* returns a future<T> object for awaiting the results of the task, with optional inputs to the job, that are submitted at the time the job is performed. */
 		template < typename F, typename... Args >
-		__forceinline static auto async(F&& function, Args... Fargs) {
+		static auto async(F&& function, Args... Fargs) {
 			static constexpr size_t num_args = sizeof...(Args);
+			using function_t = impl::function_traits<decltype(std::function(function))>;
+			using tuple_t = std::tuple<Args...>;
+
 			if constexpr (num_args == 0) {
-				return future<typename impl::function_traits<decltype(std::function(function))>::result_type>(task(std::move(function)));
+				return future<typename function_t::result_type>(task(std::move(function)));
 			}
 			else {
-				F func = std::move(function);
-				std::array<any::fast_any, num_args> arr; {
-					std::array<any, num_args> arr1{ Fargs... };
-					std::transform(arr1.begin(), arr1.end(), arr.begin(), [](any& from) -> any::fast_any { return from.fast(); });
-				}
-
-				return future<typename impl::function_traits<decltype(std::function(func))>::result_type>(task([ToDo = std::move(func), Arg = std::move(arr)]() {
+				return future<typename function_t::result_type>(task([ToDo = std::forward<F>(function), Arg = std::array<any::fast_any, num_args>{ GL::any::fast_any::instance(Fargs)... }]() {
 					if constexpr (num_args == 1) {
-						return ToDo(Arg[0].cast());
+						return ToDo(Arg[0].cast<std::tuple_element_t<0, tuple_t>>());
 					}
 					else if constexpr (num_args == 2) {
 						return ToDo(
-							Arg[0].cast(), Arg[1].cast()
+							Arg[0].cast<std::tuple_element_t<0, tuple_t>>(), Arg[1].cast<std::tuple_element_t<1, tuple_t>>()
 						);
 					}
 					else if constexpr (num_args == 3) {
 						return ToDo(
-							Arg[0].cast(), Arg[1].cast(), Arg[2].cast()
+							Arg[0].cast<std::tuple_element_t<0, tuple_t>>(), Arg[1].cast<std::tuple_element_t<1, tuple_t>>(), Arg[2].cast<std::tuple_element_t<2, tuple_t>>()
 						);
 					}
 					else if constexpr (num_args == 4) {
 						return ToDo(
-							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast()
+							Arg[0].cast<std::tuple_element_t<0, tuple_t>>(), Arg[1].cast<std::tuple_element_t<1, tuple_t>>(), Arg[2].cast<std::tuple_element_t<2, tuple_t>>(), Arg[3].cast<std::tuple_element_t<3, tuple_t>>()
 						);
 					}
 					else if constexpr (num_args == 5) {
 						return ToDo(
-							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast()
+							Arg[0].cast<std::tuple_element_t<0, tuple_t>>(), Arg[1].cast<std::tuple_element_t<1, tuple_t>>(), Arg[2].cast<std::tuple_element_t<2, tuple_t>>(), Arg[3].cast<std::tuple_element_t<3, tuple_t>>(), Arg[4].cast<std::tuple_element_t<4, tuple_t>>()
 						);
 					}
 					else if constexpr (num_args == 6) {
 						return ToDo(
-							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast()
+							Arg[0].cast<std::tuple_element_t<0, tuple_t>>(), Arg[1].cast<std::tuple_element_t<1, tuple_t>>(), Arg[2].cast<std::tuple_element_t<2, tuple_t>>(), Arg[3].cast<std::tuple_element_t<3, tuple_t>>(), Arg[4].cast<std::tuple_element_t<4, tuple_t>>(), Arg[5].cast<std::tuple_element_t<5, tuple_t>>()
 						);
 					}
 					else if constexpr (num_args == 7) {
 						return ToDo(
-							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast(), Arg[6].cast()
+							Arg[0].cast<std::tuple_element_t<0, tuple_t>>(), Arg[1].cast<std::tuple_element_t<1, tuple_t>>(), Arg[2].cast<std::tuple_element_t<2, tuple_t>>(), Arg[3].cast<std::tuple_element_t<3, tuple_t>>(), Arg[4].cast<std::tuple_element_t<4, tuple_t>>(), Arg[5].cast<std::tuple_element_t<5, tuple_t>>(), Arg[6].cast<std::tuple_element_t<6, tuple_t>>()
 						);
 					}
 					else if constexpr (num_args == 8) {
 						return ToDo(
-							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast(), Arg[6].cast(), Arg[7].cast()
+							Arg[0].cast<std::tuple_element_t<0, tuple_t>>(), Arg[1].cast<std::tuple_element_t<1, tuple_t>>(), Arg[2].cast<std::tuple_element_t<2, tuple_t>>(), Arg[3].cast<std::tuple_element_t<3, tuple_t>>(), Arg[4].cast<std::tuple_element_t<4, tuple_t>>(), Arg[5].cast<std::tuple_element_t<5, tuple_t>>(), Arg[6].cast<std::tuple_element_t<6, tuple_t>>(), Arg[7].cast<std::tuple_element_t<7, tuple_t>>()
 						);
 					}
 					else if constexpr (num_args == 9) {
 						return ToDo(
-							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast(), Arg[6].cast(), Arg[7].cast(),
-							Arg[8].cast()
+							Arg[0].cast<std::tuple_element_t<0, tuple_t>>(), Arg[1].cast<std::tuple_element_t<1, tuple_t>>(), Arg[2].cast<std::tuple_element_t<2, tuple_t>>(), Arg[3].cast<std::tuple_element_t<3, tuple_t>>(), Arg[4].cast<std::tuple_element_t<4, tuple_t>>(), Arg[5].cast<std::tuple_element_t<5, tuple_t>>(), Arg[6].cast<std::tuple_element_t<6, tuple_t>>(), Arg[7].cast<std::tuple_element_t<7, tuple_t>>(),
+							Arg[8].cast<std::tuple_element_t<8, tuple_t>>()
 						);
 					}
 					else if constexpr (num_args == 10) {
 						return ToDo(
-							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast(), Arg[6].cast(), Arg[7].cast(),
-							Arg[8].cast(), Arg[9].cast()
+							Arg[0].cast<std::tuple_element_t<0, tuple_t>>(), Arg[1].cast<std::tuple_element_t<1, tuple_t>>(), Arg[2].cast<std::tuple_element_t<2, tuple_t>>(), Arg[3].cast<std::tuple_element_t<3, tuple_t>>(), Arg[4].cast<std::tuple_element_t<4, tuple_t>>(), Arg[5].cast<std::tuple_element_t<5, tuple_t>>(), Arg[6].cast<std::tuple_element_t<6, tuple_t>>(), Arg[7].cast<std::tuple_element_t<7, tuple_t>>(),
+							Arg[8].cast<std::tuple_element_t<8, tuple_t>>(), Arg[9].cast<std::tuple_element_t<9, tuple_t>>()
 						);
 					}
 					else if constexpr (num_args == 11) {
 						return ToDo(
-							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast(), Arg[6].cast(), Arg[7].cast(),
-							Arg[8].cast(), Arg[9].cast(), Arg[10].cast()
+							Arg[0].cast<std::tuple_element_t<0, tuple_t>>(), Arg[1].cast<std::tuple_element_t<1, tuple_t>>(), Arg[2].cast<std::tuple_element_t<2, tuple_t>>(), Arg[3].cast<std::tuple_element_t<3, tuple_t>>(), Arg[4].cast<std::tuple_element_t<4, tuple_t>>(), Arg[5].cast<std::tuple_element_t<5, tuple_t>>(), Arg[6].cast<std::tuple_element_t<6, tuple_t>>(), Arg[7].cast<std::tuple_element_t<7, tuple_t>>(),
+							Arg[8].cast<std::tuple_element_t<8, tuple_t>>(), Arg[9].cast<std::tuple_element_t<9, tuple_t>>(), Arg[10].cast<std::tuple_element_t<10, tuple_t>>()
 						);
 					}
 					else if constexpr (num_args == 12) {
 						return ToDo(
-							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast(), Arg[6].cast(), Arg[7].cast(),
-							Arg[8].cast(), Arg[9].cast(), Arg[10].cast(), Arg[11].cast()
+							Arg[0].cast<std::tuple_element_t<0, tuple_t>>(), Arg[1].cast<std::tuple_element_t<1, tuple_t>>(), Arg[2].cast<std::tuple_element_t<2, tuple_t>>(), Arg[3].cast<std::tuple_element_t<3, tuple_t>>(), Arg[4].cast<std::tuple_element_t<4, tuple_t>>(), Arg[5].cast<std::tuple_element_t<5, tuple_t>>(), Arg[6].cast<std::tuple_element_t<6, tuple_t>>(), Arg[7].cast<std::tuple_element_t<7, tuple_t>>(),
+							Arg[8].cast<std::tuple_element_t<8, tuple_t>>(), Arg[9].cast<std::tuple_element_t<9, tuple_t>>(), Arg[10].cast<std::tuple_element_t<10, tuple_t>>(), Arg[11].cast<std::tuple_element_t<11, tuple_t>>()
 						);
 					}
 					else if constexpr (num_args == 13) {
 						return ToDo(
-							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast(), Arg[6].cast(), Arg[7].cast(),
-							Arg[8].cast(), Arg[9].cast(), Arg[10].cast(), Arg[11].cast(), Arg[12].cast()
+							Arg[0].cast<std::tuple_element_t<0, tuple_t>>(), Arg[1].cast<std::tuple_element_t<1, tuple_t>>(), Arg[2].cast<std::tuple_element_t<2, tuple_t>>(), Arg[3].cast<std::tuple_element_t<3, tuple_t>>(), Arg[4].cast<std::tuple_element_t<4, tuple_t>>(), Arg[5].cast<std::tuple_element_t<5, tuple_t>>(), Arg[6].cast<std::tuple_element_t<6, tuple_t>>(), Arg[7].cast<std::tuple_element_t<7, tuple_t>>(),
+							Arg[8].cast<std::tuple_element_t<8, tuple_t>>(), Arg[9].cast<std::tuple_element_t<9, tuple_t>>(), Arg[10].cast<std::tuple_element_t<10, tuple_t>>(), Arg[11].cast<std::tuple_element_t<11, tuple_t>>(), Arg[12].cast<std::tuple_element_t<12, tuple_t>>()
 						);
 					}
 					else if constexpr (num_args == 14) {
 						return ToDo(
-							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast(), Arg[6].cast(), Arg[7].cast(),
-							Arg[8].cast(), Arg[9].cast(), Arg[10].cast(), Arg[11].cast(), Arg[12].cast(), Arg[13].cast()
+							Arg[0].cast<std::tuple_element_t<0, tuple_t>>(), Arg[1].cast<std::tuple_element_t<1, tuple_t>>(), Arg[2].cast<std::tuple_element_t<2, tuple_t>>(), Arg[3].cast<std::tuple_element_t<3, tuple_t>>(), Arg[4].cast<std::tuple_element_t<4, tuple_t>>(), Arg[5].cast<std::tuple_element_t<5, tuple_t>>(), Arg[6].cast<std::tuple_element_t<6, tuple_t>>(), Arg[7].cast<std::tuple_element_t<7, tuple_t>>(),
+							Arg[8].cast<std::tuple_element_t<8, tuple_t>>(), Arg[9].cast<std::tuple_element_t<9, tuple_t>>(), Arg[10].cast<std::tuple_element_t<10, tuple_t>>(), Arg[11].cast<std::tuple_element_t<11, tuple_t>>(), Arg[12].cast<std::tuple_element_t<12, tuple_t>>(), Arg[13].cast<std::tuple_element_t<13, tuple_t>>()
 						);
 					}
 					else if constexpr (num_args == 15) {
 						return ToDo(
-							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast(), Arg[6].cast(), Arg[7].cast(),
-							Arg[8].cast(), Arg[9].cast(), Arg[10].cast(), Arg[11].cast(), Arg[12].cast(), Arg[13].cast(), Arg[14].cast()
+							Arg[0].cast<std::tuple_element_t<0, tuple_t>>(), Arg[1].cast<std::tuple_element_t<1, tuple_t>>(), Arg[2].cast<std::tuple_element_t<2, tuple_t>>(), Arg[3].cast<std::tuple_element_t<3, tuple_t>>(), Arg[4].cast<std::tuple_element_t<4, tuple_t>>(), Arg[5].cast<std::tuple_element_t<5, tuple_t>>(), Arg[6].cast<std::tuple_element_t<6, tuple_t>>(), Arg[7].cast<std::tuple_element_t<7, tuple_t>>(),
+							Arg[8].cast<std::tuple_element_t<8, tuple_t>>(), Arg[9].cast<std::tuple_element_t<9, tuple_t>>(), Arg[10].cast<std::tuple_element_t<10, tuple_t>>(), Arg[11].cast<std::tuple_element_t<11, tuple_t>>(), Arg[12].cast<std::tuple_element_t<12, tuple_t>>(), Arg[13].cast<std::tuple_element_t<13, tuple_t>>(), Arg[14].cast<std::tuple_element_t<14, tuple_t>>()
 						);
 					}
 					else if constexpr (num_args == 16) {
 						return ToDo(
-							Arg[0].cast(), Arg[1].cast(), Arg[2].cast(), Arg[3].cast(), Arg[4].cast(), Arg[5].cast(), Arg[6].cast(), Arg[7].cast(),
-							Arg[8].cast(), Arg[9].cast(), Arg[10].cast(), Arg[11].cast(), Arg[12].cast(), Arg[13].cast(), Arg[14].cast(), Arg[15].cast()
+							Arg[0].cast<std::tuple_element_t<0, tuple_t>>(), Arg[1].cast<std::tuple_element_t<1, tuple_t>>(), Arg[2].cast<std::tuple_element_t<2, tuple_t>>(), Arg[3].cast<std::tuple_element_t<3, tuple_t>>(), Arg[4].cast<std::tuple_element_t<4, tuple_t>>(), Arg[5].cast<std::tuple_element_t<5, tuple_t>>(), Arg[6].cast<std::tuple_element_t<6, tuple_t>>(), Arg[7].cast<std::tuple_element_t<7, tuple_t>>(),
+							Arg[8].cast<std::tuple_element_t<8, tuple_t>>(), Arg[9].cast<std::tuple_element_t<9, tuple_t>>(), Arg[10].cast<std::tuple_element_t<10, tuple_t>>(), Arg[11].cast<std::tuple_element_t<11, tuple_t>>(), Arg[12].cast<std::tuple_element_t<12, tuple_t>>(), Arg[13].cast<std::tuple_element_t<13, tuple_t>>(), Arg[14].cast<std::tuple_element_t<14, tuple_t>>(), Arg[15].cast<std::tuple_element_t<15, tuple_t>>()
 						);
 					}
 					else {
@@ -1130,7 +1131,6 @@ namespace GL {
 			    }));
 			}
 		};
-
 	};
 
 };

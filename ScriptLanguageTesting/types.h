@@ -1125,13 +1125,13 @@ namespace GL {
                     }
                 }
                 else {
-                    if (any_p.can_cast(type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>())) {
+                    //if (any_p.can_cast(type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>())) {
                         return *any_p.cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>();
-                    }
-                    else {
-                        auto err = "Cannot cast from `" + any_p.m_actual_type.name() + "` to `" + type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>().name() + "`";
-                        throw std::runtime_error(err.to_string());
-                    }
+                    //}
+                    //else {
+                    //    auto err = "Cannot cast from `" + any_p.m_actual_type.name() + "` to `" + type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>().name() + "`";
+                    //    throw std::runtime_error(err.to_string());
+                    //}
                 }
             };
             
@@ -1153,13 +1153,13 @@ namespace GL {
                     }
                 }
                 else {
-                    if (container->can_cast(type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>())) {
+                    //if (container->can_cast(type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>())) {
                         return *container->cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>();
-                    }
-                    else {
-                        auto err = "Cannot cast from `" + container->m_actual_type.name() + "` to `" + type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>().name() + "`";
-                        throw std::runtime_error(err.to_string());
-                    }
+                    //}
+                    //else {
+                    //    auto err = "Cannot cast from `" + container->m_actual_type.name() + "` to `" + type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>().name() + "`";
+                    //    throw std::runtime_error(err.to_string());
+                    //}
                 }
             };
 

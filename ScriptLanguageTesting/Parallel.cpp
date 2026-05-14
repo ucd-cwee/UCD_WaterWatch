@@ -204,11 +204,14 @@ namespace GL {
 				queue.push(job);
 			};
 			void do_task(thread_task& task, impl::job_argument& args, size_t& sizeOfData, void*& data) {
+				// if task context is valid...
 				if (task.ctx) {
-					if (task.task && !task.ctx->e) { // if another group threw an error, do not process this group at all.
+					// ... and if task is valid and no error was previously encountered from another group...
+					if (task.task && !task.ctx->e) {
 						args.group_id = task.group_id;
 						args.task_memory = task.task_memory;
-						// Allocate Shared Group Memory (heap allocates only when more memory is needed than was previously used).
+
+						// ... then allocate the shared group memory ...
 						{
 							if (task.group_memory_size > 0) {
 								if (sizeOfData < ((task.group_memory_size + 15) & ~15)) {
@@ -218,31 +221,29 @@ namespace GL {
 								}
 								::memset(data, 0, sizeOfData);
 								args.group_memory = data;
-								if (task.group_start_job) {
-									task.group_start_job(args.group_memory);
-								}
+								if (task.group_start_job) task.group_start_job(args.group_memory);								
 							}
-							else {
-								args.group_memory = nullptr;
-							}
+							else args.group_memory = nullptr;							
 						}
 
-						// Do Group Jobs Until Done or Error is Thrown
-						for (size_t j = task.group_job_offset; !task.ctx->e && j < task.group_job_end; ++j) {
-							args.group_index = (args.job_index = j) - task.group_job_offset;
-							try {
+						// ... and do this group's jobs ...
+						try { 
+							for (args.job_index = task.group_job_offset, args.group_index = 0;
+								args.job_index < task.group_job_end;
+								++args.job_index, ++args.group_index
+							) {
 								task.task(args);
 							}
-							catch (...) {
-								task.ctx->catch_exception();
-								break;
-							}
+						} 
+						catch (...) {
+							task.ctx->catch_exception();
 						}
 
-						// Deallocate Shared Group Memory
+						// ... and finally deallocate the shared group memory
 						if (args.group_memory && task.group_end_job) task.group_end_job(args.group_memory);
 					}
 
+					// handle job completion callback
 					if (0ull == --task.ctx->counter) {
 						if (task.ctx->callback) {
 							task.ctx->callback(task.ctx->callback_data);
@@ -250,9 +251,12 @@ namespace GL {
 					}
 				}
 			};
-		
+			
+			static thread_local long long wait_depth{ 0 }; // allows detection of when job dispatch may be from within an existing job
+			struct waiting_error {};
+
 			// potentially (not always) called by the main thread
-			void work(const dispatch_context* parentCtx = nullptr) noexcept {
+			void work(const dispatch_context* parentCtx = nullptr) {
 				size_t threadID{ util::get_thread_id() }, sizeOfData{ 0 };
 				void* data{ nullptr };
 				thread_task task;
@@ -264,12 +268,23 @@ namespace GL {
 					, nullptr
 				};
 
-				if (parentCtx) {
+				if (parentCtx) {					
 					// work until this job is completed
 					while (parentCtx->is_busy()) {
 						if (try_get_job(internal_state.jobQueue, task)) {
 							do_task(task, args, sizeOfData, data);
 						}
+						//else {
+						//	// there are no jobs available, yet the task is not considered complete.
+						//	if (parentCtx->counter.load() == std::numeric_limits<size_t>::max()) {
+						//		throw std::runtime_error("An impossibly large counter was provided to the parallel job system");
+						//	}
+
+						//	if ((parentCtx->waiters.load() > parentCtx->counter.load()) && (parentCtx->counter.load() > 0)) {
+						//		std::cout << GL::printf("NOTE ME: %i / %i\n", (int)parentCtx->waiters.load(), (int)parentCtx->counter.load());
+						//		throw waiting_error{};
+						//	}
+						//}
 					}
 					if (sizeOfData > 0) ::_aligned_free(data);
 				}
@@ -515,8 +530,6 @@ namespace GL {
 				}
 			};
 
-			static thread_local long long wait_depth{ 0 }; // allows detection of when job dispatch may be from within an existing job
-
 			void Dispatch(
 				dispatch_context& ctx,
 				size_t jobCount,
@@ -743,11 +756,10 @@ namespace GL {
 				}
 			};
 
-			void Wait(dispatch_context& ctx, bool rethrow) {
-				while (ctx.is_busy()) { // Do work
+			void Wait(dispatch_context& ctx, bool rethrow) {				
+				while (ctx.is_busy()) { // Do work					
 					++wait_depth; // allows detection of when job dispatch may be from within an existing job				
 					internal_state.wakeCondition.notify_all(); // Wake any threads that might be sleeping:
-					std::this_thread::yield();
 					work(&ctx);
 					--wait_depth; // allows detection of when job dispatch may be from within an existing job
 				}		
