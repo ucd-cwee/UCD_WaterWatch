@@ -5,6 +5,32 @@
 #include <map>
 
 namespace GL {
+    bool type::is_any() const noexcept {
+        static size_t const h{ util::type_id<any>().hash_code() };
+        static size_t const h2{ util::type_id<any::fast_any>().hash_code() };
+        return (((hash ^ h) & impl::cached_type::MAGIC_MASK2) == 0) || (((hash ^ h2) & impl::cached_type::MAGIC_MASK2) == 0);
+
+        //static size_t const h{ util::type_id<any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+        //static size_t const h2{ util::type_id<any::fast_any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+        //size_t this_h{ get_base_hash() };
+        //return (this_h == h) || (this_h == h2);
+    };
+    bool type::is_var() const noexcept {
+        static size_t const h{ util::type_id<var>().hash_code() };
+        return ((hash ^ h) & impl::cached_type::MAGIC_MASK2) == 0;
+
+        // static size_t const h{ util::type_id<var>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+        // return (hash & impl::cached_type::MAGIC_MASK2) == h;
+    };
+    bool type::is_dynamic_object() const noexcept {
+        static size_t const h{ util::type_id<dynamic_object>().hash_code() };
+        return ((hash ^ h) & impl::cached_type::MAGIC_MASK2) == 0;
+
+        //static size_t const h{ util::type_id<dynamic_object>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+        //size_t this_h{ get_base_hash() };
+        //return this_h == h;
+    };
+
     namespace impl {       
         static GL::atomic_vector< impl::cached_type > builtin_cpp_types;
         static GL::atomic_vector< impl::cached_type > scripted_types; // atomic_vector because ticket system will prefer small values.         

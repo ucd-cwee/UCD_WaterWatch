@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <map>
@@ -7,6 +6,7 @@
 #include <variant>
 #include "ticket_dispensor.h"
 #include <deque>
+#include "atomic_tree.h"
 
 namespace GL {
     namespace scope {
@@ -206,8 +206,9 @@ namespace GL {
             // Thread-safe access to a cache of data. While new caches are made, old caches may be deleted safely, protected by Epoch-controlled allocators. 
             template <typename T, int numCategories = 4> class TypedCache {
             private: // CacheVersion -> CacheCategory -> Inputs -> Result
-                using ResultForInputType = GL::shared_ptr<T>; // only emplaces, never deletes, so concurrent_unordered_map should be OK. 
-                concurrency::concurrent_unordered_map<size_t, std::array<ResultForInputType, numCategories>>
+                using ResultForInputType = GL::shared_ptr<T>; // only emplaces, never deletes, so concurrent_unordered_map should be OK.
+                GL::epoch_search_tree< std::array<ResultForInputType, numCategories>, size_t>
+                // concurrency::concurrent_unordered_map<size_t, std::array<ResultForInputType, numCategories>>
                     _current_cache;
             public:
                 TypedCache() = default;
@@ -232,17 +233,12 @@ namespace GL {
 
                 // Try to copy an item from the cache.
                 template<int category> __declspec(noinline) GL::shared_ptr<T>& TryGetCache(size_t cache_version) {
-                    GL::shared_ptr<T>* out{ nullptr };
-                    const auto [GreaterThanOrEqual, Greater] = _current_cache.equal_range(cache_version);
-                    const auto end = _current_cache.end();
-                    if (GreaterThanOrEqual != end) {
-                        out = &GreaterThanOrEqual->second[category];
+                    auto [node, locker] = _current_cache.NodeFindSmallestLargerEqual(cache_version);
+                    if (node != nullptr) {
+                        return node->object()->operator[](category);
                     }
-                    if (out) return *out;
-                    else {
-                        static GL::shared_ptr<T> temp{ nullptr };
-                        return temp;
-                    }
+                    static GL::shared_ptr<T> temp{ nullptr };
+                    return temp;
                 };
 
                 template<int category> __declspec(noinline) GL::shared_ptr<T>& at(size_t cache_version) {
@@ -261,7 +257,8 @@ namespace GL {
             class Converter;
             class Functions {
             private:
-                concurrency::concurrent_unordered_map< GL::string, GL::shared_lockable<std::map<size_t, GL::Proxy_Function>>>
+                GL::epoch_map < GL::shared_lockable<std::map<size_t, GL::Proxy_Function>>, GL::string>
+                // concurrency::concurrent_unordered_map< GL::string, GL::shared_lockable<std::map<size_t, GL::Proxy_Function>>>
                     functions;
             public:
                 Functions() = default;
@@ -286,8 +283,8 @@ namespace GL {
 
                     static GL::Proxy_Function temp;
                     for (auto& funcs_by_name : functions) {
-                        GL::string const& name = funcs_by_name.first;  
-                        auto shared_locked = funcs_by_name.second.lock_shared();
+                        GL::string const& name = *funcs_by_name.first;  
+                        auto shared_locked = funcs_by_name.second->lock_shared();
                         for (auto& funcs : *shared_locked) {
                             GL::Proxy_Function const& func = funcs.second;
                             if (to_do(func)) {
@@ -306,8 +303,8 @@ namespace GL {
                     static_assert(function_header::Param_Types::numArgs <= 1);
 
                     static GL::Proxy_Function temp;
-                    if (auto f = functions.find(name), e = functions.end(); f != e) {
-                        for (auto& funcs : *f->second.lock_shared()) {
+                    if (auto* f = functions.try_at(name); f != nullptr) {
+                        for (auto& funcs : *f->lock_shared()) {
                             GL::Proxy_Function const& func = funcs.second;
                             if (to_do(func)) {
                                 return func;
@@ -324,8 +321,8 @@ namespace GL {
                     static_assert(std::is_same_v< GL::Proxy_Function const&, std::tuple_element_t<0, function_header::Param_Types::argType>>);
                     static_assert(function_header::Param_Types::numArgs <= 1);
                     static GL::Proxy_Function temp;
-                    if (auto f = functions.find(name), e = functions.end(); f != e) {
-                        for (auto& funcs : *f->second.lock_shared()) {
+                    if (auto* f = functions.try_at(name); f != nullptr) {
+                        for (auto& funcs : *f->lock_shared()) {
                             GL::Proxy_Function const& func = funcs.second;
                             if ((func->m_signature.state_m & GL::function_signature::Constructor) > 0) {
                                 if (to_do(func)) {
@@ -538,7 +535,9 @@ namespace GL {
             private:
                 Functions&
                     constructors;
+
                 TypedCache<concurrency::concurrent_unordered_map<GL::type, concurrency::concurrent_unordered_map<GL::type, GL::atomic_shared_ptr<GL::details::Proxy_Function_Base>>>, 1>&
+                // TypedCache<concurrency::concurrent_unordered_map<GL::type, concurrency::concurrent_unordered_map<GL::type, GL::atomic_shared_ptr<GL::details::Proxy_Function_Base>>>, 1>&
                     converters;
                 std::mutex&
                     converter_lock;
@@ -1299,7 +1298,8 @@ namespace GL {
                 friend class Breadcrumb;
             protected:
                 // explicit children namespaces, with strongly-held protections to their memory.
-                concurrency::concurrent_unordered_map<size_t, std::shared_ptr<NamespaceScope>>
+                // concurrency::concurrent_unordered_map<size_t, std::shared_ptr<NamespaceScope>>
+                GL::epoch_map<std::shared_ptr<NamespaceScope>, size_t>
                     children; // children cannot be removed at runtime, so using the concurrent_unordered_map is the higher-performance option. 
                 Functions
                     functions;
@@ -1351,7 +1351,8 @@ namespace GL {
                     if (using_m) {
                         for (auto& x : *using_m) x.second = {};
                     }
-                    for (auto& child : this->children) child.second->unload();
+                    for (auto& child : this->children) child.second->operator->()->unload();
+                    // for (auto& child : this->children) child.second = nullptr;
                     this->children.clear();
                 };
 
@@ -1536,7 +1537,7 @@ namespace GL {
                     // Test my children themselves. 
                     if (!RequestedSkipChildren && ((searchState & SkipChildren) == 0) && (this->children.size() > 0ull)) {
                         for (auto& child : this->children) {
-                            auto* child_bc = &child.second->breadcrumb_m;
+                            auto* child_bc = &(*child.second)->breadcrumb_m;
                             auto& flag = check_flags[child_bc->GetScopeIndex()];
 
                             if ((flag & CheckFlagState::self) > 0) continue;
@@ -1577,7 +1578,7 @@ namespace GL {
                     // Test my children completely. 
                     if (!RequestedSkipChildren && ((searchState & SkipChildren) == 0) && this->children.size() > 0ull) {
                         for (auto& child : this->children) {
-                            auto* child_bc = &child.second->breadcrumb_m;
+                            auto* child_bc = &(*child.second)->breadcrumb_m;
                             auto& flag = check_flags[child_bc->GetScopeIndex()];
 
                             if ((flag & CheckFlagState::all) > 0) continue;
@@ -1702,6 +1703,7 @@ namespace GL {
             public:
                 Functions
                     constructors;
+                // TypedCache<concurrency::concurrent_unordered_map<GL::type, concurrency::concurrent_unordered_map<GL::type, GL::atomic_shared_ptr<GL::details::Proxy_Function_Base>>>, 1>
                 TypedCache<concurrency::concurrent_unordered_map<GL::type, concurrency::concurrent_unordered_map<GL::type, GL::atomic_shared_ptr<GL::details::Proxy_Function_Base>>>, 1>
                     converters;
                 std::mutex // GL::fast_shared_mutex

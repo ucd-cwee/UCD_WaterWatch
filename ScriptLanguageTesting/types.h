@@ -118,7 +118,7 @@ namespace GL {
             , Reference = 2 // tag as a reference to an object, e.g: std::string&
             , Temporary = 4 // tag as a temporary object, e.g: std::string&&
             , CppType = 8 // Distinguishes whether this is a scripted type or built-in C++ type. The look-up for the cached info changes depending on this value. 
-            , TemplateType = 16 // Distinguishes whether this is a template type. 
+            , TemplateType = 16 // Distinguishes whether this is a template type.
         };
 
     protected:
@@ -186,6 +186,8 @@ namespace GL {
         };
         bool is_cpp_type() const noexcept { return (hash & ((size_t)CppType << 59ull)) > 0; };
         bool is_any() const noexcept;
+        bool is_var() const noexcept;
+        bool is_dynamic_object() const noexcept;
         // returns true if this is found to be a child of the parent type (id'd by its base hash) 
         bool is_derived_from(type const& base) const;
         // returns true if this is found to be a parent of the derived type (id'd by its base hash) 
@@ -894,7 +896,7 @@ namespace GL {
     private:
         void correct_type_information() {
             if (auto f = m_ptr.load_fast(); f) {
-                if (f->can_cast_var()) {
+                if (f->m_actual_type.is_var()/*f->can_cast_var()*/) {
                     if (auto* V = f->cast<var>()) {
                         m_casted_type = V->get_type();
                         if (m_casted_type.is_void()) {
@@ -902,7 +904,7 @@ namespace GL {
                         }
                     }
                 }
-                if (f->can_cast_dynamic_object()) {
+                if (f->m_actual_type.is_dynamic_object()/*f->can_cast_dynamic_object()*/) {
                     if (auto* V = f->cast<dynamic_object>()) {
                         m_casted_type = V->m_type;
                     }
@@ -1040,8 +1042,9 @@ namespace GL {
             if (m_casted_type.can_cast(to)) return true;
             if (auto ptr = m_ptr.load_fast()) {
                 if (ptr->m_actual_type.can_cast(to)) return true;
-                if (ptr->can_cast_dynamic_object() && (to.get_base_hash() == GL::type_of<GL::dynamic_object>().get_base_hash())) { return true; }
-                if (ptr->can_cast_var()) {
+                
+                if (ptr->m_actual_type.is_dynamic_object()/*ptr->can_cast_dynamic_object()*/ && (to.get_base_hash() == GL::type_of<GL::dynamic_object>().get_base_hash())) { return true; }
+                if (ptr->m_actual_type.is_var()/*ptr->can_cast_var()*/) {
                     if (to.get_base_hash() == GL::type_of<GL::var>().get_base_hash()) return true;
                     if (auto f = ptr->cast<GL::var>()->get_data(); f) {
                         return f->can_cast(to);
@@ -1195,7 +1198,7 @@ namespace GL {
                                     return DoCast_Shared<typename type_erasure::get_type<T>::type>(std::move(container));
                                 }
                                 else {
-                                    if (container->can_cast_var()) {
+                                    if (container->m_actual_type.is_var() /*container->can_cast_var()*/) {
                                         var* ptr = container->cast<var>();
                                         if (auto f = ptr->get_data()) {
                                             container = f->m_ptr.load();
@@ -1218,7 +1221,7 @@ namespace GL {
                                     return DoCast_StdShared<typename type_erasure::get_type<T>::type>(std::move(container));
                                 }
                                 else {
-                                    if (container->can_cast_var()) {
+                                    if (container->m_actual_type.is_var() /*container->can_cast_var()*/) {
                                         var* ptr = container->cast<var>();
                                         if (auto f = ptr->get_data()) {
                                             container = f->m_ptr.load();
@@ -1234,7 +1237,7 @@ namespace GL {
                                     return DoCast_Unshared<T>(std::move(container));
                                 }
                                 else {
-                                    if (container->can_cast_var()) {
+                                    if (container->m_actual_type.is_var() /*container->can_cast_var()*/) {
                                         var* ptr = container->cast<var>();
                                         if (auto f = ptr->get_data()) {
                                             container = f->m_ptr.load();
@@ -1281,7 +1284,7 @@ namespace GL {
                 else {
                     // fast path
                     if (p && p->m_ptr) {
-                        if (!p->m_ptr->can_cast_var()) {
+                        if (!p->m_ptr->m_actual_type.is_var() /*can_cast_var()*/) {
                             if constexpr (is_shared_ptr) {
                                 if constexpr (is_ptr) {
                                     throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
@@ -1325,7 +1328,7 @@ namespace GL {
                                     return DoCast_Shared<typename type_erasure::get_type<T>::type>(std::move(container));
                                 }
                                 else {
-                                    if (container->can_cast_var()) {
+                                    if (container->m_actual_type.is_var() /*can_cast_var()*/) {
                                         var* ptr = container->cast<var>();
                                         if (auto f = ptr->get_data()) {
                                             container = f->m_ptr.load();
@@ -1348,7 +1351,7 @@ namespace GL {
                                     return DoCast_StdShared<typename type_erasure::get_type<T>::type>(std::move(container));
                                 }
                                 else {
-                                    if (container->can_cast_var()) {
+                                    if (container->m_actual_type.is_var() /*can_cast_var()*/) {
                                         var* ptr = container->cast<var>();
                                         if (auto f = ptr->get_data()) {
                                             container = f->m_ptr.load();
@@ -1364,7 +1367,7 @@ namespace GL {
                                     return DoCast_Unshared<T>(std::move(container));
                                 }
                                 else {
-                                    if (container->can_cast_var()) {
+                                    if (container->m_actual_type.is_var() /*can_cast_var()*/) {
                                         var* ptr = container->cast<var>();
                                         if (auto f = ptr->get_data()) {
                                             container = f->m_ptr.load();
@@ -1426,7 +1429,7 @@ namespace GL {
         private:
             void correct_type_information() {
                 if (m_ptr) {
-                    if (m_ptr->can_cast_var()) {
+                    if (m_ptr->m_actual_type.is_var() /*can_cast_var()*/) {
                         if (auto* V = m_ptr->cast<var>()) {
                             m_casted_type = V->get_type();
                             if (m_casted_type.is_void()) {
@@ -1529,8 +1532,8 @@ namespace GL {
                 if (m_casted_type.can_cast(to)) return true;
                 if (m_ptr) {
                     if (m_ptr->m_actual_type.can_cast(to)) return true;
-                    if (m_ptr->can_cast_dynamic_object() && (to.get_base_hash() == GL::type_of<GL::dynamic_object>().get_base_hash())) { return true; }
-                    if (m_ptr->can_cast_var()) {
+                    if (m_ptr->m_actual_type.is_dynamic_object() /*can_cast_dynamic_object()*/ && (to.get_base_hash() == GL::type_of<GL::dynamic_object>().get_base_hash())) { return true; }
+                    if (m_ptr->m_actual_type.is_var() /*can_cast_var()*/) {
                         if (to.get_base_hash() == GL::type_of<GL::var>().get_base_hash()) return true;
                         if (auto f = m_ptr->cast<GL::var>()->get_data(); f) {
                             return f->can_cast(to);
@@ -1707,12 +1710,33 @@ namespace GL {
     __forceinline type_erasure::fast_any_cast any::fast_any::cast() const noexcept {
         return type_erasure::fast_any_cast{ const_cast<fast_any*>(this) };
     };
-    __forceinline bool GL::type::is_any() const noexcept {
-        static size_t const h{ util::type_id<any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
-        static size_t const h2{ util::type_id<any::fast_any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
-        size_t this_h{ get_base_hash() };
-        return (this_h == h) || (this_h == h2);
-    };
+    ///*__forceinline*/ bool GL::type::is_any() const noexcept {
+    //    static size_t const h{ util::type_id<any>().hash_code() };
+    //    static size_t const h2{ util::type_id<any::fast_any>().hash_code() };
+    //    return (((hash ^ h) & impl::cached_type::MAGIC_MASK2) == 0) || (((hash ^ h2) & impl::cached_type::MAGIC_MASK2) == 0);
+
+    //    //static size_t const h{ util::type_id<any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+    //    //static size_t const h2{ util::type_id<any::fast_any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+    //    //size_t this_h{ get_base_hash() };
+    //    //return (this_h == h) || (this_h == h2);
+    //};
+    ///*__forceinline*/ bool GL::type::is_var() const noexcept {
+    //    static size_t const h{ util::type_id<var>().hash_code() };
+    //    return ((hash ^ h) & impl::cached_type::MAGIC_MASK2) == 0;
+
+    //    // static size_t const h{ util::type_id<var>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+    //    // return (hash & impl::cached_type::MAGIC_MASK2) == h;
+    //};
+    ///*__forceinline*/ bool GL::type::is_dynamic_object() const noexcept {
+    //    static size_t const h{ util::type_id<dynamic_object>().hash_code() };
+    //    return ((hash ^ h) & impl::cached_type::MAGIC_MASK2) == 0;
+
+    //    //static size_t const h{ util::type_id<dynamic_object>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+    //    //size_t this_h{ get_base_hash() };
+    //    //return this_h == h;
+    //};
+
+
 
     namespace type_erasure {
         __forceinline GL::shared_ptr<any_data> wrapper::get(const any_cast& obj) {

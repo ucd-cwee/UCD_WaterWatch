@@ -25,17 +25,34 @@
 //#include "stopwatch.h"
 //#include "strings.h"
 //#include "types.h"
-//#include "scripting.h"
+#include "scripting.h"
 
 int main() {
-#if 0
-    if (0) {
+#if 1
+    while (1) {
         GL::stopwatch sw;
+        if (1) {            
+            if (auto timer = sw.debug_timer("direct function call w/o converters (unboxed value)\t")) {
+                for (int i = 0; i < 1000000; ++i) {
+                    (void)GL::string("this").size();
+                }
+            }
+        }
+        if (1) {
+            auto callable = GL::make_callable("size", &GL::string::size);
+            std::array<GL::any::fast_any, 1> example{
+                 GL::any::fast_any::instance(GL::string("this"))
+            };
+            if (auto timer = sw.debug_timer("direct function call w/o converters (from boxed value)\t")) {
+                for (int i = 0; i < 1000000; ++i) {
+                    (void)example[0].cast<GL::string>().size();
+                }
+            }
+        }
         if (0) {
-            auto callable = GL::make_callable("at", &GL::string::at);
-            std::array<GL::any::fast_any, 2> example{
-                 GL::any::fast_any::instance(GL::string("this")),
-                 GL::any::fast_any::instance(0ull)
+            auto callable = GL::make_callable("size", &GL::string::size);
+            std::array<GL::any::fast_any, 1> example{
+                 GL::any::fast_any::instance(GL::string("this"))
             };
             if (auto timer = sw.debug_timer("operator() with callable and w/o converters, no conversion needed")) {
                 for (int i = 0; i < 1000000; ++i) {
@@ -48,14 +65,25 @@ int main() {
             root.perform_builtins();
             root.try_get_converter(GL::type_of<GL::string>(), GL::type_of<GL::string>());
             auto converters = root.get_converters();
-            auto callable = GL::make_callable("at", &GL::string::at);
-            std::array<GL::any::fast_any, 2> example{
-                 GL::any::fast_any::instance(GL::string("this")),
-                 GL::any::fast_any::instance(0ull)
-            };
-            if (auto timer = sw.debug_timer("operator() with callable and w/converters, no conversion needed")) {
-                for (int i = 0; i < 1000000; ++i) {
-                    (void)callable->operator()(&example[0], &example[0] + example.size());
+            auto callable = GL::make_callable("size", &GL::string::size);
+            if (1) {
+                std::array<GL::any::fast_any, 1> example{
+                     GL::any::fast_any::instance(GL::string("this"))
+                };
+                if (auto timer = sw.debug_timer("operator() with callable and w/converters, no conversion needed")) {
+                    for (int i = 0; i < 1000000; ++i) {
+                        (void)callable->operator()(&example[0], &example[0] + example.size());
+                    }
+                }
+            }
+            if (1) {
+                std::array<GL::any::fast_any, 2> example{
+                     GL::any::fast_any::instance(std::string("this"))
+                };
+                if (auto timer = sw.debug_timer("operator() with callable and w/converters, conversion needed")) {
+                    for (int i = 0; i < 1000000; ++i) {
+                        (void)callable->operator()(&example[0], &example[0] + example.size());
+                    }
                 }
             }
         }
