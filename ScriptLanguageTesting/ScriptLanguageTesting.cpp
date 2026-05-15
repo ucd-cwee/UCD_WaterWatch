@@ -31,21 +31,39 @@ int main() {
 #if 1
     while (1) {
         GL::stopwatch sw;
-        if (1) {            
+        if (1) {
+            GL::string ref = "this";
             if (auto timer = sw.debug_timer("direct function call w/o converters (unboxed value)\t")) {
                 for (int i = 0; i < 1000000; ++i) {
-                    (void)GL::string("this").size();
+                    (void)ref.begins_with("this");
+                }
+            }
+        }
+        if (1) {
+            GL::string ref = "this";
+            if (auto timer = sw.debug_timer("direct function call w/o converters (unboxed ref)\t")) {
+                for (int i = 0; i < 1000000; ++i) {
+                    GL::string& Ref = ref;
+                    (void)Ref.begins_with("this");
                 }
             }
         }
         if (1) {
             auto callable = GL::make_callable("size", &GL::string::size);
-            std::array<GL::any::fast_any, 1> example{
-                 GL::any::fast_any::instance(GL::string("this"))
-            };
+            auto boxed = GL::any::fast_any::instance(GL::string("this"));
             if (auto timer = sw.debug_timer("direct function call w/o converters (from boxed value)\t")) {
                 for (int i = 0; i < 1000000; ++i) {
-                    (void)example[0].cast<GL::string>().size();
+                    (void)boxed.cast<GL::string&>().begins_with("this");
+                }
+            }
+        }
+        if (1) {
+            auto callable = GL::make_callable("size", &GL::string::size);
+            auto boxed = GL::any::fast_any::instance(GL::string("this"));
+            if (auto timer = sw.debug_timer("direct function call w/o converters (from boxed cast)\t")) {
+                for (int i = 0; i < 1000000; ++i) {
+                    GL::string& Ref = boxed.cast();
+                    (void)Ref.begins_with("this");
                 }
             }
         }
