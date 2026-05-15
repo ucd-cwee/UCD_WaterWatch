@@ -5,6 +5,13 @@
 #include <map>
 
 namespace GL {
+    type_erasure::any_cast any::cast() const noexcept {
+        return type_erasure::any_cast{ const_cast<any*>(this) };
+    };
+    type_erasure::fast_any_cast any::fast_any::cast() const noexcept {
+        return type_erasure::fast_any_cast{ const_cast<fast_any*>(this) };
+    };
+
     bool type::is_any() const noexcept {
         static size_t const h{ util::type_id<any>().hash_code() };
         static size_t const h2{ util::type_id<any::fast_any>().hash_code() };

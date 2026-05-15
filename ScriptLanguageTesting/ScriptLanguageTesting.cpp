@@ -29,55 +29,79 @@
 
 int main() {
 #if 1
-    while (1) {
-        GL::stopwatch sw;
-        if (1) {
-            GL::string ref = "this";
-            if (auto timer = sw.debug_timer("direct function call w/o converters (unboxed value)\t")) {
-                for (int i = 0; i < 1000000; ++i) {
-                    (void)ref.begins_with("this");
+    while (1) {    
+        switch ((int)std::floor(GL::util::rand(0, 5.999))) {
+        case 0: {
+                GL::string ref = "this";
+                if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (unboxed value)\t")) {
+                    for (int i = 0; i < 1000000; ++i) {
+                        (void)ref.begins_with("this");
+                    }
                 }
-            }
-        }
-        if (1) {
-            GL::string ref = "this";
-            if (auto timer = sw.debug_timer("direct function call w/o converters (unboxed ref)\t")) {
-                for (int i = 0; i < 1000000; ++i) {
-                    GL::string& Ref = ref;
-                    (void)Ref.begins_with("this");
+            } break;
+        case 1: {
+                GL::string ref = "this";
+                if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (unboxed ref)\t")) {
+                    for (int i = 0; i < 1000000; ++i) {
+                        GL::string& Ref = ref;
+                        (void)Ref.begins_with("this");
+                    }
                 }
-            }
-        }
-        if (1) {
-            auto callable = GL::make_callable("size", &GL::string::size);
+            } break;
+        case 2: {
+                auto boxed = GL::any::fast_any::instance(GL::make_shared<GL::string>("this"));
+                if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (from boxed GL::shared_ptr)\t")) {
+                    for (int i = 0; i < 1000000; ++i) {
+                        (void)boxed.cast<GL::string&>().begins_with("this");
+                    }
+                }
+            } break;
+        case 3: {
+                auto boxed = GL::any::fast_any::instance(GL::string("this"));
+                if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (from boxed value)\t")) {
+                    for (int i = 0; i < 1000000; ++i) {
+                        (void)boxed.cast<GL::string&>().begins_with("this");
+                    }
+                }
+            } break;
+        case 4: {
             auto boxed = GL::any::fast_any::instance(GL::string("this"));
-            if (auto timer = sw.debug_timer("direct function call w/o converters (from boxed value)\t")) {
-                for (int i = 0; i < 1000000; ++i) {
-                    (void)boxed.cast<GL::string&>().begins_with("this");
-                }
-            }
-        }
-        if (1) {
-            auto callable = GL::make_callable("size", &GL::string::size);
-            auto boxed = GL::any::fast_any::instance(GL::string("this"));
-            if (auto timer = sw.debug_timer("direct function call w/o converters (from boxed cast)\t")) {
+            if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (from boxed cast)\t")) {
                 for (int i = 0; i < 1000000; ++i) {
                     GL::string& Ref = boxed.cast();
                     (void)Ref.begins_with("this");
                 }
             }
-        }
-        if (0) {
-            auto callable = GL::make_callable("size", &GL::string::size);
-            std::array<GL::any::fast_any, 1> example{
-                 GL::any::fast_any::instance(GL::string("this"))
+        } break;
+        case 5: {            
+            auto callable = GL::make_callable("begins_with", &GL::string::begins_with);
+            std::array<GL::any::fast_any, 2> example{
+                    GL::any::fast_any::instance(GL::string("this")),
+                    GL::any::fast_any::instance(GL::string("this"))
             };
-            if (auto timer = sw.debug_timer("operator() with callable and w/o converters, no conversion needed")) {
+            if (auto timer = GL::stopwatch().debug_timer("\"this\".begins_with(\"this\") with callable and w/o converters, no conversion needed, w/o return")) {
                 for (int i = 0; i < 1000000; ++i) {
-                    (void)callable->operator()(&example[0], &example[0] + example.size());
+                    (void)callable->operator()(&example[0], &example[0] + example.size(), false);
+                }
+            }            
+        } break;
+        case 6: {
+            auto callable = GL::make_callable("begins_with", &GL::string::begins_with);
+            std::array<GL::any::fast_any, 2> example{
+                    GL::any::fast_any::instance(GL::string("this")),
+                    GL::any::fast_any::instance(GL::string("this"))
+            };
+            if (auto timer = GL::stopwatch().debug_timer("\"this\".begins_with(\"this\") with callable and w/o converters, no conversion needed, w/ return")) {
+                for (int i = 0; i < 1000000; ++i) {
+                    (void)callable->operator()(&example[0], &example[0] + example.size(), true);
                 }
             }
+        } break;
         }
+
+
+
+
         if (0) {
             GL::scope::impl::RootScope root;
             root.perform_builtins();
@@ -88,7 +112,7 @@ int main() {
                 std::array<GL::any::fast_any, 1> example{
                      GL::any::fast_any::instance(GL::string("this"))
                 };
-                if (auto timer = sw.debug_timer("operator() with callable and w/converters, no conversion needed")) {
+                if (auto timer = GL::stopwatch().debug_timer("operator() with callable and w/converters, no conversion needed")) {
                     for (int i = 0; i < 1000000; ++i) {
                         (void)callable->operator()(&example[0], &example[0] + example.size());
                     }
@@ -98,7 +122,7 @@ int main() {
                 std::array<GL::any::fast_any, 2> example{
                      GL::any::fast_any::instance(std::string("this"))
                 };
-                if (auto timer = sw.debug_timer("operator() with callable and w/converters, conversion needed")) {
+                if (auto timer = GL::stopwatch().debug_timer("operator() with callable and w/converters, conversion needed")) {
                     for (int i = 0; i < 1000000; ++i) {
                         (void)callable->operator()(&example[0], &example[0] + example.size());
                     }

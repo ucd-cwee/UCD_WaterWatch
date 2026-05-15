@@ -489,12 +489,11 @@ namespace GL {
             };
         };
 
-
-    private:
         static _NODISCARD void*
             malloc_bytes(unsigned int bytes);
         static void
             free(void* p);
+    private:
         template<typename T> _NODISCARD static T*
             malloc(unsigned int count) {
             return helper<T>::create(count);

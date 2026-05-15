@@ -132,13 +132,14 @@ namespace GL {
             static size_t out{ util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2 };
             return out;
         };
-        static size_t const& default_hash_code() {
-            static size_t out{ (util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2) | ((size_t)CppType << 59ull) };
-            return out;
-        };
+        static constexpr size_t default_hash_code = (0ull & impl::cached_type::MAGIC_MASK2) | ((size_t)CppType << 59ull);
+        //static size_t const& default_hash_code() {
+        //    static size_t out{ (util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2) | ((size_t)CppType << 59ull) };
+        //    return out;
+        //};
 
     public:
-        type() : hash(default_hash_code()) {};
+        type() : hash(default_hash_code) {};
         explicit type(size_t _hash) : hash(_hash) {};
         type(type const&) = default;
         type(type &&) = default;
@@ -1178,92 +1179,46 @@ namespace GL {
                 static constexpr bool is_const{ std::is_const_v<T> };
                 static constexpr bool is_any{ std::is_same_v<GL::any, T> || std::is_same_v<GL::any::fast_any, T> || std::is_same_v<GL::any const&, T> || std::is_same_v<GL::any::fast_any const&, T> || std::is_same_v<GL::any::fast_any&, T> };
 
-                if constexpr (is_any) {
-                    return p->fast();
-                }
-                else {
-                    if (p) {
-                        decltype(auto) container{ p->m_ptr.load() };
-                        while (container) {
-                            if constexpr (is_shared_ptr) {
-                                // casting to GL::shared_ptr
-                                if constexpr (is_ptr) {
-                                    throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                                }
-                                else if constexpr (is_ref && !is_const) {
-                                    throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                                }
-
-                                if constexpr (std::is_same_v<typename std::remove_pointer_t<typename std::decay_t<T>>, var>) {
-                                    return DoCast_Shared<typename type_erasure::get_type<T>::type>(std::move(container));
-                                }
-                                else {
-                                    if (container->m_actual_type.is_var() /*container->can_cast_var()*/) {
-                                        var* ptr = container->cast<var>();
-                                        if (auto f = ptr->get_data()) {
-                                            container = f->m_ptr.load();
-                                            continue;
-                                        }
-                                    }
-                                    return DoCast_Shared<typename type_erasure::get_type<T>::type>(std::move(container));
-                                }
-                            }
-                            else if constexpr (is_std_shared_ptr) {
-                                // casting to std::shared_ptr
-                                if constexpr (is_ptr) {
-                                    throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                                }
-                                else if constexpr (is_ref) {
-                                    throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                                }
-
-                                if constexpr (std::is_same_v<typename std::remove_pointer_t<typename std::decay_t<T>>, var>) {
-                                    return DoCast_StdShared<typename type_erasure::get_type<T>::type>(std::move(container));
-                                }
-                                else {
-                                    if (container->m_actual_type.is_var() /*container->can_cast_var()*/) {
-                                        var* ptr = container->cast<var>();
-                                        if (auto f = ptr->get_data()) {
-                                            container = f->m_ptr.load();
-                                            continue;
-                                        }
-                                    }
-                                    return DoCast_StdShared<typename type_erasure::get_type<T>::type>(std::move(container));
-                                }
-                            }
-                            else {
-                                // casting to a reference or a pointer
-                                if constexpr (std::is_same_v<typename std::remove_pointer_t<typename std::decay_t<T>>, var>) {
-                                    return DoCast_Unshared<T>(std::move(container));
-                                }
-                                else {
-                                    if (container->m_actual_type.is_var() /*container->can_cast_var()*/) {
-                                        var* ptr = container->cast<var>();
-                                        if (auto f = ptr->get_data()) {
-                                            container = f->m_ptr.load();
-                                            continue;
-                                        }
-                                    }
-                                    return DoCast_Unshared<T>(std::move(container));
-                                }
-                            }
-                        }
-                    }
-
-                    if constexpr (is_shared_ptr) {
-                        return GL::shared_ptr<typename type_erasure::get_type<T>::type>(nullptr);
-                    }
-                    else if constexpr (is_std_shared_ptr) {
-                        return std::shared_ptr<typename type_erasure::get_type<T>::type>(nullptr);
-                    }
+                if (!p) {
+                    if constexpr (is_any) return p->fast();
                     else {
-                        if constexpr (is_ptr) {
-                            return static_cast<typename std::remove_reference<typename std::remove_pointer<T>::type>::type*>(nullptr);
+                        if constexpr (is_shared_ptr) {
+                            return GL::shared_ptr<typename type_erasure::get_type<T>::type>(nullptr);
+                        }
+                        else if constexpr (is_std_shared_ptr) {
+                            return std::shared_ptr<typename type_erasure::get_type<T>::type>(nullptr);
                         }
                         else {
-                            auto err = "Cannot cast from `void` to `" + GL::type_of<typename std::remove_reference<typename std::remove_pointer<T>::type>::type>().name() + "`";
-                            throw std::runtime_error(err.to_string());
+                            if constexpr (is_ptr) {
+                                return static_cast<typename std::remove_reference<typename std::remove_pointer<T>::type>::type*>(nullptr);
+                            }
+                            else {
+                                auto err = "Cannot cast from `void` to `" + GL::type_of<typename std::remove_reference<typename std::remove_pointer<T>::type>::type>().name() + "`";
+                                throw std::runtime_error(err.to_string());
+                            }
                         }
+                    }
+                }
+                else {
+                    if constexpr (is_any) return p->fast();                    
+                    else {
+                        if constexpr (is_shared_ptr) {
+                            if constexpr (is_ptr) throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
+                            else if constexpr (is_ref) throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
+                            return DoCast_Shared<typename type_erasure::get_type<T>::type>(p->m_ptr.load());
+                        }
+                        else if constexpr (is_std_shared_ptr) {
+                            if constexpr (is_ptr) {
+                                throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
+                            }
+                            else if constexpr (is_ref) {
+                                throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
+                            }
+                            return DoCast_StdShared<typename type_erasure::get_type<T>::type>(p->m_ptr.load());
+                        }
+                        else {
+                            return DoCast_Unshared<T>(p->m_ptr.load());
+                        } 
                     }
                 }
             };
@@ -1278,121 +1233,48 @@ namespace GL {
                 static constexpr bool is_const{ std::is_const_v<T> };
                 static constexpr bool is_any{ std::is_same_v<GL::any, T> || std::is_same_v<GL::any::fast_any, T> || std::is_same_v<GL::any const&, T> || std::is_same_v<GL::any::fast_any const&, T> || std::is_same_v<GL::any::fast_any&, T> };
 
-                if constexpr (is_any) {
-                    return *p;                    
-                }
-                else {
-                    // fast path
-                    if (p && p->m_ptr) {
-                        if (!p->m_ptr->m_actual_type.is_var() /*can_cast_var()*/) {
-                            if constexpr (is_shared_ptr) {
-                                if constexpr (is_ptr) {
-                                    throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                                }
-                                else if constexpr (is_ref) {
-                                    throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                                }
-
-                                return DoCast_Shared_fast<typename type_erasure::get_type<T>::type>(p->m_ptr);
-                            }
-                            else if constexpr (is_std_shared_ptr) {
-                                if constexpr (is_ptr) {
-                                    throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                                }
-                                else if constexpr (is_ref) {
-                                    throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                                }
-
-                                return DoCast_StdShared_fast<typename type_erasure::get_type<T>::type>(p->m_ptr);
-                            }
-                            else {
-                                return DoCast_Unshared_fast<T>(p->m_ptr);
-                            }
-                        }
-                    }
-
-                    // slow path
-                    if (p) {
-                        GL::shared_ptr<type_erasure::any_data> container{ p->m_ptr };
-                        while (container) {
-                            if constexpr (is_shared_ptr) {
-                                // casting to GL::shared_ptr
-                                if constexpr (is_ptr) {
-                                    throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                                }
-                                else if constexpr (is_ref && !is_const) {
-                                    throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                                }
-
-                                if constexpr (std::is_same_v<typename std::remove_pointer_t<typename std::decay_t<T>>, var>) {
-                                    return DoCast_Shared<typename type_erasure::get_type<T>::type>(std::move(container));
-                                }
-                                else {
-                                    if (container->m_actual_type.is_var() /*can_cast_var()*/) {
-                                        var* ptr = container->cast<var>();
-                                        if (auto f = ptr->get_data()) {
-                                            container = f->m_ptr.load();
-                                            continue;
-                                        }
-                                    }
-                                    return DoCast_Shared<typename type_erasure::get_type<T>::type>(std::move(container));
-                                }
-                            }
-                            else if constexpr (is_std_shared_ptr) {
-                                // casting to std::shared_ptr
-                                if constexpr (is_ptr) {
-                                    throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                                }
-                                else if constexpr (is_ref) {
-                                    throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                                }
-
-                                if constexpr (std::is_same_v<typename std::remove_pointer_t<typename std::decay_t<T>>, var>) {
-                                    return DoCast_StdShared<typename type_erasure::get_type<T>::type>(std::move(container));
-                                }
-                                else {
-                                    if (container->m_actual_type.is_var() /*can_cast_var()*/) {
-                                        var* ptr = container->cast<var>();
-                                        if (auto f = ptr->get_data()) {
-                                            container = f->m_ptr.load();
-                                            continue;
-                                        }
-                                    }
-                                    return DoCast_StdShared<typename type_erasure::get_type<T>::type>(std::move(container));
-                                }
-                            }
-                            else {
-                                // casting to a reference or a pointer
-                                if constexpr (std::is_same_v<typename std::remove_pointer_t<typename std::decay_t<T>>, var>) {
-                                    return DoCast_Unshared<T>(std::move(container));
-                                }
-                                else {
-                                    if (container->m_actual_type.is_var() /*can_cast_var()*/) {
-                                        var* ptr = container->cast<var>();
-                                        if (auto f = ptr->get_data()) {
-                                            container = f->m_ptr.load();
-                                            continue;
-                                        }
-                                    }
-                                    return DoCast_Unshared<T>(std::move(container));
-                                }
-                            }
-                        }
-                    }
-
-                    if constexpr (is_shared_ptr) {
-                        return GL::shared_ptr<typename type_erasure::get_type<T>::type>(nullptr);
-                    }
-                    else if constexpr (is_std_shared_ptr) {
-                        return std::shared_ptr<typename type_erasure::get_type<T>::type>(nullptr);
+                if (!p) {
+                    if constexpr (is_any) {
+                        static GL::any::fast_any out{ nullptr };
+                        return *&out;
                     }
                     else {
-                        if constexpr (is_ptr) {
-                            return static_cast<typename std::remove_reference<typename std::remove_pointer<T>::type>::type*>(nullptr);
+                        if constexpr (is_shared_ptr) {
+                            return GL::shared_ptr<typename type_erasure::get_type<T>::type>(nullptr);
+                        }
+                        else if constexpr (is_std_shared_ptr) {
+                            return std::shared_ptr<typename type_erasure::get_type<T>::type>(nullptr);
                         }
                         else {
-                            auto err = "Cannot cast from `void` to `" + GL::type_of<typename std::remove_reference<typename std::remove_pointer<T>::type>::type>().name() + "`";
-                            throw std::runtime_error(err.to_string());
+                            if constexpr (is_ptr) {
+                                return static_cast<typename std::remove_reference<typename std::remove_pointer<T>::type>::type*>(nullptr);
+                            }
+                            else {
+                                auto err = "Cannot cast from `void` to `" + GL::type_of<typename std::remove_reference<typename std::remove_pointer<T>::type>::type>().name() + "`";
+                                throw std::runtime_error(err.to_string());
+                            }
+                        }
+                    }
+                }
+                else {
+                    if constexpr (is_any) return *p;
+                    else {
+                        if constexpr (is_shared_ptr) {
+                            if constexpr (is_ptr) throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
+                            else if constexpr (is_ref) throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
+                            return DoCast_Shared_fast<typename type_erasure::get_type<T>::type>(p->m_ptr);
+                        }
+                        else if constexpr (is_std_shared_ptr) {
+                            if constexpr (is_ptr) {
+                                throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
+                            }
+                            else if constexpr (is_ref) {
+                                throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
+                            }
+                            return DoCast_StdShared_fast<typename type_erasure::get_type<T>::type>(p->m_ptr);
+                        }
+                        else {
+                            return DoCast_Unshared_fast<T>(p->m_ptr);
                         }
                     }
                 }
@@ -1576,10 +1458,10 @@ namespace GL {
             decltype(auto) cast() const noexcept { return DataCaster::DoCast<VType>(const_cast<fast_any*>(this)); };
 
             template<typename VType, typename = std::enable_if_t<!std::is_pointer<VType>::value&& std::is_same_v<fast_any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
-            any& cast() const noexcept { return *const_cast<fast_any*>(this); };
+            fast_any& cast() const noexcept { return *const_cast<fast_any*>(this); };
 
             template<typename VType, typename = std::enable_if_t<std::is_pointer<VType>::value&& std::is_same_v<fast_any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
-            any* cast() const noexcept { return const_cast<fast_any*>(this); };
+            fast_any* cast() const noexcept { return const_cast<fast_any*>(this); };
 
             type_erasure::fast_any_cast cast() const noexcept;
 
@@ -1704,12 +1586,12 @@ namespace GL {
         };
     };
 
-    __forceinline type_erasure::any_cast any::cast() const noexcept {
-        return type_erasure::any_cast{ const_cast<any*>(this) };
-    };
-    __forceinline type_erasure::fast_any_cast any::fast_any::cast() const noexcept {
-        return type_erasure::fast_any_cast{ const_cast<fast_any*>(this) };
-    };
+    //__forceinline type_erasure::any_cast any::cast() const noexcept {
+    //    return type_erasure::any_cast{ const_cast<any*>(this) };
+    //};
+    //__forceinline type_erasure::fast_any_cast any::fast_any::cast() const noexcept {
+    //    return type_erasure::fast_any_cast{ const_cast<fast_any*>(this) };
+    //};
     ///*__forceinline*/ bool GL::type::is_any() const noexcept {
     //    static size_t const h{ util::type_id<any>().hash_code() };
     //    static size_t const h2{ util::type_id<any::fast_any>().hash_code() };
