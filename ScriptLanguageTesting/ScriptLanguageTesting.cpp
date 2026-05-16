@@ -64,7 +64,7 @@ int main() {
                     }
                 }
             } break;
-        case 4: {
+        case 4: if (0) {
             auto boxed = GL::any::fast_any::instance(GL::string("this"));
             if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (from boxed cast)\t")) {
                 for (int i = 0; i < 1000000; ++i) {

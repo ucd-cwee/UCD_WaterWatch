@@ -680,62 +680,22 @@ namespace GL {
                     std::rethrow_exception(std::current_exception());
                 }
             }
-            GL::any::fast_any operator()(const GL::any::fast_any* begin, const GL::any::fast_any* end, bool keep_return_value = true) const {
+            __declspec(noinline) GL::any::fast_any operator()(const GL::any::fast_any* begin, const GL::any::fast_any* end, bool keep_return_value = true) const {
                 if (end >= (begin + m_signature.numArguments)) { // if defaults will not be necessary
-                // if ((end - begin) >= (int)m_signature.argument_defaults_m.size()) { // if defaults will not be necessary
-                    try {
-                        return do_call_(begin, keep_return_value);
-                    }
-                    catch (std::runtime_error const& e) {
-                        auto err = GL::string("Error with function call: ") + this->m_signature.display() + "\n\t" + std::string(e.what());
-                        throw std::runtime_error(err.to_string());
-                    }
-                    catch (std::exception const& e) {
-                        auto err = GL::string("Error with function call: ") + this->m_signature.display() + "\n\t" + std::string(e.what());
-                        throw std::runtime_error(err.to_string());
-                    }
-                    /*catch (GL::any const& return_val) {
-                        throw return_val;
-                    }
-                    catch (GL::any::fast_any const& return_val) {
-                        throw return_val;
-                    }*/
-                    catch (...) {
-                        std::rethrow_exception(std::current_exception());
-                    }
+                    return do_call_(begin, keep_return_value);
                 }
                 else {
-                    static thread_local std::array<any::fast_any*, 16> inputs;
-                    short pos{ 0 };
-                    for (auto* p = begin; (p != end) && (pos < 16); ++p, ++pos) {
-                        inputs[pos] = const_cast<any::fast_any*>(p);
+                    thread_local any::fast_any* inputs[16];
+                    for (int pos = 0; pos < m_signature.numArguments; ++pos, ++begin) {
+                        if (end > begin) {
+                            inputs[pos] = const_cast<any::fast_any*>(begin);
+                        }
+                        else {
+                            inputs[pos] = const_cast<any::fast_any*>(&m_signature.argument_defaults_m[pos]);
+                        }
                     }
-                    for (; (pos < 16) && (pos < m_signature.argument_defaults_m.size()); ++pos) {
-                        inputs[pos] = const_cast<any::fast_any*>(&m_signature.argument_defaults_m[pos]);
-                    }
-
-                    try {
-                        return do_call(&inputs[0], keep_return_value);
-                    }
-                    catch (std::runtime_error const& e) {
-                        auto err = GL::string("Error with function call: ") + this->m_signature.display() + "\n\t" + std::string(e.what());
-                        throw std::runtime_error(err.to_string());
-                    }
-                    catch (std::exception const& e) {
-                        auto err = GL::string("Error with function call: ") + this->m_signature.display() + "\n\t" + std::string(e.what());
-                        throw std::runtime_error(err.to_string());
-                    }
-                    /*catch (GL::any const& return_val) {
-                        throw return_val;
-                    }
-                    catch (GL::any::fast_any const& return_val) {
-                        throw return_val;
-                    }*/
-                    catch (...) {
-                        std::rethrow_exception(std::current_exception());
-                    }
-                }
-                
+                    return do_call(&inputs[0], keep_return_value);
+                }                
             };
             // fastest path
             GL::any::fast_any operator()(bool keep_return_value = true) const {
