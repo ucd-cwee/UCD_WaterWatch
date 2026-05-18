@@ -603,6 +603,7 @@ namespace {
         using Type = decltype(Member_Function_Caller(std::move(f)));
         return GL::make_shared<Type>(std::move(f));
     };
+    // Attribute Calls are the slowest operation of the bunch by 10-100 times, due to the need to create a new any::fast_any wrapper every time, rather than re-using the existing object pointer. 
     template <typename Function> class Attribute_Function_Caller final : public Function_Caller {
     public:
         using traits = decltype(Attribute_Function_Traits(std::declval< Function>()));
