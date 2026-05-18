@@ -678,84 +678,6 @@ namespace GL {
                 m_obj;
         };
 
-        template <typename T>
-        class referenced_data final : public any_data {
-        public:
-            referenced_data(GL::shared_ptr<any_data> const& p_ptr, GL::type const& type_info, T* Actual) : m_ptr(p_ptr), any_data(type_info) {
-                m_ptr.set_pointer_without_modifying_control_block(Actual);
-                this->m_data = Actual;
-            };
-            virtual ~referenced_data() = default;
-
-            GL::shared_ptr<void> get(GL::shared_ptr<any_data>&&) override {
-                return m_ptr;
-            };
-            std::shared_ptr<void> get_std(GL::shared_ptr<any_data>&&) override {
-                return std::shared_ptr<void>(this->m_data, [ptr = m_ptr](void* p) -> void {
-                    if (p != ptr.get()) {
-                        std::cout << "ERROR1\n";
-                    }
-                });
-            };
-
-            // returns true if this type can easily match the requested type (e.g. int& -> const int&)
-            bool can_free_cast(type const& to) const override {
-                static auto var_hash_code = GL::util::type_id<var>().hash_code();
-                static auto dynamic_object_hash_code = GL::util::type_id<dynamic_object>().hash_code();
-                if constexpr (std::is_same_v<T, var>) {
-                    if (to.get_base_hash() == var_hash_code) {
-                        return true;
-                    }
-                }
-                else if constexpr (std::is_same_v<T, dynamic_object>) {
-                    if (to.get_base_hash() == dynamic_object_hash_code) {
-                        return true;
-                    }
-                }
-                return GL::type_of<T>().can_free_cast(to);
-            };
-            // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
-            bool can_cast(type const& to) const override {
-                static auto var_hash_code = GL::util::type_id<var>().hash_code();
-                static auto dynamic_object_hash_code = GL::util::type_id<dynamic_object>().hash_code();
-
-                if constexpr (std::is_same_v<T, var>) {
-                    if (to.get_base_hash() == var_hash_code) {
-                        return true;
-                    }
-                }
-                else if constexpr (std::is_same_v<T, dynamic_object>) {
-                    if (to.get_base_hash() == dynamic_object_hash_code) {
-                        return true;
-                    }
-                }
-                return GL::type_of<T>().can_cast(to);
-            };
-            // returns true if this type is of the same foundational type as a var
-            bool can_cast_var() const override {
-                if constexpr (std::is_same_v<T, var>) {
-                    return true;
-                }
-                else {
-                    return false;
-                }
-            };
-            bool can_cast_dynamic_object() const override {
-                if constexpr (std::is_same_v<T, dynamic_object>) {
-                    return true;
-                }
-                else {
-                    return false;
-                }
-            };
-            GL::type get_type() const override {
-                return GL::type_of<T>();
-            };
-
-        public:
-            GL::shared_ptr<void> m_ptr;
-        };
-
         struct wrapper {
             template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>> || std::is_same_v<H<S>, GL::shared_ptr<S>>>>
             static GL::shared_ptr<any_data> get_v(H<S> obj) {
@@ -1532,31 +1454,10 @@ namespace GL {
             friend class any;
 
             template <typename T> __declspec(noinline) static any::fast_any wrap_member(any::fast_any const& parent, T const& ref) {
-                return any::fast_any(GL::make_shared < GL::type_erasure::referenced_data<T> >(parent.m_ptr, GL::type_of<T const&>(), const_cast<T*>(&ref)), GL::type_of<T const&>());
-
-                //auto outP = GL::static_pointer_cast<T>(parent.shared_ptr());
-                //outP.set_pointer_without_modifying_control_block(&const_cast<T&>(ref));
-                //return any::fast_any(GL::make_shared< GL::type_erasure::shared_data<T> >(std::move(outP)), GL::type_of<T const&>());
-
-
-                //auto outP = GL::static_pointer_cast<T>(parent.shared_ptr());
-                //outP.set_pointer_without_modifying_control_block(&const_cast<T&>(ref));
-                //auto out = GL::any::fast_any::instance(outP);
-                //out |= (GL::type::Const | GL::type::Reference);
-                //return out;
+                return any::fast_any::instance(GL::shared_ptr<T>(&const_cast<T&>(ref), [capture = parent.m_ptr](T*) -> void {})) | (GL::type::Reference | GL::type::Const);
             };
             template <typename T> __declspec(noinline) static any::fast_any wrap_member(any::fast_any const& parent, T& ref) {
-                return any::fast_any(GL::make_shared < GL::type_erasure::referenced_data<T> >(parent.m_ptr, GL::type_of<T&>(), &ref), GL::type_of<T&>());
-
-                /*auto outP = GL::static_pointer_cast<T>(parent.shared_ptr());
-                outP.set_pointer_without_modifying_control_block(&const_cast<T&>(ref));
-                return any::fast_any(GL::make_shared< GL::type_erasure::shared_data<T> >(std::move(outP)), GL::type_of<T&>());*/
-
-                //auto outP = GL::static_pointer_cast<T>(parent.shared_ptr());
-                //outP.set_pointer_without_modifying_control_block(&const_cast<T&>(ref));
-                //auto out = GL::any::fast_any::instance(std::move(outP));
-                //out |= (GL::type::Reference);
-                //return std::move(out);
+                return any::fast_any::instance(GL::shared_ptr<T>(&ref, [capture = parent.m_ptr](T*) -> void {})) | GL::type::Reference;
             };
         };
 

@@ -27,228 +27,6 @@
 //#include "types.h"
 #include "scripting.h"
 
-#if 0
-// version of 'any' that is NOT thread-safe, but is faster as a result.
-class any {
-    friend class dynamic_object;
-protected:
-    mutable GL::shared_ptr< GL::type_erasure::any_data >
-        m_ptr; // atomic shared-ptr for the type-erased underlying data. 
-public:
-    GL::type
-        m_casted_type; // atomic type information. May be updated to include information such as the const-ness or temporary type. 
-    size_t
-        offset{ 0 };
-
-private:
-    void correct_type_information() {
-        if (m_ptr) {
-            if (m_ptr->m_actual_type.is_var() /*can_cast_var()*/) {
-                if (auto* V = m_ptr->cast<GL::var>()) {
-                    m_casted_type = V->get_type();
-                    if (m_casted_type.is_void()) {
-                        m_casted_type = GL::type_of<GL::var>();
-                    }
-                }
-            }
-            if (m_ptr->can_cast_dynamic_object()) {
-                if (auto* V = m_ptr->cast<GL::dynamic_object>()) {
-                    m_casted_type = V->m_type;
-                }
-            }
-        }
-    }
-
-public:
-    explicit any(GL::shared_ptr< GL::type_erasure::any_data >&& p_ptr, GL::type const& p_type, size_t attr_offset)
-        : m_ptr{ std::move(p_ptr) }, m_casted_type{ p_type }, offset{ attr_offset }
-    {
-        correct_type_information();
-    }
-
-public:
-    any() = default;
-    any(any const&) = default;
-    any(any&&) noexcept = default;
-    any(std::nullptr_t) noexcept : m_ptr{}, m_casted_type{}, offset{ 0 } { };
-    any& operator=(any const&) = default;
-    any& operator=(any&&) noexcept = default;
-    ~any() = default;
-
-    template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>> && !std::is_same_v<any, std::decay_t<ValueType>>>> static any instance(const ValueType& value) noexcept {
-        return any(type_erasure::wrap(value), type_of<typename type_erasure::get_type<std::decay_t<ValueType>>::type>());
-    };
-    template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>> && !std::is_same_v<any, std::decay_t<ValueType>>>> static any instance(ValueType&& value) noexcept {
-        return any(type_erasure::wrap(std::forward<ValueType>(value)), type_of<typename type_erasure::get_type<std::decay_t<ValueType>>::type>());
-    };
-    static any instance(any&& value) noexcept {
-        return std::forward<any>(value);
-    };
-    static any instance(const any& value) noexcept {
-        return value;
-    };
-    GL::shared_ptr<GL::type_erasure::any_data> get_underlying_ptr() const {
-        return m_ptr;
-    };
-    operator bool() const noexcept {
-        return m_ptr.operator bool();
-    };
-    bool empty() const noexcept {
-        return !operator bool();
-    };
-    friend bool operator==(const any& a, const any& b) noexcept { return a.m_ptr == b.m_ptr; };
-    friend bool operator!=(const any& a, const any& b) noexcept { return a.m_ptr != b.m_ptr; };
-    friend bool operator<(const any& a, const any& b) noexcept { return a.m_ptr < b.m_ptr; };
-    friend bool operator<=(const any& a, const any& b) noexcept { return a.m_ptr <= b.m_ptr; };
-    friend bool operator>(const any& a, const any& b) noexcept { return a.m_ptr > b.m_ptr; };
-    friend bool operator>=(const any& a, const any& b) noexcept { return a.m_ptr >= b.m_ptr; };
-
-    bool operator&(int p_modifiers) const {
-        return m_casted_type & p_modifiers;
-    };
-    any operator|(int p_modifiers) const {
-        any out(*this);
-        out.m_casted_type |= p_modifiers;
-        return out;
-    };
-    any operator+(int p_modifiers) const {
-        any out(*this);
-        out.m_casted_type |= p_modifiers;
-        return out;
-    };
-    any operator-(int p_modifiers) const {
-        any out(*this);
-        out.m_casted_type -= p_modifiers;
-        return out;
-    };
-    any& operator|=(int p_modifiers) {
-        m_casted_type |= p_modifiers;
-        return *this;
-    };
-    any& operator+=(int p_modifiers) {
-        m_casted_type += p_modifiers;
-        return *this;
-    };
-    any& operator-=(int p_modifiers) {
-        m_casted_type -= p_modifiers;
-        return *this;
-    };
-
-    // returns true if this type can easily match the requested type (e.g. int& -> const int&)
-    bool can_free_cast(GL::type const& to) const {
-        if (m_casted_type.can_free_cast(to)) return true;
-        //if (auto ptr = m_ptr.load_fast()) {                    
-        //    return ptr->m_actual_type.can_free_cast(to);
-        //}
-        return false;
-    };
-    // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
-    bool can_cast(GL::type const& to) const {
-        if (m_casted_type.can_cast(to)) return true;
-        if (m_ptr) {
-            if (m_ptr->m_actual_type.can_cast(to)) return true;
-            if (m_ptr->m_actual_type.is_dynamic_object() /*can_cast_dynamic_object()*/ && (to.get_base_hash() == GL::type_of<GL::dynamic_object>().get_base_hash())) { return true; }
-            if (m_ptr->m_actual_type.is_var() /*can_cast_var()*/) {
-                if (to.get_base_hash() == GL::type_of<GL::var>().get_base_hash()) return true;
-                if (auto f = m_ptr->cast<GL::var>()->get_data(); f) {
-                    return f->can_cast(to);
-                }
-            }
-        }
-        return false;
-    };
-    GL::type const& get_actual_type() const {
-        if (m_ptr) return m_ptr->m_actual_type;
-        else {
-            static GL::type out{};
-            return out;
-        }
-    };
-
-private:
-    void* ptr() const {
-        if (m_ptr)
-            return (void*)((char*)m_ptr->m_data + offset);
-        return nullptr;
-    };
-    GL::shared_ptr<void> shared_ptr() const {
-        if (m_ptr) {
-            auto out = m_ptr->get(GL::shared_ptr< GL::type_erasure::any_data >(this->m_ptr));
-            out.set_pointer_without_modifying_control_block((void*)((char*)out.get() + offset));
-            return out;
-        }
-        return nullptr;
-    };
-    std::shared_ptr<void> std_shared_ptr() const {
-        if (m_ptr) {
-            return m_ptr->get_std(GL::shared_ptr< GL::type_erasure::any_data >(this->m_ptr), offset);
-        }
-        return nullptr;
-    };
-
-public:
-    template<typename VType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
-    decltype(auto) cast() const noexcept { return DataCaster::DoCast<VType>(const_cast<any*>(this)); };
-
-    template<typename VType, typename = std::enable_if_t<!std::is_pointer<VType>::value&& std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
-    any& cast() const noexcept { return *const_cast<any*>(this); };
-
-    template<typename VType, typename = std::enable_if_t<std::is_pointer<VType>::value&& std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
-    any* cast() const noexcept { return const_cast<any*>(this); };
-
-    type_erasure::any_cast cast() const noexcept;
-
-    friend struct type_erasure::any_cast;
-    friend struct type_erasure::any_cast;
-    friend struct type_erasure::wrapper;
-    friend class any;
-
-    template <typename T> __declspec(noinline) static any::any wrap_member(any::any const& parent, T const& ref) {
-        return any::any(GL::make_shared < GL::type_erasure::referenced_data<T> >(parent.m_ptr, GL::type_of<T const&>(), const_cast<T*>(&ref)), GL::type_of<T const&>());
-
-        //auto outP = GL::static_pointer_cast<T>(parent.shared_ptr());
-        //outP.set_pointer_without_modifying_control_block(&const_cast<T&>(ref));
-        //return any::any(GL::make_shared< GL::type_erasure::shared_data<T> >(std::move(outP)), GL::type_of<T const&>());
-
-
-        //auto outP = GL::static_pointer_cast<T>(parent.shared_ptr());
-        //outP.set_pointer_without_modifying_control_block(&const_cast<T&>(ref));
-        //auto out = GL::any::any::instance(outP);
-        //out |= (GL::type::Const | GL::type::Reference);
-        //return out;
-    };
-    template <typename T> __declspec(noinline) static any::any wrap_member(any::any const& parent, T& ref) {
-        return any::any(GL::make_shared < GL::type_erasure::referenced_data<T> >(parent.m_ptr, GL::type_of<T&>(), &ref), GL::type_of<T&>());
-
-        /*auto outP = GL::static_pointer_cast<T>(parent.shared_ptr());
-        outP.set_pointer_without_modifying_control_block(&const_cast<T&>(ref));
-        return any::any(GL::make_shared< GL::type_erasure::shared_data<T> >(std::move(outP)), GL::type_of<T&>());*/
-
-        //auto outP = GL::static_pointer_cast<T>(parent.shared_ptr());
-        //outP.set_pointer_without_modifying_control_block(&const_cast<T&>(ref));
-        //auto out = GL::any::any::instance(std::move(outP));
-        //out |= (GL::type::Reference);
-        //return std::move(out);
-    };
-};
-#endif
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 template <typename R, typename Class, typename... T> class Const_Member_Function_Traits {
 public:
     using argType = std::tuple<T...>;
@@ -768,232 +546,192 @@ public:
     virtual ~Function_Caller() = default;    
     virtual void call(const GL::any::fast_any* begin, GL::any::fast_any* out) const = 0;    
 };
+namespace {
+    template <typename Function> class Const_Member_Function_Caller final : public Function_Caller {
+    public:
+        using traits = decltype(Const_Member_Function_Traits(std::declval< Function>()));
+        Const_Member_Function_Caller(Function&& Func) {
+            (void)Const_Member_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
+        };
+        virtual ~Const_Member_Function_Caller() = default;
+        static typename traits::returnType call(const GL::any::fast_any* begin) {
+            return traits::call(std::move(begin));
+        };
+        void call(const GL::any::fast_any* begin, GL::any::fast_any* out) const override {
+            if constexpr (std::is_same_v<void, typename traits::returnType>) {
+                call(std::move(begin));
+            }
+            else {
+                if (out) {
+                    *out = GL::any::fast_any::instance(call(std::move(begin)));
+                }
+                else {
+                    call(std::move(begin));
+                }
+            }
+        };
+    };
+    template <typename Function> class Member_Function_Caller final : public Function_Caller {
+    public:
+        using traits = decltype(Member_Function_Traits(std::declval< Function>()));
+        Member_Function_Caller(Function&& Func) {
+            (void)Member_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
+        };
+        virtual ~Member_Function_Caller() = default;
+        static typename traits::returnType call(const GL::any::fast_any* begin) {
+            return traits::call(std::move(begin));
+        };
+        void call(const GL::any::fast_any* begin, GL::any::fast_any* out) const override {
+            if constexpr (std::is_same_v<void, typename traits::returnType>) {
+                call(std::move(begin));
+            }
+            else {
+                if (out) {
+                    *out = GL::any::fast_any::instance(call(std::move(begin)));
+                }
+                else {
+                    call(std::move(begin));
+                }
+            }
+        };
+    };
+    template<typename Ret, typename Class, typename... Param> auto Member_Function_Caller_Impl(Ret(Class::* f)(Param...) const) {
+        using Type = decltype(Const_Member_Function_Caller(std::move(f)));
+        return GL::make_shared<Type>(std::move(f));
+    };
+    template<typename Ret, typename Class, typename... Param> auto Member_Function_Caller_Impl(Ret(Class::* f)(Param...)) {
+        using Type = decltype(Member_Function_Caller(std::move(f)));
+        return GL::make_shared<Type>(std::move(f));
+    };
+    template <typename Function> class Attribute_Function_Caller final : public Function_Caller {
+    public:
+        using traits = decltype(Attribute_Function_Traits(std::declval< Function>()));
+        Attribute_Function_Caller(Function&& Func) {
+            (void)Attribute_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
+        };
+        virtual ~Attribute_Function_Caller() = default;
+        static typename traits::returnType& call(const GL::any::fast_any* begin) {
+            return traits::call(std::move(begin));
+        };
+        void call(const GL::any::fast_any* begin, GL::any::fast_any* out) const override {
+            if (out) {
+                if constexpr (std::is_same_v<GL::any, std::decay_t<typename traits::returnType>> || std::is_same_v<GL::any::fast_any, std::decay_t<typename traits::returnType>>) {
+                    if (begin->m_casted_type.is_const()) {
+                        *out = call(std::move(begin)) | (GL::type::Const | GL::type::Reference);
+                    }
+                    else {
+                        *out = call(std::move(begin)) | GL::type::Reference;
+                    }
+                }
+                else if constexpr (std::is_pointer<typename traits::returnType>::value) {
+                    if (begin->m_casted_type.is_const()) {
+                        *out = GL::any::fast_any::wrap_member(*begin, *call(std::move(begin)));
+                        *out |= GL::type::Const;
+                    }
+                    else {
+                        *out = GL::any::fast_any::wrap_member(*begin, *call(std::move(begin)));
+                    }
+                }
+                else {
+                    if (begin->m_casted_type.is_const()) {
+                        *out = GL::any::fast_any::wrap_member(*begin, call(std::move(begin)));
+                        *out |= GL::type::Const;
+                    }
+                    else {
+                        *out = GL::any::fast_any::wrap_member(*begin, call(std::move(begin)));
+                    }
+                }
+            }
+        };
+    };
+    template <typename Function> class Static_Function_Caller final : public Function_Caller {
+    public:
+        using traits = decltype(Static_Function_Traits(std::declval<Function>()));
+        Static_Function_Caller(Function&& Func) {
+            (void)Static_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
+        };
+        virtual ~Static_Function_Caller() = default;
 
-template <typename Function> class Const_Member_Function_Caller final : public Function_Caller {
-public:
-    using traits = decltype(Const_Member_Function_Traits(std::declval< Function>()));
-    Const_Member_Function_Caller(Function&& Func) {
-        (void)Const_Member_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
-    };
-    virtual ~Const_Member_Function_Caller() = default;
-    static typename traits::returnType call(const GL::any::fast_any* begin) {
-        return traits::call(std::move(begin));
-    };
-    void call(const GL::any::fast_any* begin, GL::any::fast_any* out) const override {
-        if constexpr (std::is_same_v<void, typename traits::returnType>) {
-            call(std::move(begin));
-        }
-        else {
-            if (out) {
-                *out = GL::any::fast_any::instance(call(std::move(begin)));
-            }
-            else {
+        static typename traits::returnType call(const GL::any::fast_any* begin) {
+            return traits::call(std::move(begin));
+        };
+        void call(const GL::any::fast_any* begin, GL::any::fast_any* out) const override {
+            if constexpr (std::is_same_v<void, typename traits::returnType>) {
                 call(std::move(begin));
             }
-        }
+            else {
+                if (out) {
+                    *out = GL::any::fast_any::instance(call(std::move(begin)));
+                }
+                else {
+                    call(std::move(begin));
+                }
+            }
+        };
     };
-};
-template <typename Function> class Member_Function_Caller final : public Function_Caller {
-public:
-    using traits = decltype(Member_Function_Traits(std::declval< Function>()));
-    Member_Function_Caller(Function&& Func) {
-        (void)Member_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
-    };
-    virtual ~Member_Function_Caller() = default;
-    static typename traits::returnType call(const GL::any::fast_any* begin) {
-        return traits::call(std::move(begin));
-    };
-    void call(const GL::any::fast_any* begin, GL::any::fast_any* out) const override {
-        if constexpr (std::is_same_v<void, typename traits::returnType>) {
-            call(std::move(begin));
-        }
-        else {
-            if (out) {
-                *out = GL::any::fast_any::instance(call(std::move(begin)));
+    /* Converts to a static function caller if the lambda does not capture. Otherwise, uses the local function copy. */
+    template <typename Function> class Lambda_Function_Caller final : public Function_Caller {
+    private:
+        Function func;
+    public:
+        using traits = typename Lambda_Function_Traits< Function >;
+        Lambda_Function_Caller(Function&& Func) : func(std::forward<Function>(Func)) {
+            if constexpr (std::is_empty_v< Function >) {
+                (void)Static_Function_Traits(+Func); // instantiate the static function pointer
+            }
+        };
+        virtual ~Lambda_Function_Caller() = default;
+        typename traits::returnType call(const GL::any::fast_any* begin) const {
+            if constexpr (std::is_empty_v< Function >) {
+                using static_traits = decltype(Static_Function_Traits(+std::declval<Function>()));
+                return static_traits::call(std::move(begin));
             }
             else {
+                return Lambda_Function_Traits< Function >::call(std::move(begin), func);
+            }
+        };
+        void call(const GL::any::fast_any* begin, GL::any::fast_any* out) const override {
+            if constexpr (std::is_same_v<void, typename traits::returnType>) {
                 call(std::move(begin));
             }
-        }
-    };
-};
-template<typename Ret, typename Class, typename... Param> auto Member_Function_Caller_Impl(Ret(Class::* f)(Param...) const) {
-    return Const_Member_Function_Caller(std::move(f));
-};
-template<typename Ret, typename Class, typename... Param> auto Member_Function_Caller_Impl(Ret(Class::* f)(Param...)) {
-    return Member_Function_Caller(std::move(f));
-};
-template <typename Function> class Attribute_Function_Caller final : public Function_Caller {
-public:
-    using traits = decltype(Attribute_Function_Traits(std::declval< Function>()));
-    Attribute_Function_Caller(Function&& Func) {
-        (void)Attribute_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
-    };
-    virtual ~Attribute_Function_Caller() = default;
-    static typename traits::returnType& call(const GL::any::fast_any* begin) {
-        return traits::call(std::move(begin));
-    };
-    __declspec(noinline) void call(const GL::any::fast_any* begin, GL::any::fast_any* out) const override {
-        if (out) {
-            if constexpr (std::is_same_v<GL::any, std::decay_t<typename traits::returnType>> || std::is_same_v<GL::any::fast_any, std::decay_t<typename traits::returnType>>) {
-                if (begin->m_casted_type.is_const()) {
-                    *out = call(std::move(begin)) | (GL::type::Const | GL::type::Reference);
-                }
-                else {
-                    *out = call(std::move(begin)) | GL::type::Reference;
-                }
-            }
-            else if constexpr (std::is_pointer<typename traits::returnType>::value) {
-                if (begin->m_casted_type.is_const()) {
-                    *out = GL::any::fast_any::wrap_member(*begin, *call(std::move(begin)));
-                    *out |= GL::type::Const;
-                }
-                else {
-                    *out = GL::any::fast_any::wrap_member(*begin, *call(std::move(begin)));
-                }
-            }
             else {
-                if (begin->m_casted_type.is_const()) {
-                    *out = GL::any::fast_any::wrap_member(*begin, call(std::move(begin)));
-                    *out |= GL::type::Const;
+                if (out) {
+                    *out = GL::any::fast_any::instance(call(std::move(begin)));
                 }
                 else {
-                    *out = GL::any::fast_any::wrap_member(*begin, call(std::move(begin)));
+                    call(std::move(begin));
                 }
             }
-        }     
+        };
     };
-};
-template <typename Function> class Unsafe_Attribute_Function_Caller final : public Function_Caller {
-public:
-    using traits = decltype(Attribute_Function_Traits(std::declval< Function>()));
-    Unsafe_Attribute_Function_Caller(Function&& Func) {
-        (void)Attribute_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
-    };
-    virtual ~Unsafe_Attribute_Function_Caller() = default;
-    static typename traits::returnType& call(const GL::any::fast_any* begin) {
-        return traits::call(std::move(begin));
-    };
-    __declspec(noinline) void call(const GL::any::fast_any* begin, GL::any::fast_any* out) const override {
-        if (out) {
-            if constexpr (std::is_same_v<GL::any, std::decay_t<typename traits::returnType>> || std::is_same_v<GL::any::fast_any, std::decay_t<typename traits::returnType>>) {
-                if (begin->m_casted_type.is_const()) {
-                    *out = call(std::move(begin)) | (GL::type::Const | GL::type::Reference);
-                }
-                else {
-                    *out = call(std::move(begin)) | GL::type::Reference;
-                }
-            }
-            else if constexpr (std::is_pointer<typename traits::returnType>::value) {
-                if (begin->m_casted_type.is_const()) {
-                    // *out = GL::any::fast_any::instance(GL::shared_ptr<typename traits::returnType>((typename traits::returnType*)(call(std::move(begin))), [parent = *begin](typename traits::returnType*) {}));
-                    *out = GL::any::fast_any::wrap_member(*begin, *call(std::move(begin)));
-                    *out |= GL::type::Const;
-                }
-                else {
-                    // *out = GL::any::fast_any::instance(GL::shared_ptr<typename traits::returnType>((typename traits::returnType*)(call(std::move(begin))), [parent = *begin](typename traits::returnType*) {}));
-                    *out = GL::any::fast_any::wrap_member(*begin, *call(std::move(begin)));
-                }
-            }
-            else {
-                if (begin->m_casted_type.is_const()) {
-                    // *out = GL::any::fast_any::instance(GL::shared_ptr<typename traits::returnType>((typename traits::returnType*)(&call(std::move(begin))), [parent = *begin](typename traits::returnType*) {}));
-                    *out = GL::any::fast_any::wrap_member(*begin, call(std::move(begin)));
-                    *out |= GL::type::Const;
-                }
-                else {
-                    // *out = GL::any::fast_any::instance(GL::shared_ptr<typename traits::returnType>((typename traits::returnType*)(&call(std::move(begin))), [parent = *begin](typename traits::returnType*) {}));
-                    *out = GL::any::fast_any::wrap_member(*begin, call(std::move(begin)));
-                }
-            }
-        }
-    };
-};
-template <typename Function> class Static_Function_Caller final : public Function_Caller {
-public:
-    using traits = decltype(Static_Function_Traits(std::declval<Function>()));
-    Static_Function_Caller(Function && Func) {
-        (void)Static_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
-    };
-    virtual ~Static_Function_Caller() = default;
-
-    static typename traits::returnType call(const GL::any::fast_any* begin) {
-        return traits::call(std::move(begin));
-    };
-    void call(const GL::any::fast_any* begin, GL::any::fast_any* out) const override {
-        if constexpr (std::is_same_v<void, typename traits::returnType>) {
-            call(std::move(begin));
-        }
-        else {
-            if (out) {
-                *out = GL::any::fast_any::instance(call(std::move(begin)));
-            }
-            else {
-                call(std::move(begin));
-            }
-        }
-    };
-};
-/* Converts to a static function caller if the lambda does not capture. Otherwise, uses the local function copy. */
-template <typename Function> class Lambda_Function_Caller final : public Function_Caller {
-private:
-    Function func;
-public:
-    using traits = typename Lambda_Function_Traits< Function >;
-    Lambda_Function_Caller(Function && Func) : func(std::forward<Function>(Func)) {
-        if constexpr (std::is_empty_v< Function >) {
-            (void)Static_Function_Traits(+Func); // instantiate the static function pointer
-        }
-    };
-    virtual ~Lambda_Function_Caller() = default;
-    typename traits::returnType call(const GL::any::fast_any* begin) const {
-        if constexpr (std::is_empty_v< Function >) {
-            using static_traits = decltype(Static_Function_Traits(+std::declval<Function>()));
-            return static_traits::call(std::move(begin));
-        }
-        else {
-            return Lambda_Function_Traits< Function >::call(std::move(begin), func);
-        }        
-    };
-    void call(const GL::any::fast_any* begin, GL::any::fast_any* out) const override {
-        if constexpr (std::is_same_v<void, typename traits::returnType>) {
-            call(std::move(begin));
-        }
-        else {
-            if (out) {
-                *out = GL::any::fast_any::instance(call(std::move(begin)));
-            }
-            else {
-                call(std::move(begin));
-            }
-        }
-    };
-};
-
-template <typename Function> auto make_callable(Function&& func) {
+}
+template <typename Function> GL::shared_ptr<Function_Caller> make_callable(Function&& func) {
     typedef decltype(GL::details::detail::function_signature(func)) function_header;
     if constexpr (function_header::is_object) { // function objects, e.g. auto x = [](){};
         if constexpr (std::is_empty_v< Function >) {
-            return Static_Function_Caller(+std::move(func));
+            using Type = decltype(Static_Function_Caller(+std::move(func)));
+            return GL::make_shared<Type>(+std::move(func));
         }
         else {
-            return Lambda_Function_Caller(std::move(func));
+            using Type = decltype(Lambda_Function_Caller(std::move(func)));
+            return GL::make_shared<Type>(std::move(func));
         }
     }
     else if constexpr (function_header::is_member_object) { // member objects, e.g. return object.member;    
-        return Attribute_Function_Caller(std::move(func));         
+        using Type = decltype(Attribute_Function_Caller(std::move(func)));
+        return GL::make_shared<Type>(std::move(func));
     }
     else if constexpr (function_header::is_member && !function_header::is_member_object) { // member functions, e.g. return object.member();
         return Member_Function_Caller_Impl(std::move(func));
     }
     else if constexpr (function_header::is_static_member_function) { // static function pointers, e.g. static foo(){};   
-        return Static_Function_Caller(std::move(func));
+        using Type = decltype(Static_Function_Caller(std::move(func)));
+        return GL::make_shared<Type>(std::move(func));
     }
     else {
         throw std::runtime_error("Did not handle conversion of provided function.");
     }
 };
-
 
 int main() {
 #if 1
@@ -1002,40 +740,40 @@ int main() {
         case 0: {
                 GL::string ref = "this";
                 if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (unboxed value)\t")) {
-                    for (int i = 0; i < 1000000; ++i) {
+                    GL::parallel::For(0, 1'000'000, [&]() {
                         (void)ref.begins_with("this");
-                    }
+                    });
                 }
             } break;
         case 1: {
                 GL::string ref = "this";
                 if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (unboxed ref)\t")) {
-                    for (int i = 0; i < 1000000; ++i) {
+                    GL::parallel::For(0, 1'000'000, [&]() {
                         GL::string& Ref = ref;
                         (void)Ref.begins_with("this");
-                    }
+                    });
                 }
             } break;
         case 2: {
                 auto boxed = GL::any::fast_any::instance(GL::make_shared<GL::string>("this"));
                 if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (from boxed GL::shared_ptr)\t")) {
-                    for (int i = 0; i < 1000000; ++i) {
+                    GL::parallel::For(0, 1'000'000, [&]() {
                         (void)boxed.cast<GL::string&>().begins_with("this");
-                    }
+                    });
                 }
             } break;
         case 3: {
                 auto boxed = GL::any::fast_any::instance(GL::string("this"));
                 if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (from boxed value)\t")) {
-                    for (int i = 0; i < 1000000; ++i) {
+                    GL::parallel::For(0, 1'000'000, [&]() {
                         (void)boxed.cast<GL::string&>().begins_with("this");
-                    }
+                    });
                 }
             } break;
         case 4: if (0) {
             auto boxed = GL::any::fast_any::instance(GL::string("this"));
             if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (from boxed cast)\t")) {
-                for (int i = 0; i < 1000000; ++i) {
+                for (int i = 0; i < 1'000'000; ++i) {
                     GL::string& Ref = boxed.cast();
                     (void)Ref.begins_with("this");
                 }
@@ -1048,22 +786,22 @@ int main() {
                 GL::any::fast_any::instance(GL::string("this"))
             };
             if (auto timer = GL::stopwatch().debug_timer("\"this\".begins_with(\"this\") with callable and w/o converters, no conversion needed, w/o return")) {
-                for (int i = 0; i < 1000000; ++i) {
+                GL::parallel::For(0, 1'000'000, [&]() {
                     (void)callable->operator()(&example[0], &example[0] + example.size(), false);
-                }
+                });
             }            
         } break;
         case 6: {
-            auto callable{ make_callable(&GL::string::begins_with) };
+            auto callable{ Const_Member_Function_Caller(&GL::string::begins_with) };
 
             std::array<GL::any::fast_any, 2> example {
                 GL::any::fast_any::instance(GL::string("this")),
                 GL::any::fast_any::instance(GL::string("this"))
             };
             if (auto timer = GL::stopwatch().debug_timer("\"this\".begins_with(\"this\") with templatized callable and w/o converters, no conversion needed, w/ return")) {
-                for (int i = 0; i < 1000000; ++i) {
+                GL::parallel::For(0, 1'000'000, [&]() {
                    (void)callable.call(&example[0]);
-                }
+                });
             }
         } break;
         case 7: {
@@ -1073,55 +811,52 @@ int main() {
                 GL::any::fast_any::instance(GL::string("this"))
             };
             if (auto timer = GL::stopwatch().debug_timer("\"this\".begins_with(\"this\") with generalized callable and w/o converters, no conversion needed, w/o return")) {
-                for (int i = 0; i < 1000000; ++i) {
-                    (void)callable.call(&example[0], nullptr);
-                }
-            }
-        } break;
-        case 8: {
-            auto callable{ make_callable(&GL::string::empty_string) };
-            if (auto timer = GL::stopwatch().debug_timer("GL::string::empty_string() with generalized callable and w/o converters, no conversion needed, w/o return")) {
-                for (int i = 0; i < 1000000; ++i) {
-                    (void)callable.call(nullptr, nullptr);
-                }
+                GL::parallel::For(0, 1'000'000, [&]() {
+                    (void)callable->call(&example[0], nullptr);
+                });
             }
         } break;
         case 9: {
-            auto callable{ make_callable([]() -> auto { return GL::string::empty_string(); }) };
-            if (auto timer = GL::stopwatch().debug_timer("GL::string::empty_string() with non-capturing lambda function and w/o converters, no conversion needed, w/o return")) {
-                for (int i = 0; i < 1000000; ++i) {
-                    (void)callable.call(nullptr, nullptr);
-                }
+            auto callable{ make_callable([](GL::string const& LHS, GL::string const& RHS) -> auto { return LHS.begins_with(RHS); }) };
+            std::array<GL::any::fast_any, 2> example{
+                GL::any::fast_any::instance(GL::string("this")),
+                GL::any::fast_any::instance(GL::string("this"))
+            };
+            if (auto timer = GL::stopwatch().debug_timer("GL::string::begins_with() with non-capturing lambda function and w/o converters, no conversion needed, w/o return")) {
+                GL::parallel::For(0, 1'000'000, [&]() {
+                    (void)callable->call(&example[0], nullptr);
+                });
             }
         } break;
         case 10: {
             struct TEST {
-                GL::string obj;
+                GL::string obj1;
+                GL::string obj2;
             };
             std::array<GL::any::fast_any, 1> example{
-                GL::any::fast_any::instance(TEST{ GL::string("this") })
+                GL::any::fast_any::instance(TEST{ GL::string("this"), GL::string("that") })
             };
-            auto callable{ make_callable(&TEST::obj) };
+            auto callable{ make_callable(&TEST::obj2) };
             if (auto timer = GL::stopwatch().debug_timer("TEST::obj, w/o return")) {
-                for (int i = 0; i < 1000000; ++i) {
-                    (void)callable.call(&example[0], nullptr);
-                }
+                GL::parallel::For(0, 1'000'000, [&]() {
+                    (void)callable->call(&example[0], nullptr);
+                });
             }
         } break;
         case 11: {
             struct TEST {
-                GL::string obj;
+                GL::string obj1;
+                GL::string obj2;
             };
             std::array<GL::any::fast_any, 1> example{
-                GL::any::fast_any::instance(TEST{ GL::string("this") })
+                GL::any::fast_any::instance(TEST{ GL::string("this"), GL::string("that") })
             };
-            GL::any::fast_any out = example[0];
-            auto callable{ make_callable(&TEST::obj) };
-            
-            if (auto timer = GL::stopwatch().debug_timer("TEST::obj, w/ return")) {
-                for (int i = 0; i < 1000000; ++i) {
-                    (void)callable.call(&example[0], &out);
-                }
+            auto callable{ make_callable(&TEST::obj2) };            
+            if (auto timer = GL::stopwatch().debug_timer("TEST::obj, w/ return")) {                
+                GL::parallel::For(0, 1'000'000, [&]() {
+                    GL::any::fast_any out;
+                    (void)callable->call(&example[0], &out);
+                });                
             }
         } break;
         }

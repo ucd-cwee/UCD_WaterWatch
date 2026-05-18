@@ -36,5 +36,6 @@
     <ClInclude Include="constexpr_math.h" />
     <ClInclude Include="basic_atomic_allocator.h" />
     <ClInclude Include="ScriptLanguage_V2.h" />
+    <ClInclude Include="multithreaded_allocator.h" />
   </ItemGroup>
 </Project>

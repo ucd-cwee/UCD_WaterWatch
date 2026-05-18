@@ -21,8 +21,7 @@ namespace /* atomic_shared_ptr */ GL {
             : data_pointer(data)
             , refCount(1)
         {}
-        ~control_block_base() = default;
-        
+        ~control_block_base() = default;        
         
         void* data_pointer;
         std::atomic<size_t> refCount;
@@ -53,6 +52,7 @@ namespace /* atomic_shared_ptr */ GL {
         void DeleteSelf(control_block_base* p) override {
             reinterpret_cast<control_block<T>*>(p)->~control_block();
             Deallocate(reinterpret_cast<void*>(p));
+            //delete reinterpret_cast<control_block<T>*>(p);
         };
 
     public:
@@ -60,7 +60,7 @@ namespace /* atomic_shared_ptr */ GL {
             auto* ptr = reinterpret_cast<control_block<T>*>(Allocate(sizeof(control_block<T>)));
             new (ptr) control_block<T>(_data);
             return ptr;
-            // return new control_block<T>(_data);
+            //return new control_block<T>(_data);
         };
 
     };
@@ -81,6 +81,8 @@ namespace /* atomic_shared_ptr */ GL {
         void DeleteSelf(control_block_base* p) override {
             reinterpret_cast<deleter_control_block<T>*>(p)->~deleter_control_block();
             Deallocate(reinterpret_cast<void*>(p));
+
+            //delete reinterpret_cast<deleter_control_block<T>*>(p);
         };
 
     public:
@@ -88,7 +90,8 @@ namespace /* atomic_shared_ptr */ GL {
             auto* ptr = reinterpret_cast<deleter_control_block<T>*>(Allocate(sizeof(deleter_control_block<T>)));
             new (ptr) deleter_control_block<T>(data, std::move(deleter));
             return ptr;
-            // return new deleter_control_block<T>(data, std::move(deleter));
+
+            //return new deleter_control_block<T>(data, std::move(deleter));
         };
     };
     template<typename T> struct embedded_control_block final : public control_block_base {
@@ -106,12 +109,14 @@ namespace /* atomic_shared_ptr */ GL {
             }
         };
         void DeleteSelf(control_block_base* p) override {
+            //delete reinterpret_cast<embedded_control_block<T>*>(p);
             reinterpret_cast<embedded_control_block<T>*>(p)->~embedded_control_block();
             Deallocate(reinterpret_cast<void*>(p));
         };
 
     public:        
         template<class... _Types> static embedded_control_block<T>* AllocateSelf(_Types&&... _Args) {
+            //return new embedded_control_block<T>(_STD forward<_Types>(_Args)...);
             auto* ptr = reinterpret_cast<embedded_control_block<T>*>(Allocate(sizeof(embedded_control_block<T>)));
             new (ptr) embedded_control_block<T>(_STD forward<_Types>(_Args)...);
             return ptr;
@@ -131,8 +136,9 @@ namespace /* atomic_shared_ptr */ GL {
             reinterpret_cast<T*>(&this->data_pointer)->~T();
         };
         void DeleteSelf(control_block_base* p) override {
-            reinterpret_cast<embedded_control_block_tiny<T>*>(p)->~embedded_control_block_tiny();
-            Deallocate(reinterpret_cast<void*>(p));
+            //delete reinterpret_cast<embedded_control_block_tiny<T>*>(p);
+             reinterpret_cast<embedded_control_block_tiny<T>*>(p)->~embedded_control_block_tiny();
+             Deallocate(reinterpret_cast<void*>(p));
         };
 
     public:
@@ -140,6 +146,8 @@ namespace /* atomic_shared_ptr */ GL {
             auto* ptr = reinterpret_cast<embedded_control_block_tiny<T>*>(Allocate(sizeof(embedded_control_block_tiny<T>)));
             new (ptr) embedded_control_block_tiny<T>(_STD forward<_Types>(_Args)...);
             return ptr;
+
+            // return new embedded_control_block_tiny<T>(_STD forward<_Types>(_Args)...);
         };
 
     };
