@@ -556,66 +556,72 @@ namespace GL {
 
                 GL::fast_shared_ptr<GL::details::Proxy_Function_Base> try_get_converter(GL::type const& from, GL::type const& to, int depth = 0, bool in_function = false);
                 bool can_convert(GL::type const& from, GL::type const& to, bool in_function = false);
-                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func);
-                template <typename iter_type> __declspec(noinline) GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, iter_type begin, iter_type const& end) {
-                    if constexpr (!std::is_same_v< iter_type, GL::any::fast_any*>) {
-                        static_assert(std::is_same_v<iter_type::value_type, GL::any::fast_any>, "iterator must be for a GL::any::fast_any class");
-                    }
-
-                    if (!func) return {};
-
-                    static thread_local std::array<GL::any::fast_any, 16> raw_params;
-                    static thread_local std::array<GL::any::fast_any*, 16> params;
-                    short pos = 0;
-                    short raw_pos = 0;
-                    bool did_conversions = false;
-                    for (; (begin != end) && (pos < 16); ++begin, ++pos) {
-                        if (!can_free_cast(begin, func->m_signature.argument_types_m[pos])) {
-                            if (GL::fast_shared_ptr<GL::details::Proxy_Function_Base> conversion_func{ try_get_converter(const_cast<any::fast_any*>(&*begin)->m_casted_type, func->m_signature.argument_types_m[pos], 0, true) }; conversion_func) {
-                                did_conversions = true;
-                                raw_params[raw_pos] = conversion_func->operator()(const_cast<any::fast_any&>(*begin));
-                                params[pos] = &raw_params[raw_pos];
-                                ++raw_pos;
-                            }
-                            else {
-                                if (can_cast(begin, func->m_signature.argument_types_m[pos])) {
-                                    did_conversions = true;
-                                    raw_params[raw_pos] = *begin;
-                                    params[pos] = &raw_params[raw_pos];
-                                    ++raw_pos;
-                                }
-                                else {
-                                    if (get_type_of(begin).get_base_hash() == GL::type_of<var>().get_base_hash()) {
-                                        if (begin->cast<GL::var&>().get_type().can_cast(func->m_signature.argument_types_m[pos])) {
-                                            did_conversions = true;
-                                            raw_params[raw_pos] = *begin;
-                                            params[pos] = &raw_params[raw_pos];
-                                            ++raw_pos;
-                                            continue;
-                                        }
-                                    }
-                                    GL::string err = GL::string("Could not cast from ") + get_type_of(begin).name() + " to " + func->m_signature.argument_types_m[pos].name();
-                                    throw std::runtime_error(err.to_string());
-                                }
+                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, bool keep_return_value = true);
+                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, GL::any::fast_any* begin, GL::any::fast_any* end, bool keep_return_vale = true) {
+                    if (!func) return nullptr;
+                    
+                    int pos = 0;
+                    for (auto* iter = begin; (iter != end); ++iter, ++pos) {
+                        if (!can_free_cast(iter, func->m_signature.argument_types_m[pos])) {
+                            if (GL::fast_shared_ptr<GL::details::Proxy_Function_Base> conversion_func{ try_get_converter(iter->m_casted_type, func->m_signature.argument_types_m[pos], 0, true) }; conversion_func) {
+                                *iter = conversion_func->operator()(*iter);
                             }
                         }
-                        else {
-                            params[pos] = const_cast<any::fast_any*>(&*begin);
-                            params[pos]->m_casted_type |= (func->m_signature.argument_types_m[pos] - (GL::type::CppType | GL::type::TemplateType)).get_qualifiers();
-                        }
                     }
-                    GL::any::fast_any out{ func->operator()(&params[0], pos) };
-                    if (did_conversions) for (pos = 0; pos < raw_pos; ++pos) raw_params[pos] = nullptr;
-                    return out;
+                    return  func->operator()(begin, end, keep_return_vale);
+
+                    //static thread_local std::array<GL::any::fast_any, 16> raw_params;
+                    //static thread_local std::array<GL::any::fast_any*, 16> params;
+                    //short pos = 0;
+                    //short raw_pos = 0;
+                    //bool did_conversions = false;
+                    //for (; (begin != end) && (pos < 16); ++begin, ++pos) {
+                    //    if (!can_free_cast(begin, func->m_signature.argument_types_m[pos])) {
+                    //        if (GL::fast_shared_ptr<GL::details::Proxy_Function_Base> conversion_func{ try_get_converter(const_cast<any::fast_any*>(&*begin)->m_casted_type, func->m_signature.argument_types_m[pos], 0, true) }; conversion_func) {
+                    //            did_conversions = true;
+                    //            raw_params[raw_pos] = conversion_func->operator()(const_cast<any::fast_any&>(*begin));
+                    //            params[pos] = &raw_params[raw_pos];
+                    //            ++raw_pos;
+                    //        }
+                    //        else {
+                    //            if (can_cast(begin, func->m_signature.argument_types_m[pos])) {
+                    //                did_conversions = true;
+                    //                raw_params[raw_pos] = *begin;
+                    //                params[pos] = &raw_params[raw_pos];
+                    //                ++raw_pos;
+                    //            }
+                    //            else {
+                    //                if (get_type_of(begin).get_base_hash() == GL::type_of<var>().get_base_hash()) {
+                    //                    if (begin->cast<GL::var&>().get_type().can_cast(func->m_signature.argument_types_m[pos])) {
+                    //                        did_conversions = true;
+                    //                        raw_params[raw_pos] = *begin;
+                    //                        params[pos] = &raw_params[raw_pos];
+                    //                        ++raw_pos;
+                    //                        continue;
+                    //                    }
+                    //                }
+                    //                GL::string err = GL::string("Could not cast from ") + get_type_of(begin).name() + " to " + func->m_signature.argument_types_m[pos].name();
+                    //                throw std::runtime_error(err.to_string());
+                    //            }
+                    //        }
+                    //    }
+                    //    else {
+                    //        params[pos] = const_cast<any::fast_any*>(&*begin);
+                    //        params[pos]->m_casted_type |= (func->m_signature.argument_types_m[pos] - (GL::type::CppType | GL::type::TemplateType)).get_qualifiers();
+                    //    }
+                    //}
+                    //GL::any::fast_any out{ func->operator()(&params[0], pos) };
+                    //if (did_conversions) for (pos = 0; pos < raw_pos; ++pos) raw_params[pos] = nullptr;
+                    //return out;
                 };
                 // fast path
-                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, std::vector<any::fast_any>& params);
+                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, std::vector<any::fast_any>& params, bool keep_return_value = true);
                 // convenience path, requires casting to any::fast_any
-                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, const std::vector<any>& params);
+                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, const std::vector<any>& params, bool keep_return_value = true);
                 // convenience path, requires casting to any::fast_any
-                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, any& param);
+                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, any& param, bool keep_return_value = true);
                 // fast path
-                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, any::fast_any& param);
+                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, any::fast_any& param, bool keep_return_value = true);
 
 
                 bool can_call_with_conversions(const GL::details::Proxy_Function_Base* func);
@@ -1221,7 +1227,7 @@ namespace GL {
                 };
 
             // protected:
-                template<typename iter_type> GL::any::fast_any call_impl(GL::string const& PossiblyScopedName, iter_type const& from_iter, iter_type const& from_end) const {
+                GL::any::fast_any call_impl(GL::string const& PossiblyScopedName, GL::any::fast_any* from_iter, GL::any::fast_any* from_end, bool keep_return_value = true) const {
                     auto handler = push_back_caller(this);
 
                     //std::vector<GL::type> types;
@@ -1231,11 +1237,11 @@ namespace GL {
                     //if (auto f = try_find_callable(PossiblyScopedName, types.begin(), types.end()); f)
                     if (auto f = try_find_callable(PossiblyScopedName, from_iter, from_end); f) 
                     {
-                        return this->GetRoot()->get_converters().call_with_conversions(&*f, from_iter, from_end);
+                        return this->GetRoot()->get_converters().call_with_conversions(&*f, from_iter, from_end, keep_return_value);
                     }
                     else {
                         GL::string params;
-                        for (iter_type i = from_iter; i != from_end; ++i) {
+                        for (auto i = from_iter; i != from_end; ++i) {
                             params = params.add_to_delim(get_type_of(i).name(), ", ");
                         }
                         GL::string err = GL::string("Could not find callable matching `") + PossiblyScopedName + "`(" + params + ") from " + this->breadcrumb_m.this_m.scope->GetNamespace()->path() + ".";
@@ -1245,9 +1251,9 @@ namespace GL {
 
             public:
                 // calls the requested function
-                GL::any::fast_any call(const GL::details::Proxy_Function_Base* func, std::vector<GL::any::fast_any> const& params = {}) const;
+                GL::any::fast_any call(const GL::details::Proxy_Function_Base* func, std::vector<GL::any::fast_any> const& params = {}, bool keep_return_value = true) const;
                 // calls the requested function or finds the requested object
-                GL::any::fast_any call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params = {}) const;
+                GL::any::fast_any call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params = {}, bool keep_return_value = true) const;
                 // casts to the requested c++ type.
                 template <typename T> T cast(GL::any::fast_any const& got) const {
                     if constexpr (std::is_reference_v<T>) {
@@ -1275,8 +1281,8 @@ namespace GL {
                     return from;
                 };
                 // calls the requested function or finds the requested object, and casts to the requested c++ type.
-                template <typename T> T call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params = {}) const {
-                    return cast<T>(call_impl(PossiblyScopedName, params.begin(), params.end()));                    
+                template <typename T> T call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params = {}, bool keep_return_value = true) const {
+                    return cast<T>(call_impl(PossiblyScopedName, const_cast<GL::any::fast_any*>(&params[0]), const_cast<GL::any::fast_any*>(&params[0] + params.size()), keep_return_value));
                 };
                 // estimates the return type of a call, if that call was to have been performed. Does not actually perform the call. In the case of failure to find anything, will return a 'GL::any' type, since that does not 100% guarrantee the function does not exist (e.g. var's, templates, etc.)
                 GL::type return_type_of_potential_call(GL::string const& PossiblyScopedName, std::vector<GL::type> const& types = {}) {

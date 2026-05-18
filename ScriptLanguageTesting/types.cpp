@@ -6,9 +6,11 @@
 
 namespace GL {
     type_erasure::any_cast any::cast() const noexcept {
+        std::cout << "";
         return type_erasure::any_cast{ const_cast<any*>(this) };
     };
     type_erasure::fast_any_cast any::fast_any::cast() const noexcept {
+        std::cout << "";
         return type_erasure::fast_any_cast{ const_cast<fast_any*>(this) };
     };
 

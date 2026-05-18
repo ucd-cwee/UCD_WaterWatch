@@ -27,10 +27,306 @@
 //#include "types.h"
 #include "scripting.h"
 
+
+template <typename R, typename Class, typename... T> class Const_Member_Function_Traits {
+public:
+    using argType = std::tuple<T...>;
+    using classType = Class const&;
+    using returnType = R;
+    static constexpr auto numArgs{ std::tuple_size_v< argType > };
+    static constexpr auto index_seq{ std::make_index_sequence<numArgs>{} };
+    Const_Member_Function_Traits(R(Class::* f)(T...) const) {
+        if (!m_attr) m_attr = f;        
+    };
+private:
+    inline static R(Class::* m_attr)(T...) const = nullptr;
+
+public:    
+    static R call(const GL::any::fast_any* begin) {
+        if constexpr (numArgs >= 15) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>(),
+                begin[13].cast<std::tuple_element_t<12, argType>>(), begin[14].cast<std::tuple_element_t<13, argType>>(), begin[15].cast<std::tuple_element_t<14, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 14) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>(),
+                begin[13].cast<std::tuple_element_t<12, argType>>(), begin[14].cast<std::tuple_element_t<13, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 13) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>(),
+                begin[13].cast<std::tuple_element_t<12, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 12) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>()
+                );
+        }
+
+        else if constexpr (numArgs == 11) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 10) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 9) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                begin[9].cast<std::tuple_element_t<8, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 8) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>()
+                );
+        }
+
+        else if constexpr (numArgs == 7) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 6) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 5) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 4) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>()
+                );
+        }
+
+        else if constexpr (numArgs == 3) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 2) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>()
+                );
+        }
+        if constexpr (numArgs == 1) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 0) {
+            return (begin[0].cast<classType>().*m_attr)(
+                );
+        }
+    }; 
+};
+template <typename R, typename Class, typename... T> class Member_Function_Traits {
+public:
+    using argType = std::tuple<T...>;
+    using classType = Class&;
+    using returnType = R;
+    static constexpr auto numArgs{ std::tuple_size_v< argType > };
+    static constexpr auto index_seq{ std::make_index_sequence<numArgs>{} };
+    Member_Function_Traits(R(Class::* f)(T...)) {
+        if (!m_attr) m_attr = f;
+    };
+private:
+    inline static R(Class::* m_attr)(T...) = nullptr;
+
+public:
+    static R call(const GL::any::fast_any* begin) {
+        if constexpr (numArgs >= 15) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>(),
+                begin[13].cast<std::tuple_element_t<12, argType>>(), begin[14].cast<std::tuple_element_t<13, argType>>(), begin[15].cast<std::tuple_element_t<14, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 14) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>(),
+                begin[13].cast<std::tuple_element_t<12, argType>>(), begin[14].cast<std::tuple_element_t<13, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 13) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>(),
+                begin[13].cast<std::tuple_element_t<12, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 12) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>()
+                );
+        }
+
+        else if constexpr (numArgs == 11) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 10) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 9) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                begin[9].cast<std::tuple_element_t<8, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 8) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>()
+                );
+        }
+
+        else if constexpr (numArgs == 7) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 6) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 5) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                begin[5].cast<std::tuple_element_t<4, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 4) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>()
+                );
+        }
+
+        else if constexpr (numArgs == 3) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 2) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>()
+                );
+        }
+        if constexpr (numArgs == 1) {
+            return (begin[0].cast<classType>().*m_attr)(
+                begin[1].cast<std::tuple_element_t<0, argType>>()
+                );
+        }
+        else if constexpr (numArgs == 0) {
+            return (begin[0].cast<classType>().*m_attr)(
+                );
+        }
+    };
+};
+
+class Function_Caller {
+public:
+    virtual ~Function_Caller() = default;
+    virtual void call(const GL::any::fast_any* begin, GL::any::fast_any* out) const = 0;    
+};
+
+template <typename Function> class Const_Member_Function_Caller final : public Function_Caller {
+public:
+    using traits = decltype(Const_Member_Function_Traits(std::declval< Function>()));
+    Const_Member_Function_Caller(Function const& Func) {
+        (void)Const_Member_Function_Traits(Func); // instantiate the static function pointer
+    };
+    static typename traits::returnType call(const GL::any::fast_any* begin) {
+        return traits::call(std::move(begin));
+    };
+    void call(const GL::any::fast_any* begin, GL::any::fast_any* out) const override {
+        if constexpr (std::is_same_v<void, typename traits::returnType>) {
+            call(std::move(begin));
+        }
+        else {
+            if (out) {
+                *out = GL::any::fast_any::instance(call(std::move(begin)));
+            }
+            else {
+                call(std::move(begin));
+            }
+        }
+    };
+};
+template <typename Function> class Member_Function_Caller final : public Function_Caller {
+public:
+    using traits = decltype(Member_Function_Traits(std::declval< Function>()));
+    Member_Function_Caller(Function const& Func) {
+        (void)Member_Function_Traits(Func); // instantiate the static function pointer
+    };
+    static typename traits::returnType call(const GL::any::fast_any* begin) {
+        return traits::call(std::move(begin));
+    };
+    void call(const GL::any::fast_any* begin, GL::any::fast_any* out) const override {
+        if constexpr (std::is_same_v<void, typename traits::returnType>) {
+            call(std::move(begin));
+        }
+        else {
+            if (out) {
+                *out = GL::any::fast_any::instance(call(std::move(begin)));
+            }
+            else {
+                call(std::move(begin));
+            }
+        }
+    };
+};
+
 int main() {
+
 #if 1
     while (1) {    
-        switch ((int)std::floor(GL::util::rand(0, 5.999))) {
+        switch ((int)std::floor(GL::util::rand(0, 8.999))) {
         case 0: {
                 GL::string ref = "this";
                 if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (unboxed value)\t")) {
@@ -76,8 +372,8 @@ int main() {
         case 5: {            
             auto callable = GL::make_callable("begins_with", &GL::string::begins_with);
             std::array<GL::any::fast_any, 2> example{
-                    GL::any::fast_any::instance(GL::string("this")),
-                    GL::any::fast_any::instance(GL::string("this"))
+                GL::any::fast_any::instance(GL::string("this")),
+                GL::any::fast_any::instance(GL::string("this"))
             };
             if (auto timer = GL::stopwatch().debug_timer("\"this\".begins_with(\"this\") with callable and w/o converters, no conversion needed, w/o return")) {
                 for (int i = 0; i < 1000000; ++i) {
@@ -86,14 +382,41 @@ int main() {
             }            
         } break;
         case 6: {
-            auto callable = GL::make_callable("begins_with", &GL::string::begins_with);
-            std::array<GL::any::fast_any, 2> example{
-                    GL::any::fast_any::instance(GL::string("this")),
-                    GL::any::fast_any::instance(GL::string("this"))
+            Const_Member_Function_Caller callable(&GL::string::begins_with);
+
+            std::array<GL::any::fast_any, 2> example {
+                GL::any::fast_any::instance(GL::string("this")),
+                GL::any::fast_any::instance(GL::string("this"))
             };
-            if (auto timer = GL::stopwatch().debug_timer("\"this\".begins_with(\"this\") with callable and w/o converters, no conversion needed, w/ return")) {
+            if (auto timer = GL::stopwatch().debug_timer("\"this\".begins_with(\"this\") with templatized callable and w/o converters, no conversion needed, w/ return")) {
                 for (int i = 0; i < 1000000; ++i) {
-                    (void)callable->operator()(&example[0], &example[0] + example.size(), true);
+                   (void)callable.call(&example[0]);
+                }
+            }
+        } break;
+        case 7: {
+            Const_Member_Function_Caller callable(&GL::string::begins_with);
+            GL::any::fast_any out;
+            std::array<GL::any::fast_any, 2> example{
+                GL::any::fast_any::instance(GL::string("this")),
+                GL::any::fast_any::instance(GL::string("this"))
+            };
+            if (auto timer = GL::stopwatch().debug_timer("\"this\".begins_with(\"this\") with generalized callable and w/o converters, no conversion needed, w/ return")) {
+                for (int i = 0; i < 1000000; ++i) {
+                    (void)callable.call(&example[0], &out);
+                }
+            }
+        } break;
+        case 8: {
+            Const_Member_Function_Caller callable(&GL::string::begins_with);
+
+            std::array<GL::any::fast_any, 2> example{
+                GL::any::fast_any::instance(GL::string("this")),
+                GL::any::fast_any::instance(GL::string("this"))
+            };
+            if (auto timer = GL::stopwatch().debug_timer("\"this\".begins_with(\"this\") with generalized callable and w/o converters, no conversion needed, w/o return")) {
+                for (int i = 0; i < 1000000; ++i) {
+                    (void)callable.call(&example[0], nullptr);
                 }
             }
         } break;

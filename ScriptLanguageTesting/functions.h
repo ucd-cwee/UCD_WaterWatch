@@ -139,7 +139,7 @@ namespace GL {
         void evaluate_if_template_function() {
             // state_m &= ~function_state::Constructor; // unsets the constructor flag
             if ((state_m & Static) > 0) {
-                if (argument_types_m.size() <= 1) {
+                if (numArguments <= 1) {
                     if ((returns_m.name() == name_m) || (returns_m.name() == (name_m + "&&"))) {
                         this->state_m |= Constructor;
                         this->returns_m |= GL::type::Temporary;
@@ -159,7 +159,7 @@ namespace GL {
             int out = 0;
             if constexpr (std::is_same_v<iter_type, GL::type*>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_free_cast(argument_types_m[i])) {
                         return std::numeric_limits<int>::max();
                     }
@@ -169,7 +169,7 @@ namespace GL {
                         if (iter->is_temp() != argument_types_m[i].is_temp()) out += 1;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return std::numeric_limits<int>::max();
                     }
@@ -178,7 +178,7 @@ namespace GL {
             }
             else if constexpr (std::is_same_v<iter_type, GL::any::fast_any*>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_free_cast(argument_types_m[i])) {
                         return std::numeric_limits<int>::max();
                     }
@@ -188,7 +188,7 @@ namespace GL {
                         if (iter->m_casted_type.is_temp() != argument_types_m[i].is_temp()) out += 1;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return std::numeric_limits<int>::max();
                     }
@@ -197,7 +197,7 @@ namespace GL {
             }
             else if constexpr (std::is_same_v<iter_type, GL::any*>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_free_cast(argument_types_m[i])) {
                         return std::numeric_limits<int>::max();
                     }
@@ -207,7 +207,7 @@ namespace GL {
                         if (iter->m_casted_type.is_temp() != argument_types_m[i].is_temp()) out += 1;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return std::numeric_limits<int>::max();
                     }
@@ -216,7 +216,7 @@ namespace GL {
             }
             else if constexpr (std::is_same_v<iter_type::value_type, GL::type>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_free_cast(argument_types_m[i])) {
                         return std::numeric_limits<int>::max();
                     }
@@ -226,7 +226,7 @@ namespace GL {
                         if (iter->is_temp() != argument_types_m[i].is_temp()) out += 1;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return std::numeric_limits<int>::max();
                     }
@@ -235,7 +235,7 @@ namespace GL {
             }
             else if constexpr (std::is_same_v<iter_type::value_type, GL::any::fast_any>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_free_cast(argument_types_m[i])) {
                         return std::numeric_limits<int>::max();
                     }
@@ -245,7 +245,7 @@ namespace GL {
                         if (iter->m_casted_type.is_temp() != argument_types_m[i].is_temp()) out += 1;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return std::numeric_limits<int>::max();
                     }
@@ -254,7 +254,7 @@ namespace GL {
             }
             else if constexpr (std::is_same_v<iter_type::value_type, GL::any>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_free_cast(argument_types_m[i])) {
                         return std::numeric_limits<int>::max();
                     }
@@ -264,7 +264,7 @@ namespace GL {
                         if (iter->m_casted_type.is_temp() != argument_types_m[i].is_temp()) out += 1;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return std::numeric_limits<int>::max();
                     }
@@ -277,7 +277,7 @@ namespace GL {
             int out = 0;
             if constexpr (std::is_same_v<iter_type, GL::type*>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_cast(argument_types_m[i])) {
                         return std::numeric_limits<int>::max();
                     }
@@ -287,7 +287,7 @@ namespace GL {
                         if (iter->is_temp() != argument_types_m[i].is_temp()) out += 1;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return std::numeric_limits<int>::max();
                     }
@@ -296,7 +296,7 @@ namespace GL {
             }
             else if constexpr (std::is_same_v<iter_type, GL::any::fast_any*>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_cast(argument_types_m[i])) {
                         return std::numeric_limits<int>::max();
                     }
@@ -306,7 +306,7 @@ namespace GL {
                         if (iter->m_casted_type.is_temp() != argument_types_m[i].is_temp()) out += 1;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return std::numeric_limits<int>::max();
                     }
@@ -315,7 +315,7 @@ namespace GL {
             }
             else if constexpr (std::is_same_v<iter_type, GL::any*>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_cast(argument_types_m[i])) {
                         return std::numeric_limits<int>::max();
                     }
@@ -325,7 +325,7 @@ namespace GL {
                         if (iter->m_casted_type.is_temp() != argument_types_m[i].is_temp()) out += 1;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return std::numeric_limits<int>::max();
                     }
@@ -334,7 +334,7 @@ namespace GL {
             }
             else if constexpr (std::is_same_v<iter_type::value_type, GL::type>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_cast(argument_types_m[i])) {
                         return std::numeric_limits<int>::max();
                     }
@@ -344,7 +344,7 @@ namespace GL {
                         if (iter->is_temp() != argument_types_m[i].is_temp()) out += 1;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return std::numeric_limits<int>::max();
                     }
@@ -353,7 +353,7 @@ namespace GL {
             }
             else if constexpr (std::is_same_v<iter_type::value_type, GL::any::fast_any>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_cast(argument_types_m[i])) {
                         return std::numeric_limits<int>::max();
                     }
@@ -363,7 +363,7 @@ namespace GL {
                         if (iter->m_casted_type.is_temp() != argument_types_m[i].is_temp()) out += 1;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return std::numeric_limits<int>::max();
                     }
@@ -372,7 +372,7 @@ namespace GL {
             }
             else if constexpr (std::is_same_v<iter_type::value_type, GL::any>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_cast(argument_types_m[i])) {
                         return std::numeric_limits<int>::max();
                     }
@@ -382,7 +382,7 @@ namespace GL {
                         if (iter->m_casted_type.is_temp() != argument_types_m[i].is_temp()) out += 1;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return std::numeric_limits<int>::max();
                     }
@@ -395,12 +395,12 @@ namespace GL {
 
             if constexpr (std::is_same_v<iter_type, GL::type*>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_free_cast(argument_types_m[i])) {
                         return false;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return false;
                     }
@@ -409,12 +409,12 @@ namespace GL {
             }
             else if constexpr (std::is_same_v<iter_type, GL::any::fast_any*>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_free_cast(argument_types_m[i])) {
                         return false;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return false;
                     }
@@ -423,12 +423,12 @@ namespace GL {
             }
             else if constexpr (std::is_same_v<iter_type, GL::any*>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_free_cast(argument_types_m[i])) {
                         return false;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return false;
                     }
@@ -437,12 +437,12 @@ namespace GL {
             }
             else if constexpr (std::is_same_v<iter_type::value_type, GL::type>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_free_cast(argument_types_m[i])) {
                         return false;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return false;
                     }
@@ -451,12 +451,12 @@ namespace GL {
             }
             else if constexpr (std::is_same_v<iter_type::value_type, GL::any::fast_any>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_free_cast(argument_types_m[i])) {
                         return false;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return false;
                     }
@@ -465,12 +465,12 @@ namespace GL {
             }
             else if constexpr (std::is_same_v<iter_type::value_type, GL::any>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_free_cast(argument_types_m[i])) {
                         return false;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return false;
                     }
@@ -481,12 +481,12 @@ namespace GL {
         template<typename iter_type> bool can_call_with_cast(iter_type iter, iter_type const& end) const {
             if constexpr (std::is_same_v<iter_type, GL::type*>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_cast(argument_types_m[i])) {
                         return false;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return false;
                     }
@@ -495,12 +495,12 @@ namespace GL {
             }
             else if constexpr (std::is_same_v<iter_type, GL::any::fast_any*>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_cast(argument_types_m[i])) {
                         return false;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return false;
                     }
@@ -509,12 +509,12 @@ namespace GL {
             }
             else if constexpr (std::is_same_v<iter_type, GL::any*>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_cast(argument_types_m[i])) {
                         return false;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return false;
                     }
@@ -523,12 +523,12 @@ namespace GL {
             }
             else if constexpr (std::is_same_v<iter_type::value_type, GL::type>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_cast(argument_types_m[i])) {
                         return false;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return false;
                     }
@@ -537,12 +537,12 @@ namespace GL {
             }
             else if constexpr (std::is_same_v<iter_type::value_type, GL::any::fast_any>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_cast(argument_types_m[i])) {
                         return false;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return false;
                     }
@@ -551,12 +551,12 @@ namespace GL {
             }
             else if constexpr (std::is_same_v<iter_type::value_type, GL::any>) {
                 size_t i = 0;
-                for (; (iter != end) && (i < argument_types_m.size()); ++i, ++iter) {
+                for (; (iter != end) && (i < numArguments); ++i, ++iter) {
                     if (!iter->can_cast(argument_types_m[i])) {
                         return false;
                     }
                 }
-                for (; i < argument_defaults_m.size(); ++i) {
+                for (; i < numArguments; ++i) {
                     if (argument_defaults_m[i].m_casted_type.is_void()) {
                         return false;
                     }
@@ -601,7 +601,7 @@ namespace GL {
             }
             {
                 GL::string args; 
-                for (int i = 0; i < argument_types_m.size(); ++i) {
+                for (int i = 0; i < numArguments; ++i) {
                     GL::string arg = argument_types_m[i].name();
                     arg = arg.add_to_delim(argument_names_m[i], " ");
                     if (!argument_defaults_m[i].empty()) {
@@ -648,38 +648,21 @@ namespace GL {
                 m_signature;
 
             // fast path
-            GL::any::fast_any operator()(GL::any::fast_any** inputs_rhs, size_t num_inputs, bool keep_return_value = true) const {
-                static thread_local std::array<any::fast_any*, 16> inputs;
-                // std::memset(&inputs[0], 0, sizeof(inputs));
-                short pos{ 0 };
-                for (; (pos < 16) && (pos < num_inputs); ++pos) {
-                    inputs[pos] = inputs_rhs[pos];
-                }
-                for (; (pos < 16) && (pos < m_signature.argument_defaults_m.size()); ++pos) {
-                    inputs[pos] = const_cast<any::fast_any*>(&m_signature.argument_defaults_m[pos]);
-                }
-
-                try {
-                    return do_call(&inputs[0], keep_return_value);
-                }
-                catch (std::runtime_error const& e) {
-                    auto err = GL::string("Error with function call: ") + this->m_signature.display() + "\n\t" + std::string(e.what());
-                    throw std::runtime_error(err.to_string());
-                }
-                catch (std::exception const& e) {
-                    auto err = GL::string("Error with function call: ") + this->m_signature.display() + "\n\t" + std::string(e.what());
-                    throw std::runtime_error(err.to_string());
-                }
-                /*catch (GL::any const& return_val) {
-                    throw return_val;
-                }
-                catch (GL::any::fast_any const& return_val) {
-                    throw return_val;
-                }*/
-                catch (...) {
-                    std::rethrow_exception(std::current_exception());
-                }
-            }
+            //__declspec(noinline) GL::any::fast_any operator()(GL::any::fast_any** inputs_rhs, size_t num_inputs, bool keep_return_value = true) const {
+            //    if (num_inputs >= m_signature.numArguments) { // if defaults will not be necessary
+            //        return do_call(inputs_rhs, keep_return_value);
+            //    }
+            //    else {
+            //        thread_local any::fast_any* inputs[16];
+            //        int pos{ 0 };
+            //        for (; (pos < 16) && (pos < num_inputs); ++pos) 
+            //            inputs[pos] = inputs_rhs[pos];                    
+            //        for (; (pos < 16) && (pos < m_signature.numArguments); ++pos) 
+            //            inputs[pos] = const_cast<any::fast_any*>(&m_signature.argument_defaults_m[pos]);
+            //        
+            //        return do_call(&inputs[0], keep_return_value);
+            //    }
+            //}
             __declspec(noinline) GL::any::fast_any operator()(const GL::any::fast_any* begin, const GL::any::fast_any* end, bool keep_return_value = true) const {
                 if (end >= (begin + m_signature.numArguments)) { // if defaults will not be necessary
                     return do_call_(begin, keep_return_value);
@@ -687,19 +670,17 @@ namespace GL {
                 else {
                     thread_local any::fast_any* inputs[16];
                     for (int pos = 0; pos < m_signature.numArguments; ++pos, ++begin) {
-                        if (end > begin) {
-                            inputs[pos] = const_cast<any::fast_any*>(begin);
-                        }
-                        else {
-                            inputs[pos] = const_cast<any::fast_any*>(&m_signature.argument_defaults_m[pos]);
-                        }
+                        if (end > begin) 
+                            inputs[pos] = const_cast<any::fast_any*>(begin);                        
+                        else 
+                            inputs[pos] = const_cast<any::fast_any*>(&m_signature.argument_defaults_m[pos]);                        
                     }
                     return do_call(&inputs[0], keep_return_value);
                 }                
             };
             // fastest path
             GL::any::fast_any operator()(bool keep_return_value = true) const {
-                return operator()(&m_signature.argument_defaults_m[0], &m_signature.argument_defaults_m[0] + m_signature.argument_defaults_m.size(), keep_return_value);
+                return operator()(&m_signature.argument_defaults_m[0], &m_signature.argument_defaults_m[0] + m_signature.numArguments, keep_return_value);
             };
             // fast path
             GL::any::fast_any operator()(std::vector<any::fast_any>& params, bool keep_return_value = true) const {
@@ -1535,7 +1516,7 @@ namespace GL {
             };
 
         private:
-            decltype(auto) do_call_impl(any::fast_any** begin) const {
+            __declspec(noinline) decltype(auto) do_call_impl(any::fast_any** begin) const {
                 if constexpr (numArgs >= 15) {
                     if constexpr (std::is_same_v<returnType, void>) (begin[0]->cast<const Class&>().*m_attr)(
                         begin[1]->cast<std::tuple_element_t<1 - 1, argType>>(), begin[2]->cast<std::tuple_element_t<2 - 1, argType>>(), begin[3]->cast<std::tuple_element_t<3 - 1, argType>>(), begin[4]->cast<std::tuple_element_t<4 - 1, argType>>(), begin[5]->cast<std::tuple_element_t<5 - 1, argType>>(), begin[6]->cast<std::tuple_element_t<6 - 1, argType>>(), begin[7]->cast<std::tuple_element_t<7 - 1, argType>>(), begin[8]->cast<std::tuple_element_t<8 - 1, argType>>(),
@@ -1675,7 +1656,7 @@ namespace GL {
                     else return (begin[0]->cast<const Class&>().*m_attr)();
                 }                
             };
-            decltype(auto) do_call_impl_(const any::fast_any* begin) const {
+            __declspec(noinline) decltype(auto) do_call_impl_(const any::fast_any* begin) const {
                 if constexpr (numArgs >= 15) {
                     if constexpr (std::is_same_v<returnType, void>) (begin[0].cast<const Class&>().*m_attr)(
                         begin[1].cast<std::tuple_element_t<1 - 1, argType>>(), begin[2].cast<std::tuple_element_t<2 - 1, argType>>(), begin[3].cast<std::tuple_element_t<3 - 1, argType>>(), begin[4].cast<std::tuple_element_t<4 - 1, argType>>(), begin[5].cast<std::tuple_element_t<5 - 1, argType>>(), begin[6].cast<std::tuple_element_t<6 - 1, argType>>(), begin[7].cast<std::tuple_element_t<7 - 1, argType>>(), begin[8].cast<std::tuple_element_t<8 - 1, argType>>(),
@@ -1816,7 +1797,7 @@ namespace GL {
                 }
             };
 
-            virtual GL::any::fast_any do_call(any::fast_any** begin, bool keep_return_value) const override {
+            __declspec(noinline) virtual GL::any::fast_any do_call(any::fast_any** begin, bool keep_return_value) const override {
                 if constexpr (std::is_same_v<returnType, void>) {
                     do_call_impl(begin);
                     return nullptr;
@@ -1866,7 +1847,7 @@ namespace GL {
                     }
                 }
             };
-            virtual GL::any::fast_any do_call_(const any::fast_any* begin, bool keep_return_value) const override {
+            __declspec(noinline) virtual GL::any::fast_any do_call_(const any::fast_any* begin, bool keep_return_value) const override {
                 if constexpr (std::is_same_v<returnType, void>) {
                     do_call_impl_(begin);
                     return nullptr;
@@ -1919,7 +1900,7 @@ namespace GL {
 
             R(Class::* m_attr)(T...) const;
         };
-
+     
         namespace detail {
             template <typename T>
             struct is_static_member_function : std::false_type {};

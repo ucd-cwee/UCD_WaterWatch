@@ -567,27 +567,27 @@ namespace GL {
             }
             return false;
         };
-        GL::any::fast_any impl::Converter::call_with_conversions(const GL::details::Proxy_Function_Base* func) {
+        GL::any::fast_any impl::Converter::call_with_conversions(const GL::details::Proxy_Function_Base* func, bool keep_return_value) {
             if (func) {
                 return func->operator()();
             }
             return {};
         };
-        GL::any::fast_any impl::Converter::call_with_conversions(const GL::details::Proxy_Function_Base* func, std::vector<any::fast_any>& params) {
-            return call_with_conversions(func, params.begin(), params.end());
+        GL::any::fast_any impl::Converter::call_with_conversions(const GL::details::Proxy_Function_Base* func, std::vector<any::fast_any>& params, bool keep_return_value) {
+            return call_with_conversions(func, &params[0], &params[0] + params.size(), keep_return_value);
         };
-        GL::any::fast_any impl::Converter::call_with_conversions(const GL::details::Proxy_Function_Base* func, const std::vector<any>& params) {
+        GL::any::fast_any impl::Converter::call_with_conversions(const GL::details::Proxy_Function_Base* func, const std::vector<any>& params, bool keep_return_value) {
             std::vector<any::fast_any> Params;
             Params.resize(params.size());
             std::transform(params.begin(), params.end(), Params.begin(), [](any const& from) { return from.fast(); });
-            return call_with_conversions(func, Params.begin(), Params.end());
+            return call_with_conversions(func, &Params[0], &Params[0] + Params.size(), keep_return_value);
         };
-        GL::any::fast_any impl::Converter::call_with_conversions(const GL::details::Proxy_Function_Base* func, any& param) {
+        GL::any::fast_any impl::Converter::call_with_conversions(const GL::details::Proxy_Function_Base* func, any& param, bool keep_return_value) {
             any::fast_any p = param.fast();
-            return call_with_conversions(func, &p, &p + 1);
+            return call_with_conversions(func, &p, &p + 1, keep_return_value);
         };
-        GL::any::fast_any impl::Converter::call_with_conversions(const GL::details::Proxy_Function_Base* func, any::fast_any& param) {
-            return call_with_conversions(func, &param, &param + 1);
+        GL::any::fast_any impl::Converter::call_with_conversions(const GL::details::Proxy_Function_Base* func, any::fast_any& param, bool keep_return_value) {
+            return call_with_conversions(func, &param, &param + 1, keep_return_value);
         };
         bool impl::Converter::can_call_with_conversions(const GL::details::Proxy_Function_Base* func) {
             if (func) {
@@ -1379,12 +1379,12 @@ namespace GL {
             auto err = GL::printf("Could not locate object '%s'", PossiblyScopedName.c_str().data()).to_string();
             throw std::runtime_error(err);
         };
-        GL::any::fast_any impl::BasicScope::call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params) const {
-            return call_impl(PossiblyScopedName, params.begin(), params.end());
+        GL::any::fast_any impl::BasicScope::call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params, bool keep_return_value) const {
+            return call_impl(PossiblyScopedName, const_cast<GL::any::fast_any*>(&params[0]), const_cast<GL::any::fast_any*>(&params[0] + params.size()), keep_return_value);
         };
-        GL::any::fast_any impl::BasicScope::call(const GL::details::Proxy_Function_Base* func, std::vector<GL::any::fast_any> const& params) const {
+        GL::any::fast_any impl::BasicScope::call(const GL::details::Proxy_Function_Base* func, std::vector<GL::any::fast_any> const& params, bool keep_return_value) const {
             auto handler = push_back_caller(this);
-            return this->GetRoot()->get_converters().call_with_conversions(func, params.begin(), params.end());
+            return this->GetRoot()->get_converters().call_with_conversions(func, const_cast<GL::any::fast_any*>(&params[0]), const_cast<GL::any::fast_any*>(&params[0] + params.size()), keep_return_value);
         };
 
         void impl::NamespaceScope::invalidate_cache(long* parent_alive, size_t call_number) {
