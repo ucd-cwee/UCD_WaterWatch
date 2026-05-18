@@ -53,7 +53,6 @@ namespace /* atomic_shared_ptr */ GL {
         void DeleteSelf(control_block_base* p) override {
             reinterpret_cast<control_block<T>*>(p)->~control_block();
             Deallocate(reinterpret_cast<void*>(p));
-            // delete reinterpret_cast<control_block<T>*>(p);
         };
 
     public:
@@ -82,7 +81,6 @@ namespace /* atomic_shared_ptr */ GL {
         void DeleteSelf(control_block_base* p) override {
             reinterpret_cast<deleter_control_block<T>*>(p)->~deleter_control_block();
             Deallocate(reinterpret_cast<void*>(p));
-            // delete reinterpret_cast<deleter_control_block<T>*>(p);
         };
 
     public:
@@ -103,12 +101,13 @@ namespace /* atomic_shared_ptr */ GL {
             return this->data_pointer;
         };
         void Delete() override {
-            obj.~T();
+            if constexpr (!std::is_pod_v<T>) {
+                obj.~T();
+            }
         };
         void DeleteSelf(control_block_base* p) override {
             reinterpret_cast<embedded_control_block<T>*>(p)->~embedded_control_block();
             Deallocate(reinterpret_cast<void*>(p));
-            // delete reinterpret_cast<embedded_control_block<T>*>(p);
         };
 
     public:        
@@ -116,7 +115,6 @@ namespace /* atomic_shared_ptr */ GL {
             auto* ptr = reinterpret_cast<embedded_control_block<T>*>(Allocate(sizeof(embedded_control_block<T>)));
             new (ptr) embedded_control_block<T>(_STD forward<_Types>(_Args)...);
             return ptr;
-            // return new embedded_control_block<T>(_STD forward<_Types>(_Args)...);
         };
 
     };
@@ -135,7 +133,6 @@ namespace /* atomic_shared_ptr */ GL {
         void DeleteSelf(control_block_base* p) override {
             reinterpret_cast<embedded_control_block_tiny<T>*>(p)->~embedded_control_block_tiny();
             Deallocate(reinterpret_cast<void*>(p));
-            // delete reinterpret_cast<embedded_control_block_tiny<T>*>(p);
         };
 
     public:
@@ -143,7 +140,6 @@ namespace /* atomic_shared_ptr */ GL {
             auto* ptr = reinterpret_cast<embedded_control_block_tiny<T>*>(Allocate(sizeof(embedded_control_block_tiny<T>)));
             new (ptr) embedded_control_block_tiny<T>(_STD forward<_Types>(_Args)...);
             return ptr;
-            // return new embedded_control_block_tiny<T>(_STD forward<_Types>(_Args)...);
         };
 
     };
