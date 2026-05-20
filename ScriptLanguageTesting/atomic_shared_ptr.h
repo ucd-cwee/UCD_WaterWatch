@@ -291,14 +291,14 @@ namespace /* atomic_shared_ptr */ GL {
         explicit fast_shared_ptr(shared_ptr<T>&& Data);
         fast_shared_ptr() : knownValue(0), foreignPackedPtr(nullptr), data(nullptr) {};
         fast_shared_ptr(std::nullptr_t) : knownValue(0), foreignPackedPtr(nullptr), data(nullptr) {};
-        fast_shared_ptr(fast_shared_ptr<T>&& other)
+        fast_shared_ptr(fast_shared_ptr<T>&& other) noexcept
             : knownValue(other.knownValue)
             , foreignPackedPtr(other.foreignPackedPtr)
             , data(other.data)
         {
             other.foreignPackedPtr = nullptr;
         };
-        fast_shared_ptr& operator=(fast_shared_ptr<T>&& other) {
+        fast_shared_ptr& operator=(fast_shared_ptr<T>&& other) noexcept {
             destroy();
             knownValue = other.knownValue;
             foreignPackedPtr = other.foreignPackedPtr;
