@@ -27,30 +27,15 @@
 //#include "types.h"
 #include "scripting.h"
 
+// Declaration
 namespace uuid {
     struct uuid_ticket {
         size_t count;
-        GL::shared_ptr<GL::type_erasure::any_data> data;
+        GL::shared_ptr<void> data;
     };
-    static GL::ticket_dispensor<false> tickets;
-    static GL::atomic_vector< uuid_ticket > slots;
-
-    static size_t new_uuid(GL::shared_ptr<GL::type_erasure::any_data>&& rhs) {
-        size_t uuid = tickets.get_ticket();
-        auto& ref = slots.get_or_make(uuid);
-        ref.count = 1;
-        ref.data = std::forward<GL::shared_ptr<GL::type_erasure::any_data>>(rhs);
-        return uuid;
-    };
-    static void free_uuid(size_t uuid) {
-        if (uuid > 0) {
-            slots[uuid].data = nullptr;
-            tickets.return_ticket(uuid);
-        }
-    };
-    static uuid_ticket& get_uuid(size_t rhs) {
-        return slots.at(rhs);
-    };
+    static size_t new_uuid(GL::shared_ptr<void>&& rhs) noexcept;
+    static void free_uuid(size_t uuid) noexcept;
+    static uuid_ticket& get_uuid(size_t rhs) noexcept;
 };
 
 class any {
@@ -86,14 +71,14 @@ public:
     template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> static any instance(const ValueType& value) noexcept {
         any out;
         out.m_uuid = uuid::new_uuid(GL::type_erasure::wrap(value));
-        out.m_ptr = uuid::get_uuid(out.m_uuid).data->m_data;
+        out.m_ptr = reinterpret_cast<GL::shared_ptr<GL::type_erasure::any_data>*>(&uuid::get_uuid(out.m_uuid).data)->operator->()->m_data;
         out.m_type = GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>();
         return out;
     };
     template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> static any instance(ValueType&& value) noexcept {
         any out;
         out.m_uuid = uuid::new_uuid(GL::type_erasure::wrap(std::forward<ValueType>(value)));
-        out.m_ptr = uuid::get_uuid(out.m_uuid).data->m_data;
+        out.m_ptr = reinterpret_cast<GL::shared_ptr<GL::type_erasure::any_data>*>(&uuid::get_uuid(out.m_uuid).data)->operator->()->m_data;
         out.m_type = GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>();
         return out;
     };
@@ -108,7 +93,7 @@ public:
         return m_ptr;
     };
     bool empty() const noexcept {
-        return !operator bool();
+        return !m_ptr;
     };
     friend bool operator==(const any& a, const any& b) noexcept { return a.m_ptr == b.m_ptr; };
     friend bool operator!=(const any& a, const any& b) noexcept { return a.m_ptr != b.m_ptr; };
@@ -148,15 +133,6 @@ public:
         return *this;
     };
 
-    // returns true if this type can easily match the requested type (e.g. int& -> const int&)
-    bool can_free_cast(GL::type const& to) const {
-        return m_type.can_free_cast(to);
-    };
-    // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
-    bool can_cast(GL::type const& to) const {
-        return m_type.can_cast(to);
-    };
-
 protected:
     GL::shared_ptr<GL::type_erasure::any_data>& get_underlying_ptr() const {
         if (m_uuid > 0)
@@ -166,7 +142,6 @@ protected:
             return out;
         }
     };
-
     class DataCaster {
     public:
         template<typename T> struct is_stdSharedPtr_class { typedef std::false_type type; };
@@ -291,6 +266,28 @@ public:
         return out;
     };
 
+};
+
+// Definition
+namespace uuid {
+    static GL::ticket_dispensor<false> tickets;
+    static GL::atomic_vector< uuid_ticket > slots; 
+    size_t new_uuid(GL::shared_ptr<void>&& rhs) noexcept {
+        size_t uuid = tickets.get_ticket();
+        auto& ref = slots.get_or_make(uuid);
+        ref.count = 1;
+        ref.data = std::forward<GL::shared_ptr<void>>(rhs);
+        return uuid;
+    };
+    void free_uuid(size_t uuid) noexcept {
+        if (uuid > 0) {
+            slots[uuid].data = nullptr;
+            tickets.return_ticket(uuid);
+        }
+    };
+    uuid_ticket& get_uuid(size_t uuid) noexcept {
+        return slots.at(uuid);
+    };
 };
 
 template <typename R, typename Class, typename... T> class Const_Member_Function_Traits {
@@ -999,6 +996,15 @@ template <typename Function> GL::shared_ptr<Function_Caller> make_callable(Funct
         throw std::runtime_error("Did not handle conversion of provided function.");
     }
 };
+
+
+
+
+
+
+
+
+
 
 int main() {
 #if 1
