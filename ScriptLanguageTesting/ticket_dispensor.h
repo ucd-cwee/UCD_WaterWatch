@@ -2,6 +2,9 @@
 #pragma once
 #include "aba_problem.h"
 #include "atomic_vector.h"
+#include "thread_object.h"
+#include <deque>
+#include <mutex>
 #pragma endregion
 
 // Good Language namespace
@@ -128,8 +131,7 @@ namespace GL {
 
     // Manages tickets in the range of [1, INF) and assumes ticket 0 is already given to the owner of ticket_dispensor
     // Prints new tickets as needed, but recycles old tickets as much as possible. 
-    template <bool perform_count = false>
-    class ticket_dispensor {
+    template <bool perform_count = false> class ticket_dispensor {
     public:
         class ScopedTicket {
         public:
@@ -195,6 +197,97 @@ namespace GL {
                 --count;
             }
             queue.push(ticket);
+        };
+        void reserve(int n) {
+            std::vector<size_t> tickets;
+            tickets.reserve(n);
+
+            for (int i = 0; i < n; i++) {
+                tickets.push_back(this->get_ticket());
+            }
+            for (auto& x : tickets) {
+                this->return_ticket(x);
+            }
+        };
+    };
+
+    // Manages tickets in the range of [1, INF) and assumes ticket 0 is already given to the owner of ticket_dispensor
+    // Prints new tickets as needed, but recycles old tickets as much as possible. 
+    // This "fast" version limits ticket recycling to the thread doing the returning -- if thread X returns ticket Z, then only thread X can re-use ticket Z. 
+    template <bool perform_count = false> class fast_ticket_dispensor {
+    public:
+        class ScopedTicket {
+        public:
+            ScopedTicket()
+                : _index(0), _parent(nullptr) {};
+            ScopedTicket(size_t index, fast_ticket_dispensor& parent)
+                : _index(index), _parent(&parent) {};
+            ScopedTicket(ScopedTicket const& rhs) = delete;
+            ScopedTicket(ScopedTicket&& rhs) noexcept
+                : _index(std::move(rhs._index)), _parent(std::move(rhs._parent))
+            {
+                rhs._index = 0;
+            };
+            ScopedTicket& operator=(ScopedTicket const& rhs) = delete;
+            ScopedTicket& operator=(ScopedTicket&& rhs) noexcept
+            {
+                _index = std::move(rhs._index);
+                _parent = std::move(rhs._parent);
+                rhs._index = 0;
+                return *this;
+            };
+            ~ScopedTicket() {
+                if (_index)
+                    _parent->return_ticket(_index);
+            };
+
+            size_t _index;
+            fast_ticket_dispensor* _parent;
+        };
+
+    public:    
+        GL::thread_object_no_default<std::deque<size_t>>
+            queue{};
+        std::atomic<size_t>
+            indexes{ 0 };
+        std::atomic<size_t>
+            count{ 0 };
+
+    public:
+        size_t num_tickets() const {
+            if constexpr (perform_count) {
+                return count.load();
+            }
+            else {
+                return indexes.load() + 1;
+            }
+        };
+        __declspec(noinline) ScopedTicket get_scoped_ticket() {
+            return ScopedTicket(get_ticket(), *this);
+        };
+        __declspec(noinline) size_t get_ticket() {
+            size_t out;
+
+            auto& this_q = *queue;
+            if (this_q.size() > 0) {
+                out = this_q.front();
+                this_q.pop_front();
+            }
+            else {
+                //this_q.first.unlock();
+                out = ++indexes;
+            }
+            if constexpr (perform_count) {
+                ++count;
+            }
+            return out;
+        };
+        __declspec(noinline) void return_ticket(size_t ticket) {
+            if constexpr (perform_count) {
+                --count;
+            }
+            auto& this_q = *queue;
+            this_q.push_back(ticket);
         };
         void reserve(int n) {
             std::vector<size_t> tickets;
