@@ -822,7 +822,7 @@ public:
 
 class Function_Caller {
 public:
-    virtual ~Function_Caller() = default;    
+    virtual ~Function_Caller() = default;   
     // implimentation-specific function
     virtual void call(const any* begin, any* out) const = 0;
     /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
@@ -1101,7 +1101,17 @@ public:
         call(nullptr, out);
     };
 
-
+    template<typename T, typename... Args>
+    decltype(auto) do_call(Args... args) const {
+        if constexpr (std::is_same_v<void, T>) {
+            call(any::instance(args)..., nullptr);
+        }
+        else {
+            any out;
+            call(any::instance(args)..., &out);
+            return (T)out.cast<T>();
+        }
+    };
 };
 namespace {
     template <typename Function> class Const_Member_Function_Caller final : public Function_Caller {
@@ -1297,10 +1307,35 @@ template <typename Function> GL::shared_ptr<Function_Caller> make_callable(Funct
 
 
 
-
+#include "datetime.h"
 
 int main() {
 #if 1
+    using namespace GL::literals;
+    if (1) {
+        auto unix_s = make_callable([](GL::second x, GL::minute y) -> GL::hour { return x + y; });
+        std::cout << unix_s->do_call<GL::hour>(1_s, 1_min) << std::endl;
+    }
+    if (1) {
+        auto unix_s = make_callable([](GL::second x, GL::datetime y) -> GL::hour { return x + (GL::minute)y; });
+        auto N = GL::datetime::Now();
+        std::cout << unix_s->do_call<GL::hour>(0_s, N) << std::endl;
+        std::cout << unix_s->do_call<GL::hour>(120_s, N) << std::endl;
+        std::cout << unix_s->do_call<GL::hour>(12000_s, N) << std::endl;
+        std::cout << unix_s->do_call<GL::hour>(120000000000_s, N) << std::endl;
+    }
+    if (1) {
+        auto unix_s = make_callable([](GL::datetime y, GL::second x) -> GL::datetime { return y + x; });
+        auto N = GL::datetime::Now();
+        std::cout << unix_s->do_call<GL::datetime>(N, 0_s) << std::endl;
+        std::cout << unix_s->do_call<GL::datetime>(N, 120_s) << std::endl;
+        std::cout << unix_s->do_call<GL::datetime>(N, 12000_s) << std::endl;
+        std::cout << unix_s->do_call<GL::datetime>(N, 1200000_s) << std::endl;
+        std::cout << unix_s->do_call<GL::datetime>(N, 120000000_s) << std::endl;
+    }
+
+
+
     while (1) {  
         switch ((int)std::floor(GL::util::rand(0, 11.999))) {
         case 0: {

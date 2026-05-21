@@ -7,7 +7,7 @@ namespace GL {
 		return rc;
 	};
 	boost::posix_time::ptime ToPTime(datetime const& F) {
-		long long D = F;
+		long long D = (long long)F;
 		if (D >= 0) {
 			long long num_millisec = static_cast<long long>(D);
 			return Shared_Epoch_posixTime() + boost::posix_time::milliseconds(num_millisec);
@@ -232,9 +232,36 @@ namespace GL {
 	datetime::operator GL::string() const {
 		return c_str();
 	};
-	datetime::operator  long long() const {
+	datetime::operator long long() const {
 		return time.load();
+	};	
+	datetime::operator GL::minute() const {
+		return GL::minute((float)(time.load() / 60000ll));
 	};
+	datetime::operator GL::millisecond() const {
+		return GL::millisecond((float)time.load());
+	};
+	datetime::operator GL::microsecond() const {
+		return GL::millisecond((float)time.load());
+	};
+	datetime::operator GL::nanosecond() const {
+		return GL::millisecond((float)time.load());
+	};
+	datetime::operator GL::second() const {
+		return GL::minute((float)(time.load() / 60000ll));
+	};
+	datetime::operator GL::hour() const {
+		return GL::minute((float)(time.load() / 60000ll));
+	};
+	datetime::operator GL::day() const {
+		return GL::minute((float)(time.load() / 60000ll));
+	};
+	datetime::operator GL::year() const {
+		return GL::minute((float)(time.load() / 60000ll));
+	};
+
+
+
 	bool operator==(const datetime& a, datetime const& t) { return a.time == t.time; };
 	bool operator!=(const datetime& a, datetime const& t) { return !(a == t); };
 	bool operator>=(const datetime& a, datetime const& t) { return a.time >= t.time; };
@@ -266,7 +293,9 @@ namespace GL {
 		}
 		return *this;
 	};
-	GL::minute operator-(const datetime& a, const datetime& b) { return (float)((long long)a - (long long)b) / 60000.0f; };
+	GL::minute operator-(const datetime& a, const datetime& b) {
+		return (GL::millisecond)(float)((long long)a - (long long)b);
+	};
 	datetime operator+(const datetime& a, const GL::minute& b) {
 		datetime out{ a };
 		out += b;

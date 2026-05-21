@@ -101,9 +101,17 @@ namespace GL {
 		// prints the current datetime in the unix format "year/month/day hour:minute:second"
 		GL::string c_str() const;
 		// prints the current datetime in the unix format "year/month/day hour:minute:second"
-		operator GL::string() const;
+		explicit operator GL::string() const;
 		// milliseconds since epoch. May be negative, indicating time prior to the Epoch. 
-		operator long long() const; 
+		explicit operator long long() const;
+		explicit operator GL::minute() const; 
+		explicit operator GL::millisecond() const;
+		explicit operator GL::microsecond() const;
+		explicit operator GL::nanosecond() const;
+		explicit operator GL::second() const;
+		explicit operator GL::hour() const;
+		explicit operator GL::day() const;
+		explicit operator GL::year() const;
 
 		bool compare_exchange(datetime& expected, datetime const& newValue) {
 			long long expect = expected.time.load();
