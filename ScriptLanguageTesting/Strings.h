@@ -8,6 +8,7 @@
 #include <ShlDisp.h>
 #include <winnt.h>
 #include "atomic_shared_ptr.h"
+#include <map>
 
 // Good Language namespace
 namespace GL {
@@ -26,21 +27,31 @@ namespace GL {
         size_type
             _hash{ npos };
 
-        string(GL::shared_ptr<std::string> _d, std::string_view d) : _data(std::move(_d)), data(std::move(d)) {};
+        string(GL::shared_ptr<std::string> _d, std::string_view d) noexcept : _data(std::move(_d)), data(std::move(d)) {};
 
     public:
-        string() {};
+        string() noexcept : _data{ nullptr }, data{}, _hash{ npos } {};
         string(string const&) = default;
         string(string&&) noexcept = default;
         string& operator=(string const&) = default;
         string& operator=(string&&) noexcept = default;
         ~string() = default;
 
-        template <size_t N> string(const char(&r)[N]) : data(r) {};
-        string(std::string&& _Copy) : _data(GL::make_shared<std::string>(std::move(_Copy))) {
+        template <size_t N> string(const char(&r)[N]) noexcept : _data{ nullptr }, data(r), _hash{ npos } {
+            if constexpr (N > 15) {
+                static thread_local std::map< const char(*)[N], size_t > hash_map;
+                if (auto f = hash_map.find(&r), e = hash_map.end(); f != e) {
+                    this->_hash = f->second;
+                }
+                else {
+                    hash_map.insert({ &r, this->_hash = hash(0) });
+                }
+            }
+        };
+        string(std::string&& _Copy) noexcept : _data(GL::make_shared<std::string>(std::move(_Copy))), data{}, _hash{ npos } {
             data = *_data;
         };
-        string(std::string_view&& _Copy) : data(_Copy) {};
+        string(std::string_view&& _Copy) noexcept : _data{ nullptr }, data(_Copy), _hash{ npos } {};
 
         friend bool operator==(string const& A, string const& V) noexcept {
             if (A.data.length() != V.data.length()) return false;
@@ -355,7 +366,7 @@ namespace GL {
             return data.operator[](index);
         };
         size_type hash(size_type out = 0) const {
-            if ((out == 0)/* && (length() > 16)*/) {
+            if ((out == 0) && (length() > 16)) {
                 if (_hash == npos) {
                     for (auto& x : data) out ^= (size_t)x + 0x9e3779b9 + (out << 6) + (out >> 2);
                     InterlockedExchange(reinterpret_cast<volatile size_type*>(const_cast<size_type*>(&_hash)), out);

@@ -18,12 +18,12 @@ namespace GL {
     }();
 
     void* control_block_base::Allocate(size_t bytes) {
-        return ::_aligned_malloc(bytes, 16);
-        // return CppAD::thread_alloc::get_memory(bytes, bytes); // return ::_aligned_malloc(bytes, 16);
+        // return ::_aligned_malloc(bytes, 16);
+        return CppAD::thread_alloc::get_memory(bytes, bytes); // return ::_aligned_malloc(bytes, 16);
     };
     void control_block_base::Deallocate(void* ptr) {
-        ::_aligned_free(ptr);
-        // CppAD::thread_alloc::return_memory(ptr); // ::_aligned_free(ptr);
+        // ::_aligned_free(ptr);
+        CppAD::thread_alloc::return_memory(ptr); // ::_aligned_free(ptr);
     };
 
     void control_block_base::DeferredDeletion(control_block_base* to_delete) {     

@@ -87,7 +87,7 @@ namespace GL {
             auto hash = this_type.hash_code() & cached_type::MAGIC_MASK2;
             auto& out = get_impl(hash);
             if (out.base_hash == 0) {
-                if (InterlockedCompareExchange(reinterpret_cast<volatile size_t*>(&out.base_hash), hash, 0) == 0) {
+                if (InterlockedCompareExchangeNoFence(reinterpret_cast<volatile size_t*>(&out.base_hash), hash, 0) == 0) {
                     out.name = GL::string(std::string_view(this_type.name())).remove_leading_and_trailing(':').remove_suffix(" __cdecl(void)");
                     if constexpr (!std::is_void_v<T>) out.T_size = sizeof(BaseType);
                     else out.T_size = 0;
@@ -144,11 +144,11 @@ namespace GL {
         type(type const&) = default;
         type(type &&) = default;
         type& operator=(type const& rhs) {
-            InterlockedExchange(reinterpret_cast<volatile size_t*>(&hash), rhs.hash);
+            InterlockedExchangeNoFence(reinterpret_cast<volatile size_t*>(&hash), rhs.hash);
             return *this;
         };
         type& operator=(type && rhs) noexcept {
-            InterlockedExchange(reinterpret_cast<volatile size_t*>(&hash), rhs.hash);
+            InterlockedExchangeNoFence(reinterpret_cast<volatile size_t*>(&hash), rhs.hash);
             return *this;
         };
         ~type() = default;
@@ -168,7 +168,7 @@ namespace GL {
                 qualifiers &= ~Const;
                 qualifiers &= ~Reference;
             }
-            InterlockedExchange(reinterpret_cast<volatile size_t*>(&hash), (hash & impl::cached_type::MAGIC_MASK2) | ((qualifiers << 59ull) & impl::cached_type::MAGIC_MASK1));
+            InterlockedExchangeNoFence(reinterpret_cast<volatile size_t*>(&hash), (hash & impl::cached_type::MAGIC_MASK2) | ((qualifiers << 59ull) & impl::cached_type::MAGIC_MASK1));
         };
 
         bool is_temp() const noexcept { return ((hash & ((size_t)Temporary << 59ull)) > 0); };
@@ -194,12 +194,12 @@ namespace GL {
         // returns true if this is found to be a parent of the derived type (id'd by its base hash) 
         bool is_base_of(type const& derived) const;
         // attempts to include the specified hash as a base of this class.
-        bool add_base(type const& base);
+        bool add_base(type const& base) const;
         bool match_base_hash(type const& to_match) const;
 
         GL::string name() const;
         // this is NOT a thread-safe operation. Ideally should be done on start-up. 
-        bool try_update_name(GL::string const& new_name);
+        bool try_update_name(GL::string const& new_name) const;
 
         size_t get_hash() const {
             return hash;
@@ -340,7 +340,7 @@ namespace GL {
     };
 
     // get the type information for a c++ type.
-    template<typename T> /*__forceinline*/__declspec(noinline) static GL::type type_of() noexcept {
+    template<typename T> /*__forceinline*//*__declspec(noinline)*/ static GL::type const& type_of() noexcept {
         using BaseType = typename std::remove_const_t<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>; // e.g. int&& -> int, or const int& -> int, or int* const& -> int*        
 
         static constexpr size_t template_modifier{ 
@@ -895,8 +895,8 @@ namespace GL {
                 }
             }
         }
-        explicit any(GL::atomic_shared_ptr< type_erasure::any_data > const& p_ptr, GL::type&& p_type)
-            : m_ptr{ p_ptr }, m_casted_type{ std::forward<GL::type>(p_type) }
+        explicit any(GL::atomic_shared_ptr< type_erasure::any_data > const& p_ptr, GL::type const& p_type)
+            : m_ptr{ p_ptr }, m_casted_type{ p_type }
         {
             correct_type_information();
         }

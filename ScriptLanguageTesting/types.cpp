@@ -187,7 +187,7 @@ namespace GL {
         //else if (!is_const() && is_ref()) return Base.name + "&";
         //else return Base.name;
     };
-    bool type::try_update_name(GL::string const& new_name) {
+    bool type::try_update_name(GL::string const& new_name) const {
         get_base(*this).name = new_name;
         return true;
     };
@@ -270,7 +270,7 @@ namespace GL {
         return get_base(*this).is_base_of(derived.get_base_hash());
     };
     // attempts to include the specified hash as a base of this class.
-    bool type::add_base(type const& base) {
+    bool type::add_base(type const& base) const {
         if (this->is_cpp_type() == base.is_cpp_type()) {
             return get_base(*this).add_base(base.get_base_hash());
         }

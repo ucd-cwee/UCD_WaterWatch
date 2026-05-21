@@ -29,9 +29,12 @@
 
 // Declaration
 namespace uuid {
+    static constexpr size_t FLAGS = 0xF000'0000'0000'0000;
+    static constexpr size_t INV_FLAGS = ~FLAGS;
+
     struct uuid_ticket {
-        size_t count;
-        GL::shared_ptr<void> data;
+        size_t count{ 0 };
+        GL::shared_ptr<void> data{ nullptr };
     };
     static size_t new_uuid(GL::shared_ptr<void>&& rhs) noexcept;
     static void free_uuid(size_t uuid) noexcept;
@@ -40,24 +43,37 @@ namespace uuid {
 
 class any {
 private:
-    size_t m_uuid;    
+    size_t m_uuid;
     void* m_ptr;
 public:
     GL::type m_type;
 
 public:
-    any() : m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
-    any(std::nullptr_t) : m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
-    any(any const& rhs) : m_uuid{ rhs.m_uuid }, m_type{ rhs.m_type }, m_ptr{ rhs.m_ptr } { if (m_uuid > 0) InterlockedIncrement(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count)); };
+    any(size_t&& uuid, void* data, GL::type const& type) noexcept : m_uuid{ std::forward<size_t>(uuid) }, m_type{ type }, m_ptr{ std::move(data) } {};
+    any() noexcept : m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
+    any(std::nullptr_t) noexcept : m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
+    any(any const& rhs) : m_uuid{ rhs.m_uuid & uuid::INV_FLAGS }, m_type{ rhs.m_type }, m_ptr{ rhs.m_ptr } { if (m_uuid > 0) InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count)); };
+    // declares that the parent will NOT go out-of-scope before this child does. That guarrantee allows us to skip a increment and decrement call to the counter. 
+    any(any const& rhs, bool) : m_uuid{ rhs.m_uuid | 0x1000'0000'0000'0000 }, m_type{ rhs.m_type }, m_ptr{ rhs.m_ptr } {};
     any(any && rhs) noexcept : m_uuid{ std::move(rhs.m_uuid) }, m_type{ std::move(rhs.m_type) }, m_ptr{ std::move(rhs.m_ptr) } { rhs.m_uuid = 0; };
     any const& operator=(any const& rhs) {
-        m_uuid = rhs.m_uuid;
+        if ((m_uuid & 0x1000'0000'0000'0000) == 0)
+            if ((m_uuid & uuid::INV_FLAGS) > 0)
+                if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count)) == 0)
+                    uuid::free_uuid(m_uuid);
+
+        m_uuid = rhs.m_uuid & uuid::INV_FLAGS;
         m_type = rhs.m_type; 
         m_ptr = rhs.m_ptr;
-        if (m_uuid > 0) InterlockedIncrement(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count));
+        if (m_uuid > 0) InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count));
         return *this;
     };
     any const& operator=(any&& rhs) noexcept {
+        if ((m_uuid & 0x1000'0000'0000'0000) == 0)
+            if ((m_uuid & uuid::INV_FLAGS) > 0)
+                if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count)) == 0)
+                    uuid::free_uuid(m_uuid);
+
         m_uuid = std::move(rhs.m_uuid);
         m_type = std::move(rhs.m_type);
         m_ptr = std::move(rhs.m_ptr);
@@ -65,7 +81,10 @@ public:
         return *this;
     };
     ~any() {
-        if (m_uuid > 0) if (InterlockedDecrement(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count)) == 0) uuid::free_uuid(m_uuid);
+        if ((m_uuid & 0x1000'0000'0000'0000) == 0) 
+            if ((m_uuid & uuid::INV_FLAGS) > 0) 
+                if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count)) == 0)
+                    uuid::free_uuid(m_uuid);
     };
 
     template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> static any instance(const ValueType& value) noexcept {
@@ -102,40 +121,40 @@ public:
     friend bool operator>(const any& a, const any& b) noexcept { return a.m_ptr > b.m_ptr; };
     friend bool operator>=(const any& a, const any& b) noexcept { return a.m_ptr >= b.m_ptr; };
 
-    bool operator&(int p_modifiers) const {
+    bool operator&(int p_modifiers) const noexcept {
         return m_type & p_modifiers;
     };
-    any operator|(int p_modifiers) const {
+    any operator|(int p_modifiers) const noexcept {
         any out(*this);
         out.m_type |= p_modifiers;
         return out;
     };
-    any operator+(int p_modifiers) const {
+    any operator+(int p_modifiers) const noexcept {
         any out(*this);
         out.m_type |= p_modifiers;
         return out;
     };
-    any operator-(int p_modifiers) const {
+    any operator-(int p_modifiers) const noexcept {
         any out(*this);
         out.m_type -= p_modifiers;
         return out;
     };
-    any& operator|=(int p_modifiers) {
+    any& operator|=(int p_modifiers) noexcept {
         m_type |= p_modifiers;
         return *this;
     };
-    any& operator+=(int p_modifiers) {
+    any& operator+=(int p_modifiers) noexcept {
         m_type += p_modifiers;
         return *this;
     };
-    any& operator-=(int p_modifiers) {
+    any& operator-=(int p_modifiers) noexcept {
         m_type -= p_modifiers;
         return *this;
     };
 
 protected:
-    GL::shared_ptr<GL::type_erasure::any_data>& get_underlying_ptr() const {
-        if (m_uuid > 0)
+    GL::shared_ptr<GL::type_erasure::any_data>& get_underlying_ptr() const noexcept {
+        if ((m_uuid & uuid::INV_FLAGS) > 0)
             return *reinterpret_cast<GL::shared_ptr<GL::type_erasure::any_data>*>(&uuid::get_uuid(m_uuid).data);
         else {
             GL::shared_ptr<GL::type_erasure::any_data> out{ nullptr };
@@ -251,19 +270,15 @@ public:
     template<typename VType, typename = std::enable_if_t<std::is_pointer<VType>::value && std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
     any* cast() const noexcept { return const_cast<any*>(this); };
 
-    template <typename T> static any wrap_member(any const& parent, T const& ref) {
-        any out;
-        out.m_uuid = parent.m_uuid;
-        out.m_type = GL::type_of<T const&>();
-        out.m_ptr = &const_cast<T&>(ref);
-        return out;
+    template <typename T> static any wrap_member(any const& parent, T const& ref) noexcept {
+        size_t uuid = parent.m_uuid & uuid::INV_FLAGS;
+        if (uuid > 0) InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(uuid).count));
+        return any(std::move(uuid), &const_cast<T&>(ref), GL::type_of<T const&>());
     };
-    template <typename T> static any wrap_member(any const& parent, T& ref) {
-        any out;
-        out.m_uuid = parent.m_uuid;
-        out.m_type = GL::type_of<T&>();
-        out.m_ptr = &ref;
-        return out;
+    template <typename T> static any wrap_member(any const& parent, T& ref) noexcept {
+        size_t uuid = parent.m_uuid & uuid::INV_FLAGS;
+        if (uuid > 0) InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(uuid).count));
+        return any(std::move(uuid), &ref, GL::type_of<T&>());
     };
 
 };
@@ -280,13 +295,14 @@ namespace uuid {
         return uuid;
     };
     void free_uuid(size_t uuid) noexcept {
+        uuid = uuid & INV_FLAGS;
         if (uuid > 0) {
             slots[uuid].data = nullptr;
             tickets.return_ticket(uuid);
         }
     };
     uuid_ticket& get_uuid(size_t uuid) noexcept {
-        return slots.at(uuid);
+        return slots.at(uuid & INV_FLAGS);
     };
 };
 
@@ -807,7 +823,285 @@ public:
 class Function_Caller {
 public:
     virtual ~Function_Caller() = default;    
-    virtual void call(const any* begin, any* out) const = 0;    
+    // implimentation-specific function
+    virtual void call(const any* begin, any* out) const = 0;
+    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
+    void call(
+        const any& p0, const any& p1, const any& p2, const any& p3,
+        const any& p4, const any& p5, const any& p6, const any& p7,
+        const any& p8, const any& p9, const any& p10, const any& p11,
+        const any& p12, const any& p13, const any& p14, const any& p15
+        , any* out) const {
+        unsigned char buf[sizeof(any) * 16];
+        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
+        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
+        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
+        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
+        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
+        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
+        new (&reinterpret_cast<any*>(&buf[0])[6]) any(p6, true);
+        new (&reinterpret_cast<any*>(&buf[0])[7]) any(p7, true);
+        new (&reinterpret_cast<any*>(&buf[0])[8]) any(p8, true);
+        new (&reinterpret_cast<any*>(&buf[0])[9]) any(p9, true);
+        new (&reinterpret_cast<any*>(&buf[0])[10]) any(p10, true);
+        new (&reinterpret_cast<any*>(&buf[0])[11]) any(p11, true);
+        new (&reinterpret_cast<any*>(&buf[0])[12]) any(p12, true);
+        new (&reinterpret_cast<any*>(&buf[0])[13]) any(p13, true);
+        new (&reinterpret_cast<any*>(&buf[0])[14]) any(p14, true);
+        new (&reinterpret_cast<any*>(&buf[0])[15]) any(p15, true);
+        call(reinterpret_cast<any*>(&buf[0]), out);
+    };
+    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
+    void call(
+        const any& p0, const any& p1, const any& p2, const any& p3,
+        const any& p4, const any& p5, const any& p6, const any& p7,
+        const any& p8, const any& p9, const any& p10, const any& p11,
+        const any& p12, const any& p13, const any& p14
+        , any* out) const {
+        unsigned char buf[sizeof(any) * 15];
+        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
+        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
+        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
+        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
+        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
+        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
+        new (&reinterpret_cast<any*>(&buf[0])[6]) any(p6, true);
+        new (&reinterpret_cast<any*>(&buf[0])[7]) any(p7, true);
+        new (&reinterpret_cast<any*>(&buf[0])[8]) any(p8, true);
+        new (&reinterpret_cast<any*>(&buf[0])[9]) any(p9, true);
+        new (&reinterpret_cast<any*>(&buf[0])[10]) any(p10, true);
+        new (&reinterpret_cast<any*>(&buf[0])[11]) any(p11, true);
+        new (&reinterpret_cast<any*>(&buf[0])[12]) any(p12, true);
+        new (&reinterpret_cast<any*>(&buf[0])[13]) any(p13, true);
+        new (&reinterpret_cast<any*>(&buf[0])[14]) any(p14, true);
+        call(reinterpret_cast<any*>(&buf[0]), out);
+    };
+    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
+    void call(
+        const any& p0, const any& p1, const any& p2, const any& p3,
+        const any& p4, const any& p5, const any& p6, const any& p7,
+        const any& p8, const any& p9, const any& p10, const any& p11,
+        const any& p12, const any& p13
+        , any* out) const {
+        unsigned char buf[sizeof(any) * 14];
+        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
+        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
+        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
+        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
+        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
+        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
+        new (&reinterpret_cast<any*>(&buf[0])[6]) any(p6, true);
+        new (&reinterpret_cast<any*>(&buf[0])[7]) any(p7, true);
+        new (&reinterpret_cast<any*>(&buf[0])[8]) any(p8, true);
+        new (&reinterpret_cast<any*>(&buf[0])[9]) any(p9, true);
+        new (&reinterpret_cast<any*>(&buf[0])[10]) any(p10, true);
+        new (&reinterpret_cast<any*>(&buf[0])[11]) any(p11, true);
+        new (&reinterpret_cast<any*>(&buf[0])[12]) any(p12, true);
+        new (&reinterpret_cast<any*>(&buf[0])[13]) any(p13, true);
+        call(reinterpret_cast<any*>(&buf[0]), out);
+    };
+    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
+    void call(
+        const any& p0, const any& p1, const any& p2, const any& p3,
+        const any& p4, const any& p5, const any& p6, const any& p7,
+        const any& p8, const any& p9, const any& p10, const any& p11,
+        const any& p12
+        , any* out) const {
+        unsigned char buf[sizeof(any) * 13];
+        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
+        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
+        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
+        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
+        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
+        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
+        new (&reinterpret_cast<any*>(&buf[0])[6]) any(p6, true);
+        new (&reinterpret_cast<any*>(&buf[0])[7]) any(p7, true);
+        new (&reinterpret_cast<any*>(&buf[0])[8]) any(p8, true);
+        new (&reinterpret_cast<any*>(&buf[0])[9]) any(p9, true);
+        new (&reinterpret_cast<any*>(&buf[0])[10]) any(p10, true);
+        new (&reinterpret_cast<any*>(&buf[0])[11]) any(p11, true);
+        new (&reinterpret_cast<any*>(&buf[0])[12]) any(p12, true);
+        call(reinterpret_cast<any*>(&buf[0]), out);
+    };
+    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
+    void call(
+        const any& p0, const any& p1, const any& p2, const any& p3,
+        const any& p4, const any& p5, const any& p6, const any& p7,
+        const any& p8, const any& p9, const any& p10, const any& p11
+        , any* out) const {
+        unsigned char buf[sizeof(any) * 12];
+        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
+        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
+        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
+        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
+        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
+        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
+        new (&reinterpret_cast<any*>(&buf[0])[6]) any(p6, true);
+        new (&reinterpret_cast<any*>(&buf[0])[7]) any(p7, true);
+        new (&reinterpret_cast<any*>(&buf[0])[8]) any(p8, true);
+        new (&reinterpret_cast<any*>(&buf[0])[9]) any(p9, true);
+        new (&reinterpret_cast<any*>(&buf[0])[10]) any(p10, true);
+        new (&reinterpret_cast<any*>(&buf[0])[11]) any(p11, true);
+        call(reinterpret_cast<any*>(&buf[0]), out);
+    };
+    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
+    void call(
+        const any& p0, const any& p1, const any& p2, const any& p3,
+        const any& p4, const any& p5, const any& p6, const any& p7,
+        const any& p8, const any& p9, const any& p10
+        , any* out) const {
+        unsigned char buf[sizeof(any) * 11];
+        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
+        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
+        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
+        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
+        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
+        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
+        new (&reinterpret_cast<any*>(&buf[0])[6]) any(p6, true);
+        new (&reinterpret_cast<any*>(&buf[0])[7]) any(p7, true);
+        new (&reinterpret_cast<any*>(&buf[0])[8]) any(p8, true);
+        new (&reinterpret_cast<any*>(&buf[0])[9]) any(p9, true);
+        new (&reinterpret_cast<any*>(&buf[0])[10]) any(p10, true);
+        call(reinterpret_cast<any*>(&buf[0]), out);
+    };
+    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
+    void call(
+        const any& p0, const any& p1, const any& p2, const any& p3,
+        const any& p4, const any& p5, const any& p6, const any& p7,
+        const any& p8, const any& p9
+        , any* out) const {
+        unsigned char buf[sizeof(any) * 10];
+        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
+        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
+        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
+        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
+        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
+        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
+        new (&reinterpret_cast<any*>(&buf[0])[6]) any(p6, true);
+        new (&reinterpret_cast<any*>(&buf[0])[7]) any(p7, true);
+        new (&reinterpret_cast<any*>(&buf[0])[8]) any(p8, true);
+        new (&reinterpret_cast<any*>(&buf[0])[9]) any(p9, true);
+        call(reinterpret_cast<any*>(&buf[0]), out);
+    };
+    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
+    void call(
+        const any& p0, const any& p1, const any& p2, const any& p3,
+        const any& p4, const any& p5, const any& p6, const any& p7,
+        const any& p8
+        , any* out) const {
+        unsigned char buf[sizeof(any) * 9];
+        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
+        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
+        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
+        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
+        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
+        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
+        new (&reinterpret_cast<any*>(&buf[0])[6]) any(p6, true);
+        new (&reinterpret_cast<any*>(&buf[0])[7]) any(p7, true);
+        new (&reinterpret_cast<any*>(&buf[0])[8]) any(p8, true);
+        call(reinterpret_cast<any*>(&buf[0]), out);
+    };
+    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
+    void call(
+        const any& p0, const any& p1, const any& p2, const any& p3,
+        const any& p4, const any& p5, const any& p6, const any& p7
+        , any* out) const {
+        unsigned char buf[sizeof(any) * 8];
+        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
+        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
+        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
+        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
+        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
+        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
+        new (&reinterpret_cast<any*>(&buf[0])[6]) any(p6, true);
+        new (&reinterpret_cast<any*>(&buf[0])[7]) any(p7, true);
+        call(reinterpret_cast<any*>(&buf[0]), out);
+    };
+    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
+    void call(
+        const any& p0, const any& p1, const any& p2, const any& p3,
+        const any& p4, const any& p5, const any& p6
+        , any* out) const {
+        unsigned char buf[sizeof(any) * 7];
+        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
+        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
+        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
+        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
+        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
+        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
+        new (&reinterpret_cast<any*>(&buf[0])[6]) any(p6, true);
+        call(reinterpret_cast<any*>(&buf[0]), out);
+    };
+    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
+    void call(
+        const any& p0, const any& p1, const any& p2, const any& p3,
+        const any& p4, const any& p5
+        , any* out) const {
+        unsigned char buf[sizeof(any) * 6];
+        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
+        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
+        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
+        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
+        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
+        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
+        call(reinterpret_cast<any*>(&buf[0]), out);
+    };
+    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
+    void call(
+        const any& p0, const any& p1, const any& p2, const any& p3,
+        const any& p4
+        , any* out) const {
+        unsigned char buf[sizeof(any) * 5];
+        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
+        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
+        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
+        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
+        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
+        call(reinterpret_cast<any*>(&buf[0]), out);
+    };
+    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
+    void call(
+        const any& p0, const any& p1, const any& p2, const any& p3
+        , any* out) const {
+        unsigned char buf[sizeof(any) * 4];
+        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
+        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
+        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
+        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
+        call(reinterpret_cast<any*>(&buf[0]), out);
+    };
+    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
+    void call(
+        const any& p0, const any& p1, const any& p2
+        , any* out) const {
+        unsigned char buf[sizeof(any) * 3];
+        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
+        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
+        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
+        call(reinterpret_cast<any*>(&buf[0]), out);
+    };
+    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
+    void call(
+        const any& p0, const any& p1
+        , any* out) const {
+        unsigned char buf[sizeof(any) * 2];
+        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
+        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
+        call(reinterpret_cast<any*>(&buf[0]), out);
+    };
+    /// Convenience function for easier calling syntax. No overhead is added to make this call.
+    void call(
+        const any& p0
+        , any* out) const {
+        call(&p0, out);
+    };
+    /// Convenience function for easier calling syntax. No overhead is added to make this call.
+    void call(
+        any* out) const {
+        call(nullptr, out);
+    };
+
+
 };
 namespace {
     template <typename Function> class Const_Member_Function_Caller final : public Function_Caller {
@@ -866,7 +1160,6 @@ namespace {
         using Type = decltype(Member_Function_Caller(std::move(f)));
         return GL::make_shared<Type>(std::move(f));
     };
-    // Attribute Calls are the slowest operation of the bunch by 10-100 times, due to the need to create a new any::fast_any wrapper every time, rather than re-using the existing object pointer. 
     template <typename Function> class Attribute_Function_Caller final : public Function_Caller {
     public:
         using traits = decltype(Attribute_Function_Traits(std::declval< Function>()));
@@ -1085,7 +1378,7 @@ int main() {
             };
             if (auto timer = GL::stopwatch().debug_timer("\"this\".begins_with(\"this\") with generalized callable and w/o converters, no conversion needed, w/o return")) {
                 for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
-                    (void)callable->call(&example[0], nullptr);
+                    (void)callable->call(example[0], example[1], nullptr);
                 }//);
             }
         } break;
@@ -1097,7 +1390,7 @@ int main() {
             };
             if (auto timer = GL::stopwatch().debug_timer("GL::string::begins_with() with non-capturing lambda function and w/o converters, no conversion needed, w/o return")) {
                 for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
-                    (void)callable->call(&example[0], nullptr);
+                    (void)callable->call(example[0], example[1], nullptr);
                 }//);
             }
         } break;
@@ -1112,7 +1405,7 @@ int main() {
             auto callable{ make_callable(&TEST::obj2) };
             if (auto timer = GL::stopwatch().debug_timer("TEST::obj, w/o return")) {
                 for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
-                    (void)callable->call(&example[0], nullptr);
+                    (void)callable->call(example[0], nullptr);
                 }//);
             }
         } break;
@@ -1127,9 +1420,9 @@ int main() {
             auto callable{ make_callable(&TEST::obj2) }; 
             any out;
             if (auto timer = GL::stopwatch().debug_timer("TEST::obj, w/ return")) {                
-                for (int i = 0; i < 1'000'000; ++i){// GL::parallel::For(0, 1'000'000, [&]() {
-                    any out;
-                    (void)callable->call(&example[0], &out);
+                for (int i = 0; i < 1'000'000; ++i){//GL::parallel::For(0, 1'000'000, [&]() { any out;
+                    (void)callable->call(example[0], &out);
+                    if (out.cast<GL::string&>() != GL::string("that")) throw "ERROR";
                 }//);                
             }
         } break;
