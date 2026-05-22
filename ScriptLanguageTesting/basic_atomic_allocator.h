@@ -1,5 +1,6 @@
 #pragma once
 #include "aba_problem.h"
+#include "util.h"
 #include <type_traits>
 #include <shared_mutex>
 #include <iostream>
@@ -25,12 +26,12 @@ namespace GL {
         };
         
         block_t* PushBlock() {
-            block_t* p = (block_t*)::_aligned_malloc(sizeof(block_t), 16);
+            block_t* p = reinterpret_cast<block_t*>(GL::malloc(sizeof(block_t)));
             if constexpr (!skipInitialization) if (p) std::memset(p, 0, sizeof(block_t));
             return p;
         };
         void PopBlock(block_t* p) {
-            ::_aligned_free(p);
+            GL::mfree(p);
         };
 
         // Allocate one new block of contiguous elements

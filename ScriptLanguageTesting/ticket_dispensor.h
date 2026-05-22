@@ -211,6 +211,71 @@ namespace GL {
         };
     };
 
+#if 0
+    // Manages tickets in the range of [1, INF) and assumes ticket 0 is already given to the owner of ticket_dispensor
+    // Prints new tickets as needed, but recycles old tickets as much as possible. 
+    // This "fast" version limits ticket recycling to the thread doing the returning -- if thread X returns ticket Z, then only thread X can re-use ticket Z. 
+    class fast_ticket_dispensor {
+    public:
+        class ScopedTicket {
+        public:
+            ScopedTicket()
+                : _index(0), _parent(nullptr) {};
+            ScopedTicket(size_t index, fast_ticket_dispensor& parent)
+                : _index(index), _parent(&parent) {};
+            ScopedTicket(ScopedTicket const& rhs) = delete;
+            ScopedTicket(ScopedTicket&& rhs) noexcept
+                : _index(std::move(rhs._index)), _parent(std::move(rhs._parent))
+            {
+                rhs._index = 0;
+            };
+            ScopedTicket& operator=(ScopedTicket const& rhs) = delete;
+            ScopedTicket& operator=(ScopedTicket&& rhs) noexcept
+            {
+                _index = std::move(rhs._index);
+                _parent = std::move(rhs._parent);
+                rhs._index = 0;
+                return *this;
+            };
+            ~ScopedTicket() {
+                if (_index)
+                    _parent->return_ticket(_index);
+            };
+
+            size_t _index;
+            fast_ticket_dispensor* _parent;
+        };
+
+    public:    
+        GL::thread_object_no_default<std::pair<std::vector<size_t>, size_t>>
+            queue{};
+        std::atomic<size_t>
+            indexes{ 0 };
+
+    public:
+        size_t num_tickets() const {
+            return indexes.load() + 1;
+        };
+        ScopedTicket get_scoped_ticket() {
+            return ScopedTicket(get_ticket(), *this);
+        };
+        size_t get_ticket() {
+            std::pair<std::vector<size_t>, size_t>& this_q = *queue;
+            if (this_q.second > 0) 
+                return this_q.first[--this_q.second];
+            else 
+                return ++indexes;            
+        };
+       void return_ticket(size_t ticket) {
+           std::pair<std::vector<size_t>, size_t>& this_q = *queue;
+           if (this_q.first.size() < ++this_q.second) {
+               this_q.first.resize(this_q.second << 2);
+           }
+           this_q.first[this_q.second - 1] = ticket;
+        };
+
+    };
+#else
     // Manages tickets in the range of [1, INF) and assumes ticket 0 is already given to the owner of ticket_dispensor
     // Prints new tickets as needed, but recycles old tickets as much as possible. 
     // This "fast" version limits ticket recycling to the thread doing the returning -- if thread X returns ticket Z, then only thread X can re-use ticket Z. 
@@ -245,7 +310,7 @@ namespace GL {
             fast_ticket_dispensor* _parent;
         };
 
-    public:    
+    public:
         GL::thread_object_no_default<std::deque<size_t>>
             queue{};
         std::atomic<size_t>
@@ -262,10 +327,10 @@ namespace GL {
                 return indexes.load() + 1;
             }
         };
-        __declspec(noinline) ScopedTicket get_scoped_ticket() {
+        ScopedTicket get_scoped_ticket() {
             return ScopedTicket(get_ticket(), *this);
         };
-        __declspec(noinline) size_t get_ticket() {
+        size_t get_ticket() {
             size_t out;
 
             auto& this_q = *queue;
@@ -282,7 +347,7 @@ namespace GL {
             }
             return out;
         };
-        __declspec(noinline) void return_ticket(size_t ticket) {
+        void return_ticket(size_t ticket) {
             if constexpr (perform_count) {
                 --count;
             }
@@ -301,4 +366,6 @@ namespace GL {
             }
         };
     };
+#endif
+
 };

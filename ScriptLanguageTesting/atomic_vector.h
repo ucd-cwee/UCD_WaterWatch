@@ -5,6 +5,7 @@
 #include <ShlDisp.h>
 #include <winnt.h>
 #include <stdexcept>
+#include "util.h"
 #include "basic_atomic_allocator.h"
 
 // Atomic Vector
@@ -37,15 +38,61 @@ namespace GL {
             return tab64[((uint64_t)((value - (value >> 1)) * 0x07EDD5E59A4E28C2)) >> 58];
         }
         // 0 -> 0, 4 -> 1, 8 -> 2, 16 -> 3, etc.
+        //static short global_index_to_block(size_t index) noexcept {
+        //    if (index <= 3ull) return 0;
+        //    else return log2_64(index) - 1;
+        //};
         static short global_index_to_block(size_t index) noexcept {
-            if (index <= 3ull) return 0;
-            else return log2_64(index) - 1;
+            if (index <= 3) return 0;
+#if 1
+#if defined(__GNUC__) || defined(__clang__)
+            // __builtin_clzll counts leading zeros
+            return static_cast<short>(62 - __builtin_clzll(index));
+#elif defined(_MSC_VER)
+            unsigned long leading_zero = 0;
+            if (_BitScanReverse64(&leading_zero, index)) {
+                return static_cast<short>(leading_zero - 1);
+            }
+            return 0;
+#else
+            return log2_64(index) - 1;
+#endif
+#else
+            return log2_64(index) - 1;
+#endif
         };
         // 0 -> 0, 3 -> 3, 4 -> 0, 7 -> 3, 8 -> 0, 15 -> 7, 16 -> 0, 31 -> 15, etc.
+        //static size_t global_index_to_local_index(size_t index) noexcept {
+        //    if (index <= 3ull) return index;
+        //    else return index - (2ull << (log2_64(index) - 1));
+        //};
         static size_t global_index_to_local_index(size_t index) noexcept {
-            if (index <= 3ull) return index;
-            else return index - (2ull << (log2_64(index) - 1));
-        };
+            if (index <= 3) return index;
+#if 1
+#if defined(__GNUC__) || defined(__clang__)
+            // 63 - leading zeros gives the index of the highest set bit
+            unsigned int shift = 63 - __builtin_clzll(index);
+            return index ^ (1ULL << shift); // XOR clears the highest bit
+#elif defined(_MSC_VER)
+            unsigned long highest_bit = 0;
+            _BitScanReverse64(&highest_bit, index);
+            return index ^ (1ULL << highest_bit);
+#else
+            // Fallback to bitwise tricks if no intrinsics are available
+            size_t temp = index;
+            temp |= temp >> 1;
+            temp |= temp >> 2;
+            temp |= temp >> 4;
+            temp |= temp >> 8;
+            temp |= temp >> 16;
+            temp |= temp >> 32;
+            return index - ((temp >> 1) + 1);
+#endif
+#else
+            return index - (2ull << (log2_64(index) - 1));
+#endif
+        }
+
         static size_t global_index_to_local_index(size_t index, short blockN) noexcept {
             if (index <= 3ull) return index;
             else return index - (2ull << blockN);
@@ -73,12 +120,12 @@ namespace GL {
         short
             current_blockN{ -1 };
 
-        __declspec(noinline) bool EnsureBlockExists(short block_n) noexcept {
+        bool EnsureBlockExists(short block_n) noexcept {
             bool out = false;
             if (blocks[block_n]) return out;
             for (short blockN = 0; blockN <= block_n; ++blockN) {
                 if (!blocks[blockN]) {
-                    element_t* new_ptr = (element_t*)(::_aligned_malloc(block_to_allocsize(blockN) * sizeof(element_t), 16));
+                    element_t* new_ptr = (element_t*)GL::malloc(block_to_allocsize(blockN) * sizeof(element_t)); 
                     if (new_ptr) {
                         if constexpr (!std::is_pod_v<T>) {
                             for (int i = 0; i < block_to_allocsize(blockN); ++i) {
@@ -98,7 +145,7 @@ namespace GL {
                                     (new_ptr + i)->~element_t();
                                 }
                             }
-                            ::_aligned_free(new_ptr);
+                            GL::mfree(new_ptr); 
                         }
                     }
                 }
@@ -117,7 +164,7 @@ namespace GL {
         };
         atomic_vector& operator=(atomic_vector const&) = delete;
         atomic_vector& operator=(atomic_vector&&) = delete;
-        __declspec(noinline) ~atomic_vector() noexcept {
+        ~atomic_vector() noexcept {
             for (int blockN = 0; blockN < max_num_buckets; ++blockN) {
                 if (blocks[blockN]) {
                     if constexpr (!std::is_pod_v<T>) {
@@ -125,7 +172,7 @@ namespace GL {
                             (blocks[blockN] + i)->~element_t();
                         }
                     }
-                    ::_aligned_free(blocks[blockN]);
+                    GL::mfree(blocks[blockN]); 
                 }
             }
         };
@@ -383,7 +430,7 @@ namespace GL {
             if (blocks[block_n]) return out;
             for (short blockN = 0; blockN <= block_n; ++blockN) {
                 if (!blocks[blockN]) {
-                    element_t* new_ptr = (element_t*)(::_aligned_malloc(block_to_allocsize(blockN) * sizeof(element_t), 16));
+                    element_t* new_ptr = (element_t*)(GL::malloc(block_to_allocsize(blockN) * sizeof(element_t)));
                     for (int i = 0; i < block_to_allocsize(blockN); ++i) {
                         new (new_ptr + i) element_t(constructor());
                     }
@@ -396,7 +443,7 @@ namespace GL {
                                 (new_ptr + i)->~element_t();
                             }
                         }
-                        ::_aligned_free(new_ptr);
+                        GL::mfree(new_ptr);
                     }
                 }
             }
@@ -417,7 +464,7 @@ namespace GL {
                             (blocks[blockN] + i)->~element_t();
                         }
                     }
-                    ::_aligned_free(blocks[blockN]);
+                    GL::mfree(blocks[blockN]);
                 }
             }
         };

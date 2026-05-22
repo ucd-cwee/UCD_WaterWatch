@@ -12,6 +12,26 @@
 #include <winnt.h>
 #include <mutex>
 #include <shared_mutex>
+
+namespace GL {
+    void* malloc(size_t bytes);
+    void mfree(void* ptr);
+    template<typename T, typename... Args> __forceinline static T* alloc(Args&&... args) {
+        T* out = reinterpret_cast<T*>(malloc(sizeof(T)));
+        if constexpr ((!std::is_pod_v<T>) || (sizeof...(args) > 0)) {
+            new (out) T(std::forward<Args>(args)...);
+        }
+        return out;
+    };
+    template<typename T> __forceinline static void free(T* p) {
+        if constexpr (!std::is_pod_v<T>) {
+            p->~T();
+        }
+        mfree(p);
+    };
+};
+
+
 #include "basic_atomic_allocator.h"
 #include <boost/type_index.hpp>
 

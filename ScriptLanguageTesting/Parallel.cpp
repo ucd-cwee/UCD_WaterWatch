@@ -1,7 +1,7 @@
 #pragma once
+#include "util.h"
 #include "Parallel.h"
 #include "stopwatch.h"
-#include "util.h"
 
 // FiberPool based on:
 // http://roar11.com/2016/01/a-platform-independent-thread-pool-using-c14/
@@ -411,6 +411,7 @@ namespace GL {
 						internal_state.threads.emplace_back(thread_wrap{ std::thread{ [threadID, &boot_count] {
 							// pre-warm this thread's heap
 							for (int i = 0; i < 100000; i++) delete (new int(5));
+							for (int i = 0; i < 100000; i++) GL::free(GL::alloc<int>());
 
 							internal_state.threads[threadID].thread_hash = std::hash<std::thread::id>{}(std::this_thread::get_id());
 							internal_state.threads[threadID].thread_index = GL::util::get_thread_id();

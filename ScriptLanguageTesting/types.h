@@ -387,26 +387,13 @@ namespace GL {
         template<class T> struct get_type<const GL::atomic_shared_ptr<T>*> { typedef typename get_type<T>::type type; };
 
         class any_data {
-        protected:
-            any_data(GL::type p_actual_type) 
-                : m_actual_type{ p_actual_type }
-                , m_data{ nullptr } 
-            {};
         public:
-            any_data() = delete;
-            any_data(any_data const&) = delete;
-            any_data(any_data &&) = delete;
-            any_data& operator=(any_data const&) = delete;
-            any_data& operator=(any_data&&) = delete;
-            virtual ~any_data() = default;
-
+            virtual GL::type const& get_type() const = 0;
+            virtual void* get() const = 0;
             virtual GL::shared_ptr<void> get(GL::shared_ptr<any_data>&&) = 0;
             virtual std::shared_ptr<void> get_std(GL::shared_ptr<any_data>&&) = 0;
             
-            template <typename T>
-            T* cast() const {
-                return reinterpret_cast<T*>(m_data);
-            };
+            template <typename T> T* cast() const { return reinterpret_cast<T*>(get()); };
 
             // returns true if this type can easily match the requested type (e.g. int& -> const int&)
             virtual bool can_free_cast(type const& to) const = 0;
@@ -414,27 +401,25 @@ namespace GL {
             virtual bool can_cast(type const& to) const = 0;
             virtual bool can_cast_var() const = 0;
             virtual bool can_cast_dynamic_object() const = 0;
-            virtual GL::type get_type() const = 0;
-
-        public:
-            GL::type m_actual_type; // atomic type information. May be updated to include information such as the const-ness or temporary type. This should (usually) be the base type. 
-            void* m_data; // pointer to the actual data, for quicker access. 
-
         };
 
         template <typename T>
         class shared_data final : public any_data {
         public:
-            shared_data(GL::shared_ptr<T>&& p_ptr) : m_ptr(std::forward<GL::shared_ptr<T>>(p_ptr)), any_data(GL::type_of<T>()) {
-                this->m_data = m_ptr.get();
-            };
-            virtual ~shared_data() = default;
+            shared_data(GL::shared_ptr<T>&& p_ptr) : m_ptr(std::forward<GL::shared_ptr<T>>(p_ptr)) {};
+            ~shared_data() = default;
 
+            GL::type const& get_type() const override {
+                return GL::type_of<T>();
+            };
+            void* get() const override {
+                return m_ptr.get();
+            };
             GL::shared_ptr<void> get(GL::shared_ptr<any_data>&&) override {
                 return m_ptr;
             };
             std::shared_ptr<void> get_std(GL::shared_ptr<any_data>&&) override {
-                return std::shared_ptr<void>(this->m_data, [ptr = m_ptr](void* p) -> void {
+                return std::shared_ptr<void>(get(), [ptr = m_ptr](void* p) -> void {
                     if (p != ptr.get()) {
                         std::cout << "ERROR1\n";
                     }
@@ -491,9 +476,6 @@ namespace GL {
                     return false;
                 }
             };
-            GL::type get_type() const override {
-                return GL::type_of<T>();
-            };
 
         public:
             GL::shared_ptr< T > m_ptr;
@@ -504,23 +486,26 @@ namespace GL {
         class instanced_data final : public any_data {
         public:
             template <typename... TArgs>
-            instanced_data(TArgs &&... a) noexcept
-                : any_data(GL::type_of<T>())
-            {       
+            instanced_data(TArgs &&... a) noexcept {       
                 if constexpr ((sizeof...(TArgs) > 0) || !std::is_pod<T>::value) {
                     new (reinterpret_cast<T*>(&m_obj[0])) T(_STD forward<TArgs>(a)...);
                 }
                 else {
                     std::memset(&m_obj[0], 0, sizeof(m_obj));
                 }
-                this->m_data = reinterpret_cast<T*>(&m_obj[0]);
             };
-            virtual ~instanced_data() {
+            ~instanced_data() {
                 if constexpr (!std::is_pod_v<T>) {
                     reinterpret_cast<T*>(&m_obj[0])->~T();
                 }
             };
-
+            
+            GL::type const& get_type() const override {
+                return GL::type_of<T>();
+            };
+            void* get() const override {
+                return const_cast<void*>(reinterpret_cast<const void*>(&m_obj[0]));
+            };
             GL::shared_ptr<void> get(GL::shared_ptr<any_data>&& parent_ptr) override {
                 if (parent_ptr) {
                     GL::shared_ptr<T> out(parent_ptr.release_control_block(), true);
@@ -530,7 +515,7 @@ namespace GL {
                 return nullptr;
             };
             std::shared_ptr<void> get_std(GL::shared_ptr<any_data>&& parent_ptr) override {
-                return std::shared_ptr<void>(this->m_data, [ptr = std::forward<GL::shared_ptr<any_data>>(parent_ptr)](void* p) -> void {
+                return std::shared_ptr<void>(get(), [ptr = std::forward<GL::shared_ptr<any_data>>(parent_ptr)](void* p) -> void {
                     if (p != ptr.get()) {
                         std::cout << "ERROR2\n";
                     }
@@ -587,9 +572,6 @@ namespace GL {
                     return false;
                 }
             };
-            GL::type get_type() const override {
-                return GL::type_of<T>();
-            };
 
         public:
             unsigned char
@@ -599,14 +581,15 @@ namespace GL {
         template <typename T>
         class std_shared_data final : public any_data {
         public:
-            std_shared_data(std::shared_ptr<T> && a) noexcept
-                : m_obj(std::forward<std::shared_ptr<T>>(a))
-                , any_data(GL::type_of<T>())
-            {
-                this->m_data = m_obj.get();
-            };
-            virtual ~std_shared_data() = default;
+            std_shared_data(std::shared_ptr<T> && a) noexcept : m_obj(std::forward<std::shared_ptr<T>>(a)) {};
+            ~std_shared_data() = default;
 
+            GL::type const& get_type() const override {
+                return GL::type_of<T>();
+            };
+            void* get() const override {
+                return m_obj.get();
+            };
             GL::shared_ptr<void> get(GL::shared_ptr<any_data>&& parent_ptr) override {
                 if (parent_ptr) {
                     auto* control_block = parent_ptr.release_control_block();
@@ -668,9 +651,6 @@ namespace GL {
                 else {
                     return false;
                 }
-            };
-            GL::type get_type() const override {
-                return GL::type_of<T>();
             };
 
         public:
@@ -880,7 +860,7 @@ namespace GL {
     private:
         void correct_type_information() {
             if (auto f = m_ptr.load_fast(); f) {
-                if (f->m_actual_type.is_var()/*f->can_cast_var()*/) {
+                if (f->get_type().is_var()/*f->can_cast_var()*/) {
                     if (auto* V = f->cast<var>()) {
                         m_casted_type = V->get_type();
                         if (m_casted_type.is_void()) {
@@ -888,7 +868,7 @@ namespace GL {
                         }
                     }
                 }
-                if (f->m_actual_type.is_dynamic_object()/*f->can_cast_dynamic_object()*/) {
+                if (f->get_type().is_dynamic_object()/*f->can_cast_dynamic_object()*/) {
                     if (auto* V = f->cast<dynamic_object>()) {
                         m_casted_type = V->m_type;
                     }
@@ -1017,7 +997,7 @@ namespace GL {
         bool can_free_cast(type const& to) const {
             if (m_casted_type.can_free_cast(to)) return true;
             //if (auto ptr = m_ptr.load_fast()) {                    
-            //    return ptr->m_actual_type.can_free_cast(to);
+            //    return ptr->get_type().can_free_cast(to);
             //}
             return false;
         };
@@ -1025,10 +1005,10 @@ namespace GL {
         bool can_cast(type const& to) const {
             if (m_casted_type.can_cast(to)) return true;
             if (auto ptr = m_ptr.load_fast()) {
-                if (ptr->m_actual_type.can_cast(to)) return true;
+                if (ptr->get_type().can_cast(to)) return true;
                 
-                if (ptr->m_actual_type.is_dynamic_object()/*ptr->can_cast_dynamic_object()*/ && (to.get_base_hash() == GL::type_of<GL::dynamic_object>().get_base_hash())) { return true; }
-                if (ptr->m_actual_type.is_var()/*ptr->can_cast_var()*/) {
+                if (ptr->get_type().is_dynamic_object()/*ptr->can_cast_dynamic_object()*/ && (to.get_base_hash() == GL::type_of<GL::dynamic_object>().get_base_hash())) { return true; }
+                if (ptr->get_type().is_var()/*ptr->can_cast_var()*/) {
                     if (to.get_base_hash() == GL::type_of<GL::var>().get_base_hash()) return true;
                     if (auto f = ptr->cast<GL::var>()->get_data(); f) {
                         return f->can_cast(to);
@@ -1038,7 +1018,7 @@ namespace GL {
             return false;
         };
         GL::type const& get_actual_type() const {
-            if (auto ptr = m_ptr.load_fast()) return ptr->m_actual_type;
+            if (auto ptr = m_ptr.load_fast()) return ptr->get_type();
             else {
                 static GL::type out{};
                 return out;
@@ -1052,7 +1032,7 @@ namespace GL {
         void* ptr() const {
             if (auto p = m_ptr.load_fast())
                 if (auto p2 = p.get())
-                    return p2->m_data;
+                    return p2->get();
             return nullptr;
         };
         GL::shared_ptr<void> shared_ptr() const {
@@ -1105,7 +1085,7 @@ namespace GL {
                 auto& any_p = container.operator*();
                 if constexpr (is_ptr) {
                     if (any_p.can_cast(type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>())) {
-                        return reinterpret_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(any_p.m_data);
+                        return reinterpret_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(any_p.get());
                     }
                     else {                                
                         return static_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(nullptr);
@@ -1116,7 +1096,7 @@ namespace GL {
                         return *any_p.cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>();
                     //}
                     //else {
-                    //    auto err = "Cannot cast from `" + any_p.m_actual_type.name() + "` to `" + type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>().name() + "`";
+                    //    auto err = "Cannot cast from `" + any_p.get_type().name() + "` to `" + type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>().name() + "`";
                     //    throw std::runtime_error(err.to_string());
                     //}
                 }
@@ -1133,7 +1113,7 @@ namespace GL {
                 
                 if constexpr (is_ptr) {
                     if (container->can_cast(type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>())) {
-                        return reinterpret_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(container->m_data);
+                        return reinterpret_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(container->get());
                     }
                     else {
                         return static_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(nullptr);
@@ -1144,7 +1124,7 @@ namespace GL {
                         return *container->cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>();
                     //}
                     //else {
-                    //    auto err = "Cannot cast from `" + container->m_actual_type.name() + "` to `" + type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>().name() + "`";
+                    //    auto err = "Cannot cast from `" + container->get_type().name() + "` to `" + type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>().name() + "`";
                     //    throw std::runtime_error(err.to_string());
                     //}
                 }
@@ -1294,7 +1274,7 @@ namespace GL {
         private:
             void correct_type_information() {
                 if (m_ptr) {
-                    if (m_ptr->m_actual_type.is_var() /*can_cast_var()*/) {
+                    if (m_ptr->get_type().is_var() /*can_cast_var()*/) {
                         if (auto* V = m_ptr->cast<var>()) {
                             m_casted_type = V->get_type();
                             if (m_casted_type.is_void()) {
@@ -1388,7 +1368,7 @@ namespace GL {
             bool can_free_cast(type const& to) const {
                 if (m_casted_type.can_free_cast(to)) return true;
                 //if (auto ptr = m_ptr.load_fast()) {                    
-                //    return ptr->m_actual_type.can_free_cast(to);
+                //    return ptr->get_type().can_free_cast(to);
                 //}
                 return false;
             };
@@ -1396,9 +1376,9 @@ namespace GL {
             bool can_cast(type const& to) const {
                 if (m_casted_type.can_cast(to)) return true;
                 if (m_ptr) {
-                    if (m_ptr->m_actual_type.can_cast(to)) return true;
-                    if (m_ptr->m_actual_type.is_dynamic_object() /*can_cast_dynamic_object()*/ && (to.get_base_hash() == GL::type_of<GL::dynamic_object>().get_base_hash())) { return true; }
-                    if (m_ptr->m_actual_type.is_var() /*can_cast_var()*/) {
+                    if (m_ptr->get_type().can_cast(to)) return true;
+                    if (m_ptr->get_type().is_dynamic_object() /*can_cast_dynamic_object()*/ && (to.get_base_hash() == GL::type_of<GL::dynamic_object>().get_base_hash())) { return true; }
+                    if (m_ptr->get_type().is_var() /*can_cast_var()*/) {
                         if (to.get_base_hash() == GL::type_of<GL::var>().get_base_hash()) return true;
                         if (auto f = m_ptr->cast<GL::var>()->get_data(); f) {
                             return f->can_cast(to);
@@ -1408,7 +1388,7 @@ namespace GL {
                 return false;
             };
             GL::type const& get_actual_type() const {
-                if (m_ptr) return m_ptr->m_actual_type;
+                if (m_ptr) return m_ptr->get_type();
                 else {
                     static GL::type out{};
                     return out;
@@ -1420,7 +1400,7 @@ namespace GL {
         private:
             void* ptr() const {
                 if (m_ptr)
-                    return m_ptr->m_data;
+                    return m_ptr->get();
                 return nullptr;
             };
             GL::shared_ptr<void> shared_ptr() const {

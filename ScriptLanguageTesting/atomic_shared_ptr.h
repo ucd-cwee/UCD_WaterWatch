@@ -7,6 +7,7 @@
 #include <winnt.h>
 // #include "../GpuProgramming/matrix.h"
 // #include "atomic_allocator.h"
+#include "util.h"
 #include "basic_atomic_allocator.h"
 
 namespace /* atomic_shared_ptr */ GL {
@@ -50,17 +51,14 @@ namespace /* atomic_shared_ptr */ GL {
             delete static_cast<T*>(this->data_pointer);
         };
         void DeleteSelf(control_block_base* p) override {
-            reinterpret_cast<control_block<T>*>(p)->~control_block();
-            Deallocate(reinterpret_cast<void*>(p));
-            //delete reinterpret_cast<control_block<T>*>(p);
+            GL::free(reinterpret_cast<control_block<T>*>(p));
+            //reinterpret_cast<control_block<T>*>(p)->~control_block();
+            //Deallocate(reinterpret_cast<void*>(p));
         };
 
     public:
         template<class... _Types> static control_block<T>* AllocateSelf(T* _data) {
-            auto* ptr = reinterpret_cast<control_block<T>*>(Allocate(sizeof(control_block<T>)));
-            new (ptr) control_block<T>(_data);
-            return ptr;
-            //return new control_block<T>(_data);
+            return GL::alloc<control_block<T>>(_data);
         };
 
     };
@@ -79,19 +77,15 @@ namespace /* atomic_shared_ptr */ GL {
             delete_func(static_cast<T*>(this->data_pointer));
         };
         void DeleteSelf(control_block_base* p) override {
-            reinterpret_cast<deleter_control_block<T>*>(p)->~deleter_control_block();
-            Deallocate(reinterpret_cast<void*>(p));
+            GL::free(reinterpret_cast<deleter_control_block<T>*>(p));
 
-            //delete reinterpret_cast<deleter_control_block<T>*>(p);
+            //reinterpret_cast<deleter_control_block<T>*>(p)->~deleter_control_block();
+            //Deallocate(reinterpret_cast<void*>(p));
         };
 
     public:
         template<class... _Types> static deleter_control_block<T>* AllocateSelf(T* data, std::function<void(T*)>&& deleter) {     
-            auto* ptr = reinterpret_cast<deleter_control_block<T>*>(Allocate(sizeof(deleter_control_block<T>)));
-            new (ptr) deleter_control_block<T>(data, std::move(deleter));
-            return ptr;
-
-            //return new deleter_control_block<T>(data, std::move(deleter));
+            return GL::alloc<deleter_control_block<T>>(data, std::move(deleter));
         };
     };
     template<typename T> struct embedded_control_block final : public control_block_base {
@@ -109,17 +103,14 @@ namespace /* atomic_shared_ptr */ GL {
             }
         };
         void DeleteSelf(control_block_base* p) override {
-            //delete reinterpret_cast<embedded_control_block<T>*>(p);
-            reinterpret_cast<embedded_control_block<T>*>(p)->~embedded_control_block();
-            Deallocate(reinterpret_cast<void*>(p));
+            GL::free(reinterpret_cast<embedded_control_block<T>*>(p));
+            //reinterpret_cast<embedded_control_block<T>*>(p)->~embedded_control_block();
+            //Deallocate(reinterpret_cast<void*>(p));
         };
 
     public:        
         template<class... _Types> static embedded_control_block<T>* AllocateSelf(_Types&&... _Args) {
-            //return new embedded_control_block<T>(_STD forward<_Types>(_Args)...);
-            auto* ptr = reinterpret_cast<embedded_control_block<T>*>(Allocate(sizeof(embedded_control_block<T>)));
-            new (ptr) embedded_control_block<T>(_STD forward<_Types>(_Args)...);
-            return ptr;
+            return GL::alloc<embedded_control_block<T>>(_STD forward<_Types>(_Args)...);
         };
 
     };
@@ -136,18 +127,15 @@ namespace /* atomic_shared_ptr */ GL {
             reinterpret_cast<T*>(&this->data_pointer)->~T();
         };
         void DeleteSelf(control_block_base* p) override {
-            //delete reinterpret_cast<embedded_control_block_tiny<T>*>(p);
-             reinterpret_cast<embedded_control_block_tiny<T>*>(p)->~embedded_control_block_tiny();
-             Deallocate(reinterpret_cast<void*>(p));
+            GL::free(reinterpret_cast<embedded_control_block_tiny<T>*>(p));
+
+             //reinterpret_cast<embedded_control_block_tiny<T>*>(p)->~embedded_control_block_tiny();
+             //Deallocate(reinterpret_cast<void*>(p));
         };
 
     public:
         template<class... _Types> static embedded_control_block_tiny<T>* AllocateSelf(_Types&&... _Args) {
-            auto* ptr = reinterpret_cast<embedded_control_block_tiny<T>*>(Allocate(sizeof(embedded_control_block_tiny<T>)));
-            new (ptr) embedded_control_block_tiny<T>(_STD forward<_Types>(_Args)...);
-            return ptr;
-
-            // return new embedded_control_block_tiny<T>(_STD forward<_Types>(_Args)...);
+            return GL::alloc<embedded_control_block_tiny<T>>(_STD forward<_Types>(_Args)...);
         };
 
     };

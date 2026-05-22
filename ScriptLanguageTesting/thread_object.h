@@ -37,9 +37,9 @@ namespace GL {
             // step 2, detect if the thread id changed (including if it was never initialized at all)
             if (_tls_slot.first != _tl_unique_id) {
                 InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_slot.first), _tl_unique_id);
-                T* newPtr{ new T(_default) };
+                T* newPtr{ GL::alloc<T>(_default) };
                 if (T* old_ptr = reinterpret_cast<T*>(InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&_tls_slot.second), newPtr))) {
-                    delete old_ptr;
+                    GL::free(old_ptr);
                 }
             }
 
@@ -64,7 +64,7 @@ namespace GL {
                 _tls.grow_to_at_least(index + 1);
                 _tls[index].first = x.first;
                 if (x.second) {
-                    _tls[index].second = new T(*x.second);
+                    _tls[index].second = GL::alloc<T>(*x.second);
                 }
                 ++index;
             }
@@ -73,7 +73,7 @@ namespace GL {
         thread_object& operator=(thread_object const&) = delete;
         thread_object& operator=(thread_object&&) = delete;
         ~thread_object() {
-            for (auto& x : _tls) if (x.second) delete x.second;
+            for (auto& x : _tls) if (x.second) GL::free(x.second);
         };
 
         T* operator->() { return &GetTLS(); };
@@ -140,9 +140,9 @@ namespace GL {
             // step 2, detect if the thread id changed (including if it was never initialized at all)
             if (_tls_slot.first != _tl_unique_id) {
                 InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_slot.first), _tl_unique_id);
-                T* newPtr{ new T(std::move(args)...) };
+                T* newPtr{ GL::alloc<T>(std::move(args)...) };
                 if (T* old_ptr = reinterpret_cast<T*>(InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&_tls_slot.second), newPtr))) {
-                    delete old_ptr;
+                    GL::free(old_ptr);
                 }
             }
 
@@ -168,9 +168,9 @@ namespace GL {
             // step 2, detect if the thread id changed (including if it was never initialized at all)
             if (_tls_slot.first != _tl_unique_id) {
                 InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_slot.first), _tl_unique_id);
-                T* newPtr{ new T(args...) };
+                T* newPtr{ GL::alloc<T>(args...) };
                 if (T* old_ptr = reinterpret_cast<T*>(InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&_tls_slot.second), newPtr))) {
-                    delete old_ptr;
+                    GL::free(old_ptr);
                 }
             }
 
@@ -195,9 +195,9 @@ namespace GL {
             // step 2, detect if the thread id changed (including if it was never initialized at all)
             if (_tls_slot.first != _tl_unique_id) {
                 InterlockedExchange(reinterpret_cast<volatile size_t*>(&_tls_slot.first), _tl_unique_id);
-                T* newPtr{ new T() };
+                T* newPtr{ GL::alloc<T>() };
                 if (T* old_ptr = reinterpret_cast<T*>(InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&_tls_slot.second), newPtr))) {
-                    delete old_ptr;
+                    GL::free(old_ptr);
                 }
             }
 
@@ -238,7 +238,7 @@ namespace GL {
             for (int i = 0; i < _tls_size + 1; ++i) {
                 if (_tls.size() < i) {
                     if (auto* p = _tls.at(i).second; p) {
-                        delete p;
+                        GL::free(p);
                     }
                     _tls.at(i).second = nullptr;
                 }
@@ -246,7 +246,7 @@ namespace GL {
 
             for (auto& x : _tls) {
                 if (x.second) 
-                    delete x.second;
+                    GL::free(x.second);
                 x.second = nullptr;
             }
         };

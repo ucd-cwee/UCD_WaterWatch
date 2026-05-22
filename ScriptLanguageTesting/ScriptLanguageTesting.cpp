@@ -90,11 +90,11 @@ public:
 
     template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> static any instance(const ValueType& value) noexcept {
         size_t uuid = uuid::new_uuid(GL::type_erasure::wrap(value));
-        return any((size_t)uuid, reinterpret_cast<GL::shared_ptr<GL::type_erasure::any_data>*>(&uuid::get_uuid(uuid).data)->operator->()->m_data, GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>());
+        return any((size_t)uuid, reinterpret_cast<GL::shared_ptr<GL::type_erasure::any_data>*>(&uuid::get_uuid(uuid).data)->operator->()->get(), GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>());
     };
     template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> static any instance(ValueType&& value) noexcept {
         size_t uuid = uuid::new_uuid(GL::type_erasure::wrap(std::forward<ValueType>(value)));
-        return any((size_t)uuid, reinterpret_cast<GL::shared_ptr<GL::type_erasure::any_data>*>(&uuid::get_uuid(uuid).data)->operator->()->m_data, GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>());
+        return any((size_t)uuid, reinterpret_cast<GL::shared_ptr<GL::type_erasure::any_data>*>(&uuid::get_uuid(uuid).data)->operator->()->get(), GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>());
     };
     static any instance(any&& value) noexcept {
         return std::forward<any>(value);
@@ -267,32 +267,32 @@ public:
 
     /// \todo it is a performance increase to allow the return value to be "referenced" rather than incremented/decremented properly, however, is this safe in practice?
     template <typename T> __declspec(noinline) static any wrap_member(any const& parent, T const& ref) noexcept {       
-        //if ((parent.m_uuid & 0x1000'0000'0000'0000) > 0) {
-        //    return any((size_t)parent.m_uuid, &const_cast<T&>(ref), GL::type_of<T const&>());
-        //}
-        //else {
+        if ((parent.m_uuid & 0x1000'0000'0000'0000) > 0) {
+            return any((size_t)parent.m_uuid, &const_cast<T&>(ref), GL::type_of<T const&>());
+        }
+        else {
             size_t uuid = parent.m_uuid & uuid::INV_FLAGS;
             if (uuid > 0) InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(uuid).count));
             return any(std::move(uuid), &const_cast<T&>(ref), GL::type_of<T const&>());
-        //}
+        }
     };
     /// \todo it is a performance increase to allow the return value to be "referenced" rather than incremented/decremented properly, however, is this safe in practice?
     template <typename T> __declspec(noinline) static any wrap_member(any const& parent, T& ref) noexcept {
-        //if ((parent.m_uuid & 0x1000'0000'0000'0000) > 0) {
-        //    return any((size_t)parent.m_uuid, &ref, GL::type_of<T&>());
-        //}
-        //else {
+        if ((parent.m_uuid & 0x1000'0000'0000'0000) > 0) {
+            return any((size_t)parent.m_uuid, &ref, GL::type_of<T&>());
+        }
+        else {
             size_t uuid = parent.m_uuid & uuid::INV_FLAGS;
             if (uuid > 0) InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(uuid).count));
             return any(std::move(uuid), &ref, GL::type_of<T&>());
-        //}
+        }
     };
 
 };
 
 // Definition
 namespace uuid {
-    static GL::fast_ticket_dispensor<false> tickets;
+    static GL::fast_ticket_dispensor tickets;
     static GL::atomic_vector< uuid_ticket > slots; 
     size_t new_uuid(GL::shared_ptr<void>&& rhs) noexcept {
         size_t uuid = tickets.get_ticket();
@@ -1128,7 +1128,12 @@ public:
         else {
             any out;
             call(any::instance(std::forward<Args>(args))..., &out);
-            return (T)out.cast<T>();
+            if constexpr (std::is_same_v<any, T>) {
+                return out;
+            }
+            else {
+                return (T)out.cast<T>();
+            }
         }
     };
 };
@@ -1557,32 +1562,46 @@ template <typename Function> GL::shared_ptr<Function_Caller> make_callable(Funct
 
 class Function {
 public:
-    const GL::shared_ptr<Function_Caller> ptr;
-    const GL::string name;
-    const std::array<const GL::type*, 16> arguments;
+    const GL::fast_shared_ptr<Function_Caller> ptr;
+    GL::string name;
+    const size_t num_arguments;
+    std::array<GL::type, 16> arguments;
     const GL::type* returns;
     std::array<any, 16> defaults;
 
     Function(GL::shared_ptr<Function_Caller>&& rhs)
         : ptr{ std::forward<GL::shared_ptr<Function_Caller>>(rhs) }
         , name{ "undeclared" }
-        , arguments{ ptr->arguments() }
+        , num_arguments{ ptr->num_arguments() }
+        , arguments{}
         , returns{ &ptr->returns() }
         , defaults{}
-    {};
+    {
+        auto actual_args = ptr->arguments();
+        for (int i = 0; i < 16; ++i) 
+            if (actual_args[i]) arguments[i] = *actual_args[i];
+            else arguments[i] = GL::type_of<GL::undefined>();
+        
+    };
 
 private:
     GL::string returns_string() const {
         if (returns) return returns->name();
         return "";
     };
+    GL::string argument_string(size_t index) const {
+        if (arguments[index] == GL::type_of<GL::undefined>()) return GL::string::empty_string();
+        else if (defaults[index]) {
+            return arguments[index].name() + " = {}"; /// \todo
+        }
+        else {
+            return arguments[index].name();
+        }
+    };
     GL::string arguments_string() const  {
         GL::string out;
-        for (auto& x : arguments) {
-            if (!x) break;
-            if (*x == GL::type_of<GL::undefined>()) break;
-            out = out.add_to_delim(x->name(), ", ");
-        }
+        for (size_t i = 0; i < num_arguments; ++i)
+            out = out.add_to_delim(argument_string(i), ", ");
         return out;
     };
 
@@ -1591,7 +1610,54 @@ public:
         return (returns_string() + " " + name + "(" + arguments_string() + ")").remove_leading_and_trailing(' ');
     };
 
+    // Convenience function that will allow the user to easily call a proxy function with arguments.
+    // Will automatically add default parameters if the number of arguments is less than required. 
+    // Does NOT handle type-conversions and assumes perfect type matches, INCLUDING WITH THE DEFAULT VALUES.
+    template<typename T = void, typename... Args> decltype(auto) do_call(Args&&... args) const {
+        static constexpr size_t num_provided_args{ std::tuple_size_v< std::tuple<Args...> > };
+        if (num_provided_args >= num_arguments) {
+            if constexpr (std::is_same_v<void, T>) {
+                ptr->call(any::instance(std::forward<Args>(args))..., nullptr);
+            }
+            else {
+                any out;
+                ptr->call(any::instance(std::forward<Args>(args))..., &out);
+                if constexpr (std::is_same_v<any, T>) {
+                    return out;
+                }
+                else {
+                    return (T)out.cast<T>();
+                }
+            }
+        }
+        else {
+            unsigned char buf[sizeof(any) * 16];
+            int position = 0;
+            ([&]{ // unwrap the parameter pack
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<decltype(args)>(args), true); 
+            }(), ...);
+            for (; position < num_arguments; ++position) {
+                new (&reinterpret_cast<any*>(&buf[0])[position]) any(defaults[position], true);
+            }
+            
+            if constexpr (std::is_same_v<void, T>) {
+                ptr->call(reinterpret_cast<any*>(&buf[0]), nullptr);
+            }
+            else {
+                any out;
+                ptr->call(reinterpret_cast<any*>(&buf[0]), &out);
+                if constexpr (std::is_same_v<any, T>) {
+                    return out;
+                }
+                else {
+                    return (T)out.cast<T>();
+                }
+            }
+        }
+    };
+
 };
+
 
 
 
@@ -1629,7 +1695,7 @@ int main() {
 
 
     while (1) {  
-        switch ((int)std::floor(GL::util::rand(0, 12.999))) {
+        switch ((int)std::floor(GL::util::rand(0, 14.999))) {
         case 0: {
                 GL::string ref = "this";
                 if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (unboxed value)\t")) {
@@ -1699,40 +1765,40 @@ int main() {
         } break;
         case 7: {
             Function callable{ make_callable(&GL::string::begins_with) };
-            std::cout << callable.to_string() << std::endl;
+            //std::cout << callable.to_string() << std::endl;
             std::array<any, 2> example{
                 any::instance(GL::string("this")),
                 any::instance(GL::string("this"))
             };
             if (auto timer = GL::stopwatch().debug_timer("\"this\".begins_with(\"this\") with generalized callable and w/o converters, no conversion needed, w/o return")) {
                 for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
-                    (void)callable.ptr->call(example[0], example[1], nullptr);
+                    (void)callable.do_call(any(example[0], true), any(example[1], true));
                 }//);
             }
         } break;
         case 9: {
             Function callable{ make_callable([](GL::string const& LHS, GL::string const& RHS) -> auto { return LHS.begins_with(RHS); }) };
-            std::cout << callable.to_string() << std::endl;
+            //std::cout << callable.to_string() << std::endl;
             std::array<any, 2> example{
                 any::instance(GL::string("this")),
                 any::instance(GL::string("this"))
             };
             if (auto timer = GL::stopwatch().debug_timer("GL::string::begins_with() with non-capturing lambda function and w/o converters, no conversion needed, w/o return")) {
                 for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
-                    (void)callable.ptr->call(example[0], example[1], nullptr);
+                    (void)callable.do_call(any(example[0], true), any(example[1], true));
                 }//);
             }
         } break;
         case 10: {
             Function callable{ make_callable([](GL::string const& LHS, GL::string const& RHS) -> bool { return LHS.begins_with(RHS); }) };
-            std::cout << callable.to_string() << std::endl;
+            //std::cout << callable.to_string() << std::endl;
             std::array<any, 2> example{
                 any::instance(GL::string("this")),
                 any::instance(GL::string("this"))
             };
             if (auto timer = GL::stopwatch().debug_timer("GL::string::begins_with() with do-call w/ return")) {
                 for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
-                    callable.ptr->do_call<bool>(any(example[0], true), any(example[1], true));
+                    callable.do_call<bool>(any(example[0], true), any(example[1], true));
                 }//);
             }
         } break;
@@ -1745,10 +1811,10 @@ int main() {
                 any::instance(TEST{ GL::string("this"), GL::string("that") })
             };
             Function callable{ make_callable(&TEST::obj2) };
-            std::cout << callable.to_string() << std::endl;
+            //std::cout << callable.to_string() << std::endl;
             if (auto timer = GL::stopwatch().debug_timer("TEST::obj, w/o return")) {
                 for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
-                    (void)callable.ptr->call(any(example[0], true), nullptr);
+                    (void)callable.do_call(any(example[0], true));
                 }//);
             }
         } break;
@@ -1761,13 +1827,47 @@ int main() {
                 any::instance(TEST{ GL::string("this"), GL::string("that") })
             };
             Function callable{ make_callable(&TEST::obj2) };
-            std::cout << callable.to_string() << std::endl;
-            any out;
+            //std::cout << callable.to_string() << std::endl;
             if (auto timer = GL::stopwatch().debug_timer("TEST::obj, w/ return")) {                
                 for (int i = 0; i < 1'000'000; ++i){//GL::parallel::For(0, 1'000'000, [&]() { any out;
-                    (void)callable.ptr->call(any(example[0], true), &out);
-                    // if (out.cast<GL::string&>() != GL::string("that")) throw "ERROR";
+                    (void)callable.do_call<GL::string&>(any(example[0], true));
+                    // if (callable.do_call<GL::string&>(any(example[0], true)) != GL::string("that")) throw "ERROR";
                 }//);                
+            }
+        } break;
+        case 13: {
+            Function callable{ make_callable([](GL::string const& LHS, GL::string const& RHS) -> bool { return LHS.begins_with(RHS); }) };
+            callable.name = "begins_with";
+            callable.defaults[1] = any::instance(GL::string("this"));
+
+            // std::cout << callable.to_string() << std::endl;
+            std::array<any, 1> example{
+                any::instance(GL::string("this"))
+            };
+            if (auto timer = GL::stopwatch().debug_timer("GL::string::begins_with() with do-call w/o return w/ default value")) {
+                for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
+                    callable.do_call(any(example[0], true));
+                }//);
+            }
+        } break;
+        case 14: {
+            GL::script_type Custom_Type("Custom");
+            Function callable{ make_callable([](any const& LHS, any const& RHS) -> bool { 
+                return LHS.cast<GL::string const&>().begins_with(RHS.cast<GL::string const&>());
+            }) };
+            callable.name = "begins_with";
+            callable.arguments[0] = Custom_Type.load();
+            callable.arguments[1] = Custom_Type.load();
+            callable.defaults[1] = any::instance(GL::string("this"));
+
+            // std::cout << callable.to_string() << std::endl;
+            std::array<any, 1> example{
+                any::instance(GL::string("this"))
+            };
+            if (auto timer = GL::stopwatch().debug_timer("Custom::begins_with(LHS, RHS) with do-call w/o return w/ default value")) {
+                for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
+                    callable.do_call(any(example[0], true));
+                }//);
             }
         } break;
         }

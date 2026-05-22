@@ -10,8 +10,30 @@
 #include "ticket_dispensor.h"
 #include "stopwatch.h"
 #include <map>
+#include "multithreaded_allocator.h"
 
 namespace GL {
+    static auto Settup = []() -> bool {
+        struct calc {
+            static bool in_parallel(void) {
+                return true;
+            };
+            static size_t thread_num(void) {
+                return GL::util::get_thread_id();
+            };
+        };
+        CppAD::thread_alloc::hold_memory(true);
+        CppAD::thread_alloc::parallel_setup(GL::util::get_hardware_thread_count(), &calc::in_parallel, &calc::thread_num);
+        return true;
+    }();
+
+    void* malloc(size_t bytes) {
+        return CppAD::thread_alloc::get_memory(bytes, bytes);
+    };
+    void mfree(void* ptr) {
+        CppAD::thread_alloc::return_memory(ptr);
+    };
+
     namespace util {
         class ticket_return {
         private:
@@ -282,13 +304,13 @@ namespace GL {
         };
         // 0..max or max..0
         double rand(double max) {
-            if (max >= 0) return rand_impl().Random(0.0, max);            
-            else return rand_impl().Random(max, 0.0);            
+            if (max >= 0) return rand_impl().Random(0.0, max);
+            else return rand_impl().Random(max, 0.0);
         };
         // min..max or max..min
         double rand(double min, double max) {
-            if (max >= min) return rand_impl().Random(min, max);            
-            else return rand_impl().Random(max, min);            
+            if (max >= min) return rand_impl().Random(min, max);
+            else return rand_impl().Random(max, min);
         };
 
         // 0..1
@@ -297,13 +319,13 @@ namespace GL {
         };
         // 0..max or max..0
         double rand_fast(double max) {
-            if (max >= 0) return rand_impl().FastRandom(0.0, max);            
-            else return rand_impl().FastRandom(max, 0.0);            
+            if (max >= 0) return rand_impl().FastRandom(0.0, max);
+            else return rand_impl().FastRandom(max, 0.0);
         };
         // min..max or max..min
         double rand_fast(double min, double max) {
-            if (max >= min) return rand_impl().FastRandom(min, max);            
-            else return rand_impl().FastRandom(max, min);            
+            if (max >= min) return rand_impl().FastRandom(min, max);
+            else return rand_impl().FastRandom(max, min);
         };
 
         size_t type_hash_impl::get_next_ticket(size_t original_hash) {
