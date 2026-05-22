@@ -26,6 +26,7 @@
 //#include "strings.h"
 //#include "types.h"
 #include "scripting.h"
+#include "datetime.h"
 
 // Declaration
 namespace uuid {
@@ -831,6 +832,18 @@ public:
     virtual ~Function_Caller() = default;   
     // implimentation-specific function
     virtual void call(const any* begin, any* out) const = 0;
+    virtual size_t num_arguments() const = 0;
+    virtual GL::type const& argument(size_t index) const = 0;
+    virtual GL::type const& returns() const = 0;
+    std::array<const GL::type*, 16> arguments() const {
+        return std::array<const GL::type*, 16>{
+            &argument(0),&argument(1),&argument(2),&argument(3),
+            &argument(4),&argument(5),&argument(6),&argument(7),
+            &argument(8),&argument(9),&argument(10),&argument(11),
+            &argument(12),&argument(13),&argument(14),&argument(15)
+        };
+    };
+
     /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
     void call(
         const any& p0, const any& p1, const any& p2, const any& p3,
@@ -1143,6 +1156,52 @@ namespace {
                 }
             }
         };
+        size_t num_arguments() const override {
+            return traits::numArgs + 1;
+        };
+        GL::type const& argument(size_t index) const override {
+            if (index == 0)
+                return GL::type_of<typename traits::classType>();
+            switch (index - 1) {
+            case 0: if constexpr (traits::numArgs > 0) return GL::type_of<std::tuple_element_t<0, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 1: if constexpr (traits::numArgs > 1) return GL::type_of<std::tuple_element_t<1, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 2: if constexpr (traits::numArgs > 2) return GL::type_of<std::tuple_element_t<2, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 3: if constexpr (traits::numArgs > 3) return GL::type_of<std::tuple_element_t<3, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 4: if constexpr (traits::numArgs > 4) return GL::type_of<std::tuple_element_t<4, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 5: if constexpr (traits::numArgs > 5) return GL::type_of<std::tuple_element_t<5, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 6: if constexpr (traits::numArgs > 6) return GL::type_of<std::tuple_element_t<6, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 7: if constexpr (traits::numArgs > 7) return GL::type_of<std::tuple_element_t<7, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 8: if constexpr (traits::numArgs > 8) return GL::type_of<std::tuple_element_t<8, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 9: if constexpr (traits::numArgs > 9) return GL::type_of<std::tuple_element_t<9, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 10: if constexpr (traits::numArgs > 10) return GL::type_of<std::tuple_element_t<10, typename traits::argType>>();
+                   else return GL::type_of<GL::undefined>();
+            case 11: if constexpr (traits::numArgs > 11) return GL::type_of<std::tuple_element_t<11, typename traits::argType>>();
+                   else return GL::type_of<GL::undefined>();
+            case 12: if constexpr (traits::numArgs > 12) return GL::type_of<std::tuple_element_t<12, typename traits::argType>>();
+                   else return GL::type_of<GL::undefined>();
+            case 13: if constexpr (traits::numArgs > 13) return GL::type_of<std::tuple_element_t<13, typename traits::argType>>();
+                   else return GL::type_of<GL::undefined>();
+            case 14: if constexpr (traits::numArgs > 14) return GL::type_of<std::tuple_element_t<14, typename traits::argType>>();
+                   else return GL::type_of<GL::undefined>();
+            case 15: if constexpr (traits::numArgs > 15) return GL::type_of<std::tuple_element_t<15, typename traits::argType>>();
+                   else return GL::type_of<GL::undefined>();
+            default:
+                return GL::type_of<GL::undefined>();
+            }
+        };
+        GL::type const& returns() const override {
+            return GL::type_of<typename traits::returnType>();
+        };
     };
     template <typename Function> class Member_Function_Caller final : public Function_Caller {
     public:
@@ -1167,6 +1226,52 @@ namespace {
                 }
             }
         };
+        size_t num_arguments() const override {
+            return traits::numArgs + 1;
+        };
+        GL::type const& argument(size_t index) const override {
+            if (index == 0)
+                return GL::type_of<typename traits::classType>();
+            switch (index - 1) {
+            case 0: if constexpr (traits::numArgs > 0) return GL::type_of<std::tuple_element_t<0, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 1: if constexpr (traits::numArgs > 1) return GL::type_of<std::tuple_element_t<1, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 2: if constexpr (traits::numArgs > 2) return GL::type_of<std::tuple_element_t<2, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 3: if constexpr (traits::numArgs > 3) return GL::type_of<std::tuple_element_t<3, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 4: if constexpr (traits::numArgs > 4) return GL::type_of<std::tuple_element_t<4, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 5: if constexpr (traits::numArgs > 5) return GL::type_of<std::tuple_element_t<5, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 6: if constexpr (traits::numArgs > 6) return GL::type_of<std::tuple_element_t<6, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 7: if constexpr (traits::numArgs > 7) return GL::type_of<std::tuple_element_t<7, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 8: if constexpr (traits::numArgs > 8) return GL::type_of<std::tuple_element_t<8, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 9: if constexpr (traits::numArgs > 9) return GL::type_of<std::tuple_element_t<9, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 10: if constexpr (traits::numArgs > 10) return GL::type_of<std::tuple_element_t<10, typename traits::argType>>();
+                   else return GL::type_of<GL::undefined>();
+            case 11: if constexpr (traits::numArgs > 11) return GL::type_of<std::tuple_element_t<11, typename traits::argType>>();
+                   else return GL::type_of<GL::undefined>();
+            case 12: if constexpr (traits::numArgs > 12) return GL::type_of<std::tuple_element_t<12, typename traits::argType>>();
+                   else return GL::type_of<GL::undefined>();
+            case 13: if constexpr (traits::numArgs > 13) return GL::type_of<std::tuple_element_t<13, typename traits::argType>>();
+                   else return GL::type_of<GL::undefined>();
+            case 14: if constexpr (traits::numArgs > 14) return GL::type_of<std::tuple_element_t<14, typename traits::argType>>();
+                   else return GL::type_of<GL::undefined>();
+            case 15: if constexpr (traits::numArgs > 15) return GL::type_of<std::tuple_element_t<15, typename traits::argType>>();
+                   else return GL::type_of<GL::undefined>();
+            default:
+                return GL::type_of<GL::undefined>();
+            }
+        };
+        GL::type const& returns() const override {
+            return GL::type_of<typename traits::returnType>();
+        };
     };
     template<typename Ret, typename Class, typename... Param> auto Member_Function_Caller_Impl(Ret(Class::* f)(Param...) const) {
         using Type = decltype(Const_Member_Function_Caller(std::move(f)));
@@ -1175,6 +1280,52 @@ namespace {
     template<typename Ret, typename Class, typename... Param> auto Member_Function_Caller_Impl(Ret(Class::* f)(Param...)) {
         using Type = decltype(Member_Function_Caller(std::move(f)));
         return GL::make_shared<Type>(std::move(f));
+    };
+    template <typename Function> class Const_Attribute_Function_Caller final : public Function_Caller {
+    public:
+        using traits = decltype(Attribute_Function_Traits(std::declval< Function>()));
+        Const_Attribute_Function_Caller(Function&& Func) {
+            (void)Attribute_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
+        };
+        virtual ~Const_Attribute_Function_Caller() = default;
+        static typename traits::returnType& call(const any* begin) {
+            return traits::call(std::move(begin));
+        };
+        void call(const any* begin, any* out) const override {
+            if (out) {
+                if constexpr (std::is_same_v<GL::any, std::decay_t<typename traits::returnType>> || std::is_same_v<any, std::decay_t<typename traits::returnType>>) {
+                    if (begin->m_type.is_const()) {
+                        *out = call(std::move(begin)) | (GL::type::Const | GL::type::Reference);
+                    }
+                    else {
+                        *out = call(std::move(begin)) | GL::type::Reference;
+                    }
+                }
+                else if constexpr (std::is_pointer<typename traits::returnType>::value) {
+                    if (begin->m_type.is_const()) {
+                        *out = any::wrap_member(*begin, *call(std::move(begin)));
+                        *out |= GL::type::Const;
+                    }
+                    else {
+                        *out = any::wrap_member(*begin, *call(std::move(begin)));
+                    }
+                }
+                else {
+                    *out = any::wrap_member(*begin, call(std::move(begin)));
+                    *out |= GL::type::Const;
+                }
+            }
+        };
+        size_t num_arguments() const override {
+            return 1;
+        };
+        GL::type const& argument(size_t index) const override {
+            if (index == 0) return GL::type_of<typename traits::classType const&>();
+            else return GL::type_of<GL::undefined>();
+        };
+        GL::type const& returns() const override {
+            return GL::type_of<typename traits::returnType const&>();
+        };
     };
     template <typename Function> class Attribute_Function_Caller final : public Function_Caller {
     public:
@@ -1216,6 +1367,16 @@ namespace {
                 }
             }
         };
+        size_t num_arguments() const override {
+            return 1;
+        };
+        GL::type const& argument(size_t index) const override {
+            if (index == 0) return GL::type_of<typename traits::classType&>();
+            else return GL::type_of<GL::undefined>();
+        };
+        GL::type const& returns() const override {
+            return GL::type_of<typename traits::returnType&>();
+        };
     };
     template <typename Function> class Static_Function_Caller final : public Function_Caller {
     public:
@@ -1240,6 +1401,50 @@ namespace {
                     call(std::move(begin));
                 }
             }
+        };
+        size_t num_arguments() const override {
+            return traits::numArgs;
+        };
+        GL::type const& argument(size_t index) const override {
+            switch (index) {
+            case 0: if constexpr (traits::numArgs > 0) return GL::type_of<std::tuple_element_t<0, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 1: if constexpr (traits::numArgs > 1) return GL::type_of<std::tuple_element_t<1, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 2: if constexpr (traits::numArgs > 2) return GL::type_of<std::tuple_element_t<2, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 3: if constexpr (traits::numArgs > 3) return GL::type_of<std::tuple_element_t<3, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 4: if constexpr (traits::numArgs > 4) return GL::type_of<std::tuple_element_t<4, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 5: if constexpr (traits::numArgs > 5) return GL::type_of<std::tuple_element_t<5, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 6: if constexpr (traits::numArgs > 6) return GL::type_of<std::tuple_element_t<6, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 7: if constexpr (traits::numArgs > 7) return GL::type_of<std::tuple_element_t<7, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 8: if constexpr (traits::numArgs > 8) return GL::type_of<std::tuple_element_t<8, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 9: if constexpr (traits::numArgs > 9) return GL::type_of<std::tuple_element_t<9, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 10: if constexpr (traits::numArgs > 10) return GL::type_of<std::tuple_element_t<10, typename traits::argType>>();
+                   else return GL::type_of<GL::undefined>();
+            case 11: if constexpr (traits::numArgs > 11) return GL::type_of<std::tuple_element_t<11, typename traits::argType>>();
+                   else return GL::type_of<GL::undefined>();
+            case 12: if constexpr (traits::numArgs > 12) return GL::type_of<std::tuple_element_t<12, typename traits::argType>>();
+                   else return GL::type_of<GL::undefined>();
+            case 13: if constexpr (traits::numArgs > 13) return GL::type_of<std::tuple_element_t<13, typename traits::argType>>();
+                   else return GL::type_of<GL::undefined>();
+            case 14: if constexpr (traits::numArgs > 14) return GL::type_of<std::tuple_element_t<14, typename traits::argType>>();
+                   else return GL::type_of<GL::undefined>();
+            case 15: if constexpr (traits::numArgs > 15) return GL::type_of<std::tuple_element_t<15, typename traits::argType>>();
+                   else return GL::type_of<GL::undefined>();
+            default:
+                return GL::type_of<GL::undefined>();
+            }
+        };
+        GL::type const& returns() const override {
+            return GL::type_of<typename traits::returnType>();
         };
     };
     /* Converts to a static function caller if the lambda does not capture. Otherwise, uses the local function copy. */
@@ -1276,6 +1481,50 @@ namespace {
                 }
             }
         };
+        size_t num_arguments() const override {
+            return traits::numArgs;
+        };
+        GL::type const& argument(size_t index) const override {
+            switch (index) {
+            case 0: if constexpr (traits::numArgs > 0) return GL::type_of<std::tuple_element_t<0, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();   
+            case 1: if constexpr (traits::numArgs > 1) return GL::type_of<std::tuple_element_t<1, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 2: if constexpr (traits::numArgs > 2) return GL::type_of<std::tuple_element_t<2, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 3: if constexpr (traits::numArgs > 3) return GL::type_of<std::tuple_element_t<3, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 4: if constexpr (traits::numArgs > 4) return GL::type_of<std::tuple_element_t<4, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 5: if constexpr (traits::numArgs > 5) return GL::type_of<std::tuple_element_t<5, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 6: if constexpr (traits::numArgs > 6) return GL::type_of<std::tuple_element_t<6, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 7: if constexpr (traits::numArgs > 7) return GL::type_of<std::tuple_element_t<7, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 8: if constexpr (traits::numArgs > 8) return GL::type_of<std::tuple_element_t<8, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 9: if constexpr (traits::numArgs > 9) return GL::type_of<std::tuple_element_t<9, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 10: if constexpr (traits::numArgs > 10) return GL::type_of<std::tuple_element_t<10, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 11: if constexpr (traits::numArgs > 11) return GL::type_of<std::tuple_element_t<11, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 12: if constexpr (traits::numArgs > 12) return GL::type_of<std::tuple_element_t<12, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 13: if constexpr (traits::numArgs > 13) return GL::type_of<std::tuple_element_t<13, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 14: if constexpr (traits::numArgs > 14) return GL::type_of<std::tuple_element_t<14, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            case 15: if constexpr (traits::numArgs > 15) return GL::type_of<std::tuple_element_t<15, typename traits::argType>>();
+                  else return GL::type_of<GL::undefined>();
+            default:
+                return GL::type_of<GL::undefined>();
+            }
+        };
+        GL::type const& returns() const override {
+            return GL::type_of<typename traits::returnType>();
+        };
     };
 }
 template <typename Function> GL::shared_ptr<Function_Caller> make_callable(Function&& func) {
@@ -1306,6 +1555,43 @@ template <typename Function> GL::shared_ptr<Function_Caller> make_callable(Funct
     }
 };
 
+class Function {
+public:
+    const GL::shared_ptr<Function_Caller> ptr;
+    const GL::string name;
+    const std::array<const GL::type*, 16> arguments;
+    const GL::type* returns;
+    std::array<any, 16> defaults;
+
+    Function(GL::shared_ptr<Function_Caller>&& rhs)
+        : ptr{ std::forward<GL::shared_ptr<Function_Caller>>(rhs) }
+        , name{ "undeclared" }
+        , arguments{ ptr->arguments() }
+        , returns{ &ptr->returns() }
+        , defaults{}
+    {};
+
+private:
+    GL::string returns_string() const {
+        if (returns) return returns->name();
+        return "";
+    };
+    GL::string arguments_string() const  {
+        GL::string out;
+        for (auto& x : arguments) {
+            if (!x) break;
+            if (*x == GL::type_of<GL::undefined>()) break;
+            out = out.add_to_delim(x->name(), ", ");
+        }
+        return out;
+    };
+
+public:
+    GL::string to_string() const {
+        return (returns_string() + " " + name + "(" + arguments_string() + ")").remove_leading_and_trailing(' ');
+    };
+
+};
 
 
 
@@ -1313,7 +1599,6 @@ template <typename Function> GL::shared_ptr<Function_Caller> make_callable(Funct
 
 
 
-#include "datetime.h"
 
 int main() {
 #if 1
@@ -1413,38 +1698,41 @@ int main() {
             }
         } break;
         case 7: {
-            auto callable{ make_callable(&GL::string::begins_with) };
+            Function callable{ make_callable(&GL::string::begins_with) };
+            std::cout << callable.to_string() << std::endl;
             std::array<any, 2> example{
                 any::instance(GL::string("this")),
                 any::instance(GL::string("this"))
             };
             if (auto timer = GL::stopwatch().debug_timer("\"this\".begins_with(\"this\") with generalized callable and w/o converters, no conversion needed, w/o return")) {
                 for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
-                    (void)callable->call(example[0], example[1], nullptr);
+                    (void)callable.ptr->call(example[0], example[1], nullptr);
                 }//);
             }
         } break;
         case 9: {
-            auto callable{ make_callable([](GL::string const& LHS, GL::string const& RHS) -> auto { return LHS.begins_with(RHS); }) };
+            Function callable{ make_callable([](GL::string const& LHS, GL::string const& RHS) -> auto { return LHS.begins_with(RHS); }) };
+            std::cout << callable.to_string() << std::endl;
             std::array<any, 2> example{
                 any::instance(GL::string("this")),
                 any::instance(GL::string("this"))
             };
             if (auto timer = GL::stopwatch().debug_timer("GL::string::begins_with() with non-capturing lambda function and w/o converters, no conversion needed, w/o return")) {
                 for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
-                    (void)callable->call(example[0], example[1], nullptr);
+                    (void)callable.ptr->call(example[0], example[1], nullptr);
                 }//);
             }
         } break;
         case 10: {
-            auto callable{ make_callable([](GL::string const& LHS, GL::string const& RHS) -> bool { return LHS.begins_with(RHS); }) };
+            Function callable{ make_callable([](GL::string const& LHS, GL::string const& RHS) -> bool { return LHS.begins_with(RHS); }) };
+            std::cout << callable.to_string() << std::endl;
             std::array<any, 2> example{
                 any::instance(GL::string("this")),
                 any::instance(GL::string("this"))
             };
             if (auto timer = GL::stopwatch().debug_timer("GL::string::begins_with() with do-call w/ return")) {
                 for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
-                    callable->do_call<bool>(any(example[0], true), any(example[1], true));
+                    callable.ptr->do_call<bool>(any(example[0], true), any(example[1], true));
                 }//);
             }
         } break;
@@ -1456,10 +1744,11 @@ int main() {
             std::array<any, 1> example{
                 any::instance(TEST{ GL::string("this"), GL::string("that") })
             };
-            auto callable{ make_callable(&TEST::obj2) };
+            Function callable{ make_callable(&TEST::obj2) };
+            std::cout << callable.to_string() << std::endl;
             if (auto timer = GL::stopwatch().debug_timer("TEST::obj, w/o return")) {
                 for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
-                    (void)callable->call(example[0], nullptr);
+                    (void)callable.ptr->call(any(example[0], true), nullptr);
                 }//);
             }
         } break;
@@ -1471,11 +1760,12 @@ int main() {
             std::array<any, 1> example{
                 any::instance(TEST{ GL::string("this"), GL::string("that") })
             };
-            auto callable{ make_callable(&TEST::obj2) }; 
+            Function callable{ make_callable(&TEST::obj2) };
+            std::cout << callable.to_string() << std::endl;
             any out;
             if (auto timer = GL::stopwatch().debug_timer("TEST::obj, w/ return")) {                
                 for (int i = 0; i < 1'000'000; ++i){//GL::parallel::For(0, 1'000'000, [&]() { any out;
-                    (void)callable->call(any(example[0], true), &out);
+                    (void)callable.ptr->call(any(example[0], true), &out);
                     // if (out.cast<GL::string&>() != GL::string("that")) throw "ERROR";
                 }//);                
             }
