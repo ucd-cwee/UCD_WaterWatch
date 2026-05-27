@@ -369,7 +369,7 @@ namespace GL {
             if ((out == 0) && (length() > 16)) {
                 if (_hash == npos) {
                     for (auto& x : data) out ^= (size_t)x + 0x9e3779b9 + (out << 6) + (out >> 2);
-                    InterlockedExchange(reinterpret_cast<volatile size_type*>(const_cast<size_type*>(&_hash)), out);
+                    InterlockedExchangeNoFence(reinterpret_cast<volatile size_type*>(const_cast<size_type*>(&_hash)), out);
                 }
                 else {
                     out = _hash;
@@ -944,7 +944,7 @@ namespace GL {
             if (out == 0 && length() > 16) {
                 if (_hash == npos) {
                     for (auto& x : data) out ^= x + 0x9e3779b9 + (out << 6) + (out >> 2);
-                    InterlockedExchange(reinterpret_cast<volatile size_type*>(const_cast<size_type*>(&_hash)), out);
+                    InterlockedExchangeNoFence(reinterpret_cast<volatile size_type*>(const_cast<size_type*>(&_hash)), out);
                 }
                 return _hash;
             }

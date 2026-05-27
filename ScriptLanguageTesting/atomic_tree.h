@@ -1786,13 +1786,13 @@ namespace GL {
 				//in_tree;
 
 			__declspec(noinline) void lock() {
-				while (InterlockedCompareExchange(reinterpret_cast<volatile long*>(&locker), 1, 0) != 0) {}
+				while (InterlockedCompareExchangeNoFence(reinterpret_cast<volatile long*>(&locker), 1, 0) != 0) {}
 			};
 			__declspec(noinline) bool try_lock() {
-				return InterlockedCompareExchange(reinterpret_cast<volatile long*>(&locker), 1, 0) == 0;
+				return InterlockedCompareExchangeNoFence(reinterpret_cast<volatile long*>(&locker), 1, 0) == 0;
 			};
 			void unlock() {
-				InterlockedDecrement(reinterpret_cast<volatile long*>(&locker));
+				InterlockedDecrementNoFence(reinterpret_cast<volatile long*>(&locker));
 			};
 		};
 	private:

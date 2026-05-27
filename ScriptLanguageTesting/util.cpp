@@ -14,16 +14,13 @@
 
 namespace GL {
     static auto Settup = []() -> bool {
-        struct calc {
-            static bool in_parallel(void) {
-                return true;
-            };
-            static size_t thread_num(void) {
-                return GL::util::get_thread_id();
-            };
-        };
         CppAD::thread_alloc::hold_memory(true);
-        CppAD::thread_alloc::parallel_setup(GL::util::get_hardware_thread_count(), &calc::in_parallel, &calc::thread_num);
+        CppAD::thread_alloc::parallel_setup(std::max<size_t>(32ull, GL::util::get_hardware_thread_count()), []() -> bool {
+            return true;
+        }, []() -> size_t {
+            thread_local size_t thread_num{ GL::util::get_thread_id() };
+            return thread_num;
+        });
         return true;
     }();
 
@@ -339,7 +336,7 @@ namespace GL {
             static std::map<size_t, GL::type_hash_t> builtin_tickets{};
             GL::type_hash_t& out = builtin_tickets[original_hash];
             if (out == 0) {
-                InterlockedCompareExchange(reinterpret_cast<volatile GL::type_hash_t*>(&out), (GL::type_hash_t)(builtin_ticket_dispensor.get_ticket() | (1 << 20)), 0);
+                InterlockedCompareExchangeNoFence(reinterpret_cast<volatile GL::type_hash_t*>(&out), (GL::type_hash_t)(builtin_ticket_dispensor.get_ticket() | (1 << 20)), 0);
             }
             return out;
         };

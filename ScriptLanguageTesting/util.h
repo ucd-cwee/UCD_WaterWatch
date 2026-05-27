@@ -297,7 +297,7 @@ namespace GL {
                     //auto* newPtr = shared_allocator().Alloc();
                     auto pTemp = std::make_unique<T>();
                     auto* newPtr = pTemp.get();
-                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(reinterpret_cast<PVOID*>(const_cast<T**>(&ptr))), newPtr, nullptr) != nullptr) {
+                    if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(reinterpret_cast<PVOID*>(const_cast<T**>(&ptr))), newPtr, nullptr) != nullptr) {
 
                         //shared_allocator().Free(newPtr);
                     }

@@ -18,9 +18,9 @@ namespace GL {
             if (scope_index._index == 0) {
                 if (parent_m) {
                     if (auto* root_ptr = dynamic_cast<RootScope*>(root_m->this_m.scope)) {
-                        InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&scope_index._parent), static_cast<PVOID>(&root_ptr->scope_indexs));
+                        InterlockedExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&scope_index._parent), static_cast<PVOID>(&root_ptr->scope_indexs));
                         auto new_index = root_ptr->scope_indexs.get_ticket();
-                        if (InterlockedCompareExchange(reinterpret_cast<volatile size_t*>(&scope_index._index), new_index, 0) > 0) {
+                        if (InterlockedCompareExchangeNoFence(reinterpret_cast<volatile size_t*>(&scope_index._index), new_index, 0) > 0) {
                             root_ptr->scope_indexs.return_ticket(new_index);
                         }
                         else {
@@ -1388,7 +1388,7 @@ namespace GL {
         };
 
         void impl::NamespaceScope::invalidate_cache(long* parent_alive, size_t call_number) {
-            InterlockedIncrement(static_cast<volatile size_t*>(&cache_version));
+            InterlockedIncrementNoFence(static_cast<volatile size_t*>(&cache_version));
             sockets_for_cache_versions.speak(parent_alive, call_number);
         };
         bool impl::NamespaceScope::AddUsing_Impl(Breadcrumb* scope) {
@@ -2194,7 +2194,7 @@ namespace GL {
         };
 
         void impl::RootScope::invalidate_cache(long* parent_alive, size_t call_number) {
-            InterlockedIncrement(static_cast<volatile size_t*>(&this->cache_version));
+            InterlockedIncrementNoFence(static_cast<volatile size_t*>(&this->cache_version));
             this->sockets_for_cache_versions.speak(parent_alive, call_number);
 
             // constructors.clear();

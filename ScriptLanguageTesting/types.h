@@ -139,8 +139,8 @@ namespace GL {
         //};
 
     public:
-        type() : hash(default_hash_code) {};
-        explicit type(GL::type_hash_t _hash) : hash(_hash) {};
+        type() : hash{ default_hash_code } {};
+        explicit type(GL::type_hash_t _hash) : hash{ _hash } {};
         type(type const&) = default;
         type(type &&) = default;
         type& operator=(type const& rhs) {
@@ -316,6 +316,7 @@ namespace GL {
         size_t size() const;
 
     };
+    static constexpr bool is_p = std::is_pod_v<type>;
 
     // owner for a scripted type. types can be generated from this to be shared / manipulated as normal. Checks-out and returns space on the heap that can be accessed outside of the type itself. 
     class script_type {
@@ -388,6 +389,7 @@ namespace GL {
 
         class any_data {
         public:
+            virtual bool is_pod() const = 0;
             virtual GL::type const& get_type() const = 0;
             virtual void* get() const = 0;
             virtual GL::shared_ptr<void> get(GL::shared_ptr<any_data>&&) = 0;
@@ -409,6 +411,9 @@ namespace GL {
             shared_data(GL::shared_ptr<T>&& p_ptr) : m_ptr(std::forward<GL::shared_ptr<T>>(p_ptr)) {};
             ~shared_data() = default;
 
+            bool is_pod() const override {
+                return std::is_pod_v<T>;
+            };
             GL::type const& get_type() const override {
                 return GL::type_of<T>();
             };
@@ -500,6 +505,9 @@ namespace GL {
                 }
             };
             
+            bool is_pod() const override {
+                return std::is_pod_v<T>;
+            };
             GL::type const& get_type() const override {
                 return GL::type_of<T>();
             };
@@ -584,6 +592,9 @@ namespace GL {
             std_shared_data(std::shared_ptr<T> && a) noexcept : m_obj(std::forward<std::shared_ptr<T>>(a)) {};
             ~std_shared_data() = default;
 
+            bool is_pod() const override {
+                return std::is_pod_v<T>;
+            };
             GL::type const& get_type() const override {
                 return GL::type_of<T>();
             };

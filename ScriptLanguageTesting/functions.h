@@ -58,7 +58,7 @@ namespace GL {
 
     private:
         void eval_hash() {
-            InterlockedExchange(reinterpret_cast<volatile size_t*>(&hash_m), eval_hash(argument_types_m));
+            InterlockedExchangeNoFence(reinterpret_cast<volatile size_t*>(&hash_m), eval_hash(argument_types_m));
         };
 
     public:

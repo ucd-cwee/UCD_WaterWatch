@@ -136,7 +136,7 @@ namespace GL {
                             // some users expect the POD-types to be zero'd when the requested index has been initialized.
                             std::memset(new_ptr, 0, block_to_allocsize(blockN) * sizeof(element_t));
                         }
-                        if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&blocks[blockN]), new_ptr, nullptr) == nullptr) {
+                        if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&blocks[blockN]), new_ptr, nullptr) == nullptr) {
                             out = true;
                         }
                         else {
@@ -194,7 +194,7 @@ namespace GL {
             while (true) {
                 size_t prevValid = valid_pos;
                 if (prevValid < index) {
-                    if (InterlockedCompareExchange(reinterpret_cast<volatile size_t*>(&valid_pos), index, prevValid) == prevValid) {
+                    if (InterlockedCompareExchangeNoFence(reinterpret_cast<volatile size_t*>(&valid_pos), index, prevValid) == prevValid) {
                         break;
                     }
                 }
@@ -434,7 +434,7 @@ namespace GL {
                     for (int i = 0; i < block_to_allocsize(blockN); ++i) {
                         new (new_ptr + i) element_t(constructor());
                     }
-                    if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&blocks[blockN]), new_ptr, nullptr) == nullptr) {
+                    if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&blocks[blockN]), new_ptr, nullptr) == nullptr) {
                         out = true;
                     }
                     else {
@@ -486,7 +486,7 @@ namespace GL {
             while (true) {
                 size_t prevValid = valid_pos;
                 if (prevValid < index) {
-                    if (InterlockedCompareExchange(reinterpret_cast<volatile size_t*>(&valid_pos), index, prevValid) == prevValid) {
+                    if (InterlockedCompareExchangeNoFence(reinterpret_cast<volatile size_t*>(&valid_pos), index, prevValid) == prevValid) {
                         break;
                     }
                 }

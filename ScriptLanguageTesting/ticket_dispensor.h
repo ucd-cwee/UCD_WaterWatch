@@ -74,22 +74,22 @@ namespace GL {
                 if (_size <= index) {
                     if (_listeners.size() <= index) (void)_listeners.grow_to_at_least((index + 2) + ((index + 2) % 16));
                     // InterlockedIncrement(static_cast<volatile size_t*>(&_size)); // 
-                    InterlockedExchange(static_cast<volatile size_t*>(&_size), index);
+                    InterlockedExchangeNoFence(static_cast<volatile size_t*>(&_size), index);
                 }
                 Wrap& wrap = _listeners[index/* - 1*/];
-                InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&wrap.ptr), static_cast<PVOID>(p));
-                InterlockedAdd(static_cast<volatile long*>(&wrap.count), 1 << 8);
-                InterlockedIncrement(static_cast<volatile long*>(&wrap.alive));
+                InterlockedExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&wrap.ptr), static_cast<PVOID>(p));
+                InterlockedAddNoFence(static_cast<volatile long*>(&wrap.count), 1 << 8);
+                InterlockedIncrementNoFence(static_cast<volatile long*>(&wrap.alive));
             }
         };
         // remove a listener from the list
         __declspec(noinline) void remove_listener(size_t index) {
             if (alive.load() && _listeners.size() >= index) {
                 Wrap& wrap = _listeners[index/* - 1*/];
-                InterlockedDecrement(static_cast<volatile long*>(&wrap.alive));
-                if (InterlockedAdd(static_cast<volatile long*>(&wrap.count), -(1 << 8)) == 0) {}
-                else while (wrap.count != 0) if (!wrap.ptr) InterlockedExchange(static_cast<volatile long*>(&wrap.count), 0);
-                InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&wrap.ptr), static_cast<PVOID>(nullptr));
+                InterlockedDecrementNoFence(static_cast<volatile long*>(&wrap.alive));
+                if (InterlockedAddNoFence(static_cast<volatile long*>(&wrap.count), -(1 << 8)) == 0) {}
+                else while (wrap.count != 0) if (!wrap.ptr) InterlockedExchangeNoFence(static_cast<volatile long*>(&wrap.count), 0);
+                InterlockedExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&wrap.ptr), static_cast<PVOID>(nullptr));
             }
         };
 
@@ -108,7 +108,7 @@ namespace GL {
         // callback performed on all listeners
         __declspec(noinline) void speak(long* parent_alive, size_t call_number = 0) {
             if (call_number == 0)
-                call_number = InterlockedIncrement(static_cast<volatile size_t*>(&_call_version()));
+                call_number = InterlockedIncrementNoFence(static_cast<volatile size_t*>(&_call_version()));
 
             for (size_t i = 0; i < _size; ++i) {
                 Wrap& wrap = _listeners[i];
@@ -116,12 +116,12 @@ namespace GL {
                     if (!parent_alive || *parent_alive) {
                         if (wrap.call_version >= call_number) { continue; }
                         else {
-                            InterlockedExchange(static_cast<volatile size_t*>(&wrap.call_version), call_number);
+                            InterlockedExchangeNoFence(static_cast<volatile size_t*>(&wrap.call_version), call_number);
                         }
 
-                        if (InterlockedAdd(static_cast<volatile long*>(&wrap.count), 1) >= (1 << 8))
+                        if (InterlockedAddNoFence(static_cast<volatile long*>(&wrap.count), 1) >= (1 << 8))
                             (wrap.ptr->*_callback)(&wrap.alive, call_number); // _callback(wrap.ptr, &wrap.alive);
-                        InterlockedAdd(static_cast<volatile long*>(&wrap.count), -1);
+                        InterlockedAddNoFence(static_cast<volatile long*>(&wrap.count), -1);
                     }
                     else break;
                 }

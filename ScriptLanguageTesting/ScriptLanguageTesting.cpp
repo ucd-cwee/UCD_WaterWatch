@@ -34,9 +34,9 @@ namespace uuid {
     static constexpr unsigned long INV_FLAGS = ~FLAGS;
     struct uuid_ticket {
         size_t count{ 0 };
-        GL::shared_ptr<void> data{ nullptr };
+        GL::shared_ptr<GL::type_erasure::any_data> data{ nullptr };
     };
-    static unsigned long new_uuid(GL::shared_ptr<void>&& rhs) noexcept;
+    static unsigned long new_uuid(GL::shared_ptr<GL::type_erasure::any_data>&& rhs) noexcept;
     static void free_uuid(unsigned long uuid) noexcept;
     static uuid_ticket& get_uuid(unsigned long rhs) noexcept;
 };
@@ -49,22 +49,25 @@ public:
     GL::type m_type;
 
 public:
-    any(unsigned long&& uuid, void* data, GL::type const& type) noexcept : m_uuid{ std::forward<unsigned long>(uuid) }, m_type{ type }, m_ptr{ std::move(data) } {};
+    any(unsigned long&& uuid, void* data, GL::type const& type) noexcept : m_uuid{ std::forward<unsigned long>(uuid) }, m_type{ type }, m_ptr{ data } {};
     any() noexcept : m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
     any(std::nullptr_t) noexcept : m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
     any(any const& rhs) : m_uuid{ rhs.m_uuid & uuid::INV_FLAGS }, m_type{ rhs.m_type }, m_ptr{ rhs.m_ptr } { if (m_uuid > 0) InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count)); };
     // declares that the parent will NOT go out-of-scope before this child does. That guarrantee allows us to skip a increment and decrement call to the counter. 
     any(any const& rhs, bool) : m_uuid{ rhs.m_uuid | 0x1000'0000 }, m_type{ rhs.m_type }, m_ptr{ rhs.m_ptr } {};
-    any(any && rhs) noexcept : m_uuid{ std::move(rhs.m_uuid) }, m_type{ std::move(rhs.m_type) }, m_ptr{ std::move(rhs.m_ptr) } { rhs.m_uuid = 0; };
+    any(any && rhs) noexcept : m_uuid{ std::move(rhs.m_uuid) }, m_type{ std::move(rhs.m_type) }, m_ptr{ rhs.m_ptr } { rhs.m_uuid = 0; };
     any const& operator=(any const& rhs) {
         if ((m_uuid & 0x1000'0000) == 0)
             if ((m_uuid & uuid::INV_FLAGS) > 0)
                 if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count)) == 0)
                     uuid::free_uuid(m_uuid);
 
-        m_uuid = rhs.m_uuid & uuid::INV_FLAGS;
-        m_type = rhs.m_type; 
-        m_ptr = rhs.m_ptr;
+        std::memcpy(this, &rhs, sizeof(any));
+        m_uuid &= uuid::INV_FLAGS;
+
+        //m_uuid = rhs.m_uuid & uuid::INV_FLAGS;
+        //m_type = rhs.m_type; 
+        //m_ptr = rhs.m_ptr;
         if (m_uuid > 0) InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count));
         return *this;
     };
@@ -73,10 +76,10 @@ public:
             if ((m_uuid & uuid::INV_FLAGS) > 0)
                 if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count)) == 0)
                     uuid::free_uuid(m_uuid);
-
-        m_uuid = std::move(rhs.m_uuid);
-        m_type = std::move(rhs.m_type);
-        m_ptr = std::move(rhs.m_ptr);
+        std::memmove(this, &rhs, sizeof(any));
+        //m_uuid = std::move(rhs.m_uuid);
+        //m_type = std::move(rhs.m_type);
+        //m_ptr = rhs.m_ptr;
         rhs.m_uuid = 0;
         return *this;
     };
@@ -154,9 +157,9 @@ public:
 protected:
     GL::shared_ptr<GL::type_erasure::any_data>& get_underlying_ptr() const noexcept {
         if ((m_uuid & uuid::INV_FLAGS) > 0)
-            return *reinterpret_cast<GL::shared_ptr<GL::type_erasure::any_data>*>(&uuid::get_uuid(m_uuid).data);
+            return uuid::get_uuid(m_uuid).data;
         else {
-            GL::shared_ptr<GL::type_erasure::any_data> out{ nullptr };
+            static GL::shared_ptr<GL::type_erasure::any_data> out{ nullptr };
             return out;
         }
     };
@@ -298,7 +301,7 @@ public:
 namespace uuid {
     static GL::fast_ticket_dispensor tickets;
     static GL::atomic_vector< uuid_ticket > slots; 
-    unsigned long new_uuid(GL::shared_ptr<void>&& rhs) noexcept {
+    unsigned long new_uuid(GL::shared_ptr<GL::type_erasure::any_data>&& rhs) noexcept {
         unsigned long uuid = (unsigned long)tickets.get_ticket();
         auto& ref = slots.get_or_make(uuid);
         ref.count = 1;
@@ -308,7 +311,9 @@ namespace uuid {
     void free_uuid(unsigned long uuid) noexcept {
         uuid = uuid & INV_FLAGS;
         if (uuid > 0) {
-            slots[uuid].data = nullptr;
+            auto& ref = slots[uuid];
+            if (!ref.data->is_pod()) 
+                ref.data = nullptr;            
             tickets.return_ticket(uuid);
         }
     };
@@ -836,7 +841,7 @@ class Function_Caller {
 public:
     virtual ~Function_Caller() = default;
     // implimentation-specific function
-    virtual void call(const any* begin, any* out) const = 0;
+    virtual void call(const any* const& begin, any* const& out) const = 0;
     virtual size_t num_arguments() const = 0;
     virtual GL::type const& argument(size_t index) const = 0;
     virtual GL::type const& returns() const = 0;
@@ -849,6 +854,7 @@ public:
         };
     };
 
+#if 0
     /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
     void call(
         const any& p0, const any& p1, const any& p2, const any& p3,
@@ -1141,6 +1147,7 @@ public:
             }
         }
     };
+#endif
 };
 namespace {
     template <typename Function> class Const_Member_Function_Caller final : public Function_Caller {
@@ -1151,18 +1158,42 @@ namespace {
         };
         virtual ~Const_Member_Function_Caller() = default;
         static typename traits::returnType call(const any* begin) {
-            return traits::call(std::move(begin));
+            return traits::call(begin);
         };
-        void call(const any* begin, any* out) const override {
+        void call(const any* const& begin, any* const& out) const override {
             if constexpr (std::is_same_v<void, typename traits::returnType>) {
-                call(std::move(begin));
+                call(begin);
             }
             else {
                 if (out) {
-                    *out = any::instance(call(std::move(begin)));
+#if 1
+                    if ((out->m_uuid & 0x1000'0000) == 0) {
+                        if ((out->m_uuid & uuid::INV_FLAGS) > 0) {
+                            auto& ref = uuid::get_uuid(out->m_uuid);
+                            if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&ref.count)) == 0) {
+                                ref.count = 1;
+                                ref.data = GL::type_erasure::wrap(call(begin));
+                                out->m_ptr = ref.data->get();
+                                out->m_type = GL::type_of<typename traits::returnType>();
+                            }
+                            else {
+                                out->m_uuid = 0;
+                                *out = any::instance(call(begin));
+                            }
+                        }
+                        else {
+                            *out = any::instance(call(begin));
+                        }
+                    }
+                    else {
+                        *out = any::instance(call(begin));
+                    }
+#else
+                    * out = any::instance(call(begin));
+#endif
                 }
                 else {
-                    call(std::move(begin));
+                    call(begin);
                 }
             }
         };
@@ -1221,18 +1252,42 @@ namespace {
         };
         virtual ~Member_Function_Caller() = default;
         static typename traits::returnType call(const any* begin) {
-            return traits::call(std::move(begin));
+            return traits::call(begin);
         };
-        void call(const any* begin, any* out) const override {
+        void call(const any* const& begin, any* const& out) const override {
             if constexpr (std::is_same_v<void, typename traits::returnType>) {
-                call(std::move(begin));
+                call(begin);
             }
             else {
                 if (out) {
-                    *out = any::instance(call(std::move(begin)));
+#if 1
+                    if ((out->m_uuid & 0x1000'0000) == 0) {
+                        if ((out->m_uuid & uuid::INV_FLAGS) > 0) {
+                            auto& ref = uuid::get_uuid(out->m_uuid);
+                            if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&ref.count)) == 0) {
+                                ref.count = 1;
+                                ref.data = GL::type_erasure::wrap(call(begin));
+                                out->m_ptr = ref.data->get();
+                                out->m_type = GL::type_of<typename traits::returnType>();
+                            }
+                            else {
+                                out->m_uuid = 0;
+                                *out = any::instance(call(begin));
+                            }
+                        }
+                        else {
+                            *out = any::instance(call(begin));
+                        }
+                    }
+                    else {
+                        *out = any::instance(call(begin));
+                    }
+#else
+                    * out = any::instance(call(begin));
+#endif
                 }
                 else {
-                    call(std::move(begin));
+                    call(begin);
                 }
             }
         };
@@ -1299,30 +1354,22 @@ namespace {
         };
         virtual ~Const_Attribute_Function_Caller() = default;
         static typename traits::returnType& call(const any* begin) {
-            return traits::call(std::move(begin));
+            return traits::call(begin);
         };
-        void call(const any* begin, any* out) const override {
+        void call(const any* const& begin, any* const& out) const override {
             if (out) {
                 if constexpr (std::is_same_v<GL::any, std::decay_t<typename traits::returnType>> || std::is_same_v<any, std::decay_t<typename traits::returnType>>) {
-                    if (begin->m_type.is_const()) {
-                        *out = call(std::move(begin)) | (GL::type::Const | GL::type::Reference);
-                    }
-                    else {
-                        *out = call(std::move(begin)) | GL::type::Reference;
-                    }
+                    *out = call(begin);
+                    if (begin->m_type.is_const()) *out |= (GL::type::Const | GL::type::Reference);
+                    else *out |= GL::type::Reference;
                 }
                 else if constexpr (std::is_pointer<typename traits::returnType>::value) {
-                    if (begin->m_type.is_const()) {
-                        *out = any::wrap_member(*begin, *call(std::move(begin)));
-                        *out |= GL::type::Const;
-                    }
-                    else {
-                        *out = any::wrap_member(*begin, *call(std::move(begin)));
-                    }
+                    *out = any::wrap_member(*begin, *call(begin));
+                    if (begin->m_type.is_const()) *out |= GL::type::Const;
                 }
                 else {
-                    *out = any::wrap_member(*begin, call(std::move(begin)));
-                    *out |= GL::type::Const;
+                    *out = any::wrap_member(*begin, call(begin));
+                    if (begin->m_type.is_const()) *out |= GL::type::Const;
                 }
             }
         };
@@ -1345,35 +1392,22 @@ namespace {
         };
         virtual ~Attribute_Function_Caller() = default;
         static typename traits::returnType& call(const any* begin) {
-            return traits::call(std::move(begin));
+            return traits::call(begin);
         };
-        void call(const any* begin, any* out) const override {
+        void call(const any* const& begin, any* const& out) const override {
             if (out) {
                 if constexpr (std::is_same_v<GL::any, std::decay_t<typename traits::returnType>> || std::is_same_v<any, std::decay_t<typename traits::returnType>>) {
-                    if (begin->m_type.is_const()) {
-                        *out = call(std::move(begin)) | (GL::type::Const | GL::type::Reference);
-                    }
-                    else {
-                        *out = call(std::move(begin)) | GL::type::Reference;
-                    }
+                    *out = call(begin);
+                    if (begin->m_type.is_const()) *out |= (GL::type::Const | GL::type::Reference);                    
+                    else *out |= GL::type::Reference;                    
                 }
                 else if constexpr (std::is_pointer<typename traits::returnType>::value) {
-                    if (begin->m_type.is_const()) {
-                        *out = any::wrap_member(*begin, *call(std::move(begin)));
-                        *out |= GL::type::Const;
-                    }
-                    else {
-                        *out = any::wrap_member(*begin, *call(std::move(begin)));
-                    }
+                    *out = any::wrap_member(*begin, *call(begin));
+                    if (begin->m_type.is_const()) *out |= GL::type::Const;                    
                 }
                 else {
-                    if (begin->m_type.is_const()) {
-                        *out = any::wrap_member(*begin, call(std::move(begin)));
-                        *out |= GL::type::Const;
-                    }
-                    else {
-                        *out = any::wrap_member(*begin, call(std::move(begin)));
-                    }
+                    *out = any::wrap_member(*begin, call(begin));
+                    if (begin->m_type.is_const()) *out |= GL::type::Const;                    
                 }
             }
         };
@@ -1397,11 +1431,11 @@ namespace {
         virtual ~Static_Function_Caller() = default;
 
         static typename traits::returnType call(const any* begin) {
-            return traits::call(std::move(begin));
+            return traits::call(begin);
         };
-        void call(const any* begin, any* out) const override {
+        void call(const any* const& begin, any* const& out) const override {
             if constexpr (std::is_same_v<void, typename traits::returnType>) {
-                call(std::move(begin));
+                call(begin);
             }
             else {
                 if (out) {
@@ -1410,32 +1444,30 @@ namespace {
                         if ((out->m_uuid & uuid::INV_FLAGS) > 0) {
                             auto& ref = uuid::get_uuid(out->m_uuid);
                             if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&ref.count)) == 0) {
-                                auto wrapped = GL::type_erasure::wrap(call(std::move(begin)));
-                                auto* ptr = wrapped->get();
-                                out->m_ptr = ptr;
-                                out->m_type = GL::type_of<typename traits::returnType>();
                                 ref.count = 1;
-                                ref.data = std::move(wrapped);
+                                ref.data = GL::type_erasure::wrap(call(begin));
+                                out->m_ptr = ref.data->get();
+                                out->m_type = GL::type_of<typename traits::returnType>();
                             }
                             else {
                                 out->m_uuid = 0;
-                                *out = any::instance(call(std::move(begin)));
+                                *out = any::instance(call(begin));
                             }
                         }
                         else {
-                            *out = any::instance(call(std::move(begin)));
+                            *out = any::instance(call(begin));
                         }
                     }
                     else {
-                        *out = any::instance(call(std::move(begin)));
+                        *out = any::instance(call(begin));
                     }
 #else
-                    *out = any::instance(call(std::move(begin)));
+                    *out = any::instance(call(begin));
 #endif
 
                 }
                 else {
-                    call(std::move(begin));
+                    call(begin);
     }
 }
         };
@@ -1499,22 +1531,46 @@ namespace {
         typename traits::returnType call(const any* begin) const {
             if constexpr (std::is_empty_v< Function >) {
                 using static_traits = decltype(Static_Function_Traits(+std::declval<Function>()));
-                return static_traits::call(std::move(begin));
+                return static_traits::call(begin);
             }
             else {
-                return Lambda_Function_Traits< Function >::call(std::move(begin), func);
+                return Lambda_Function_Traits< Function >::call(begin, func);
             }
         };
-        void call(const any* begin, any* out) const override {
+        void call(const any* const& begin, any* const& out) const override {
             if constexpr (std::is_same_v<void, typename traits::returnType>) {
-                call(std::move(begin));
+                call(begin);
             }
             else {
                 if (out) {
-                    *out = any::instance(call(std::move(begin)));
+#if 1
+                    if ((out->m_uuid & 0x1000'0000) == 0) {
+                        if ((out->m_uuid & uuid::INV_FLAGS) > 0) {
+                            auto& ref = uuid::get_uuid(out->m_uuid);
+                            if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&ref.count)) == 0) {
+                                ref.count = 1;
+                                ref.data = GL::type_erasure::wrap(call(begin));
+                                out->m_ptr = ref.data->get();
+                                out->m_type = GL::type_of<typename traits::returnType>();
+                            }
+                            else {
+                                out->m_uuid = 0;
+                                *out = any::instance(call(begin));
+                            }
+                        }
+                        else {
+                            *out = any::instance(call(begin));
+                        }
+                    }
+                    else {
+                        *out = any::instance(call(begin));
+                    }
+#else
+                    * out = any::instance(call(begin));
+#endif
                 }
                 else {
-                    call(std::move(begin));
+                    call(begin);
                 }
             }
         };
@@ -1650,15 +1706,42 @@ public:
         unsigned char buf[sizeof(any) * 16];
         int position = 0;
         ([&] { // unwrap the parameter pack
-            if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>) {
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<decltype(args)>(args), true);
+            if constexpr (std::is_same_v<decltype(args), any const&>) {
+                std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));
+            }
+            else if constexpr (std::is_same_v<decltype(args), any&>) {
+                std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));
+            }
+            else if constexpr (std::is_same_v<decltype(args), any&&>) {
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<any>(args));
+            }
+            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>) {
+                std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));
             }
             else {
                 new (&reinterpret_cast<any*>(&buf[0])[position++]) any((any&&)any::instance(std::forward<decltype(args)>(args)));
             }
         }(), ...);
+        
+        defer(position = 0; ([&] { // unwrap the parameter pack
+            if constexpr (std::is_same_v<decltype(args), any const&>) {
+                position++;
+            }
+            else if constexpr (std::is_same_v<decltype(args), any&>) {
+                position++;
+            }
+            else if constexpr (std::is_same_v<decltype(args), any&&>) {
+                reinterpret_cast<any*>(&buf[0])[position++].~any();
+            }
+            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>) {
+                position++;
+            }
+            else {
+                reinterpret_cast<any*>(&buf[0])[position++].~any();
+            }
+        }(), ...));
         for (; position < num_arguments; ++position) {
-            new (&reinterpret_cast<any*>(&buf[0])[position]) any(defaults[position], true);
+            std::memcpy((&reinterpret_cast<any*>(&buf[0])[position]), &defaults[position], sizeof(any));
         }
         if constexpr (std::is_same_v<void, T>) {
             ptr->call(reinterpret_cast<any*>(&buf[0]), nullptr);
@@ -1667,11 +1750,19 @@ public:
             thread_local any out;
             ptr->call(reinterpret_cast<any*>(&buf[0]), &out);
             if constexpr (std::is_same_v<any, T>) {
-                return out;
+                return std::move(out);
             }
             else {
                 T to_return = out.cast<T>();
-                if ((out.m_uuid & 0x1000'0000) == 0) out = nullptr; // if not temporary, then potentially call the destructor
+                if ((out.m_uuid & 0x1000'0000) == 0) {
+                    // if not temporary, then potentially call the destructor
+                    if ((out.m_uuid & uuid::INV_FLAGS) > 0) {
+                        auto& ref = uuid::get_uuid(out.m_uuid);
+                        if (!ref.data->is_pod()) {
+                            out = nullptr;
+                        }
+                    }                    
+                }
                 return to_return;
             }
         }        
@@ -1683,25 +1774,25 @@ int main() {
 #if 1
     using namespace GL::literals;
     if (1) {
-        auto unix_s = make_callable([](GL::second x, GL::minute y) -> GL::hour { return x + y; });
-        std::cout << unix_s->do_call<GL::hour>(1_s, 1_min) << std::endl;
+        Function unix_s = make_callable([](GL::second x, GL::minute y) -> GL::hour { return x + y; });
+        std::cout << unix_s.do_call<GL::hour>(1_s, 1_min) << std::endl;
     }
     if (1) {
-        auto unix_s = make_callable([](GL::second x, GL::datetime y) -> GL::hour { return x + (GL::minute)y; });
+        Function unix_s = make_callable([](GL::second x, GL::datetime y) -> GL::hour { return x + (GL::minute)y; });
         auto N = GL::datetime::Now();
-        std::cout << unix_s->do_call<GL::hour>(0_s, N) << std::endl;
-        std::cout << unix_s->do_call<GL::hour>(120_s, N) << std::endl;
-        std::cout << unix_s->do_call<GL::hour>(12000_s, N) << std::endl;
-        std::cout << unix_s->do_call<GL::hour>(120000000000_s, N) << std::endl;
+        std::cout << unix_s.do_call<GL::hour>(0_s, N) << std::endl;
+        std::cout << unix_s.do_call<GL::hour>(120_s, N) << std::endl;
+        std::cout << unix_s.do_call<GL::hour>(12000_s, N) << std::endl;
+        std::cout << unix_s.do_call<GL::hour>(120000000000_s, N) << std::endl;
     }
     if (1) {
-        auto unix_s = make_callable([](GL::datetime y, GL::second x) -> GL::datetime { return y + x; });
+        Function unix_s = make_callable([](GL::datetime y, GL::second x) -> GL::datetime { return y + x; });
         auto N = GL::datetime::Now();
-        std::cout << unix_s->do_call<GL::datetime>(N, 0_s) << std::endl;
-        std::cout << unix_s->do_call<GL::datetime>(N, 120_s) << std::endl;
-        std::cout << unix_s->do_call<GL::datetime>(N, 12000_s) << std::endl;
-        std::cout << unix_s->do_call<GL::datetime>(N, 1200000_s) << std::endl;
-        std::cout << unix_s->do_call<GL::datetime>(N, 120000000_s) << std::endl;
+        std::cout << unix_s.do_call<GL::datetime>(N, 0_s) << std::endl;
+        std::cout << unix_s.do_call<GL::datetime>(N, 120_s) << std::endl;
+        std::cout << unix_s.do_call<GL::datetime>(N, 12000_s) << std::endl;
+        std::cout << unix_s.do_call<GL::datetime>(N, 1200000_s) << std::endl;
+        std::cout << unix_s.do_call<GL::datetime>(N, 120000000_s) << std::endl;
     }
 
     while (1) {
@@ -1782,7 +1873,7 @@ int main() {
             };
             if (auto timer = GL::stopwatch().debug_timer("\"this\".begins_with(\"this\") with generalized callable and w/o converters, no conversion needed, w/o return")) {
                 for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
-                    (void)callable.do_call(any(example[0], true), any(example[1], true));
+                    (void)callable.do_call(example[0], example[1]);
                 }//);
             }
         } break;
@@ -1795,7 +1886,7 @@ int main() {
             };
             if (auto timer = GL::stopwatch().debug_timer("GL::string::begins_with() with non-capturing lambda function and w/o converters, no conversion needed, w/o return")) {
                 for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
-                    (void)callable.do_call(any(example[0], true), any(example[1], true));
+                    (void)callable.do_call(example[0], example[1]);
                 }//);
             }
         } break;
@@ -1808,8 +1899,10 @@ int main() {
             };
             if (auto timer = GL::stopwatch().debug_timer("GL::string::begins_with() with do-call w/ return")) {
                 for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
-                    callable.do_call<bool>(any(example[0], true), any(example[1], true));
+                    // callable.do_call<bool>(any(example[0], true), any(example[1], true));
+                    callable.do_call<bool>(example[0], example[1]);
                 }//);
+
             }
         } break;
         case 11: {

@@ -190,7 +190,7 @@ namespace GL {
                     default_bits.m_bits.impl_unit = impl_hash;
                     default_bits.m_bits.val = 0;
 
-                    if (InterlockedCompareExchange(reinterpret_cast<volatile uint32_t*>(&out.hash), impl_hash, std::numeric_limits< uint32_t>::max()) == std::numeric_limits< uint32_t>::max()) {
+                    if (InterlockedCompareExchangeNoFence(reinterpret_cast<volatile uint32_t*>(&out.hash), impl_hash, std::numeric_limits< uint32_t>::max()) == std::numeric_limits< uint32_t>::max()) {
                         out.ratio = ratio;
                         out.translation = 0;
                         out.name = name;
@@ -211,7 +211,7 @@ namespace GL {
                     default_bits.m_bits.impl_unit = impl_hash;
                     default_bits.m_bits.val = 0;
 
-                    if (InterlockedCompareExchange(reinterpret_cast<volatile uint32_t*>(&out.hash), impl_hash, std::numeric_limits< uint32_t>::max()) == std::numeric_limits< uint32_t>::max()) {
+                    if (InterlockedCompareExchangeNoFence(reinterpret_cast<volatile uint32_t*>(&out.hash), impl_hash, std::numeric_limits< uint32_t>::max()) == std::numeric_limits< uint32_t>::max()) {
                         out.ratio = ratio;
                         out.translation = translation;
                         out.name = name;
@@ -230,7 +230,7 @@ namespace GL {
             uint16_t base_hash = si_unit::calc_si_hash(meters, kilograms, seconds, amperes, celsius, radians);
             si_unit& out = get_si_unit(base_hash);
             if (out.hash == std::numeric_limits< uint32_t>::max()) {
-                if (InterlockedCompareExchange(reinterpret_cast<volatile uint32_t*>(&out.hash), base_hash, std::numeric_limits< uint32_t>::max()) == std::numeric_limits< uint32_t>::max()) {
+                if (InterlockedCompareExchangeNoFence(reinterpret_cast<volatile uint32_t*>(&out.hash), base_hash, std::numeric_limits< uint32_t>::max()) == std::numeric_limits< uint32_t>::max()) {
                     out.METERS = meters;
                     out.KILOGRAMS = kilograms;
                     out.SECONDS = seconds;
@@ -644,26 +644,26 @@ namespace GL {
             return packed;
         };
         void store(package const& data) {
-            InterlockedExchange(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), data.m_n64);
+            InterlockedExchangeNoFence(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), data.m_n64);
         };
         void store(package&& data) {
-            InterlockedExchange(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), std::move(data.m_n64));
+            InterlockedExchangeNoFence(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), std::move(data.m_n64));
         };
         package exchange(package&& data) {
             package out;
-            out.m_n64 = InterlockedExchange(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), std::move(data.m_n64));
+            out.m_n64 = InterlockedExchangeNoFence(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), std::move(data.m_n64));
             return out;
         };
         package exchange(package const& data) {
             package out;
-            out.m_n64 = InterlockedExchange(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), data.m_n64);
+            out.m_n64 = InterlockedExchangeNoFence(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), data.m_n64);
             return out;
         };
         bool compare_exchange_p(package const& expected, package&& newValue) {
-            return InterlockedCompareExchange(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), std::move(newValue.m_n64), expected.m_n64) == expected.m_n64;
+            return InterlockedCompareExchangeNoFence(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), std::move(newValue.m_n64), expected.m_n64) == expected.m_n64;
         };
         bool compare_exchange_p(package const& expected, package const& newValue) {
-            return InterlockedCompareExchange(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), newValue.m_n64, expected.m_n64) == expected.m_n64;
+            return InterlockedCompareExchangeNoFence(reinterpret_cast<volatile uint64_t*>(&packed.m_n64), newValue.m_n64, expected.m_n64) == expected.m_n64;
         };
 
     protected:

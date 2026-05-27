@@ -50,7 +50,7 @@ namespace GL {
 
     protected:
         void pack(double a) {
-            InterlockedExchange(static_cast<volatile unsigned long long*>(&representation), pack_fast(a));
+            InterlockedExchangeNoFence(static_cast<volatile unsigned long long*>(&representation), pack_fast(a));
         };
         double unpack() const {
             return unpack_fast(representation);
@@ -61,12 +61,12 @@ namespace GL {
         template <typename T, typename = std::enable_if_t<(!std::is_same<std::decay_t<T>, atomic_double>::value) && std::is_pod_v<std::decay_t<T>>>>  atomic_double(T const& a) : representation{ pack_fast(static_cast<double>(a)) } {};
         atomic_double(const atomic_double& a) = default;
         atomic_double& operator=(const atomic_double& a) noexcept {
-            InterlockedExchange(static_cast<volatile unsigned long long*>(&representation), a.representation);
+            InterlockedExchangeNoFence(static_cast<volatile unsigned long long*>(&representation), a.representation);
             return *this;
         };
         atomic_double(atomic_double&& a) = default;
         atomic_double& operator=(atomic_double&& a) noexcept {
-            InterlockedExchange(static_cast<volatile unsigned long long*>(&representation), a.representation);
+            InterlockedExchangeNoFence(static_cast<volatile unsigned long long*>(&representation), a.representation);
             return *this;
         };
         ~atomic_double() = default;
@@ -147,7 +147,7 @@ namespace GL {
             uint64_t prev;
             while (true) {
                 prev = representation;
-                if (InterlockedCompareExchange(static_cast<volatile unsigned long long*>(&representation), pack_fast(updateFunction(unpack_fast(prev))), prev) == prev) {
+                if (InterlockedCompareExchangeNoFence(static_cast<volatile unsigned long long*>(&representation), pack_fast(updateFunction(unpack_fast(prev))), prev) == prev) {
                     break;
                 }
             }
@@ -230,7 +230,7 @@ namespace GL {
 
     protected:
         void pack(float a) {
-            InterlockedExchange(static_cast<volatile uint32_t*>(&representation), pack_fast(a));
+            InterlockedExchangeNoFence(static_cast<volatile uint32_t*>(&representation), pack_fast(a));
         };
         float unpack() const {
             return unpack_fast(representation);
@@ -241,12 +241,12 @@ namespace GL {
         template <typename T, typename = std::enable_if_t<(!std::is_same<std::decay_t<T>, atomic_float>::value) && std::is_pod_v<std::decay_t<T>>>>  atomic_float(T const& a) : representation{ pack_fast(static_cast<float>(a)) } {};
         atomic_float(const atomic_float& a) = default;
         atomic_float& operator=(const atomic_float& a) noexcept {
-            InterlockedExchange(static_cast<volatile uint32_t*>(&representation), a.representation);
+            InterlockedExchangeNoFence(static_cast<volatile uint32_t*>(&representation), a.representation);
             return *this;
         };
         atomic_float(atomic_float&& a) = default;
         atomic_float& operator=(atomic_float&& a) noexcept {
-            InterlockedExchange(static_cast<volatile uint32_t*>(&representation), a.representation);
+            InterlockedExchangeNoFence(static_cast<volatile uint32_t*>(&representation), a.representation);
             return *this;
         };
         ~atomic_float() = default;
@@ -328,7 +328,7 @@ namespace GL {
             uint32_t prev;
             while (true) {
                 prev = representation;
-                if (InterlockedCompareExchange(static_cast<volatile uint32_t*>(&representation), pack_fast(updateFunction(unpack_fast(prev))), prev) == prev) {
+                if (InterlockedCompareExchangeNoFence(static_cast<volatile uint32_t*>(&representation), pack_fast(updateFunction(unpack_fast(prev))), prev) == prev) {
                     break;
                 }
             }

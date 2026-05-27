@@ -108,7 +108,7 @@ namespace GL {
 
         // Acquire a new element from the free list and construct it.
         template <typename... TArgs> __declspec(noinline) T* Alloc(TArgs &&... a) {
-            if constexpr (support_count) InterlockedIncrement(reinterpret_cast<volatile long*>(&count));
+            if constexpr (support_count) InterlockedIncrementNoFence(reinterpret_cast<volatile long*>(&count));
 
             element_t* element{ nullptr };
             while (1) {
@@ -144,7 +144,7 @@ namespace GL {
             }
             t->initialized = false;
             aba_problem::Stack_Push(free, t);
-            if constexpr (support_count) InterlockedDecrement(reinterpret_cast<volatile long*>(&count));
+            if constexpr (support_count) InterlockedDecrementNoFence(reinterpret_cast<volatile long*>(&count));
         };
         template <typename... TArgs> std::shared_ptr< T > AllocShared(TArgs&&... a) {
             return std::shared_ptr<T>(Alloc(std::forward<TArgs>(a)...), [this](T* p) { Free(p); });

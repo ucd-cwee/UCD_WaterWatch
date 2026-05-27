@@ -54,7 +54,7 @@ namespace GL {
         };
 
         static bool CAS(size_t* Destination, size_t& Comperand, size_t& Exchange) noexcept {
-            return InterlockedCompareExchange(reinterpret_cast<volatile size_t*>(Destination), Exchange, Comperand) == Comperand;
+            return InterlockedCompareExchangeNoFence(reinterpret_cast<volatile size_t*>(Destination), Exchange, Comperand) == Comperand;
         };
 
         template<class T>

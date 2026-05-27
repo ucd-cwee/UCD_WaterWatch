@@ -39,7 +39,7 @@ namespace GL {
 					catch (...) {
 						if (!e) {
 							auto ptr = new std::exception_ptr(std::current_exception());
-							if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&e), ptr, nullptr) != nullptr) {
+							if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&e), ptr, nullptr) != nullptr) {
 								delete ptr;
 							}
 						}
@@ -70,7 +70,7 @@ namespace GL {
 					catch (...) {
 						if (!e) {
 							auto ptr = new std::exception_ptr(std::current_exception());
-							if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&e), ptr, nullptr) != nullptr) {
+							if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&e), ptr, nullptr) != nullptr) {
 								delete ptr;
 							}
 						}
@@ -100,7 +100,7 @@ namespace GL {
 					catch (...) {
 						if (!e) {
 							auto ptr = new std::exception_ptr(std::current_exception());
-							if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&e), ptr, nullptr) != nullptr) {
+							if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&e), ptr, nullptr) != nullptr) {
 								delete ptr;
 							}
 						}
@@ -130,7 +130,7 @@ namespace GL {
 					catch (...) {
 						if (!e) {
 							auto ptr = new std::exception_ptr(std::current_exception());
-							if (InterlockedCompareExchangePointer(reinterpret_cast<volatile PVOID*>(&e), ptr, nullptr) != nullptr) {
+							if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&e), ptr, nullptr) != nullptr) {
 								delete ptr;
 							}
 						}
@@ -158,7 +158,7 @@ namespace GL {
 
 				void try_rethrow_exception() {
 					if (e == nullptr) return;
-					if (std::exception_ptr* eptr = reinterpret_cast<std::exception_ptr*>(::InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&e), nullptr))) {
+					if (std::exception_ptr* eptr = reinterpret_cast<std::exception_ptr*>(::InterlockedExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&e), nullptr))) {
 						std::exception_ptr copy{ *eptr };
 						delete eptr;
 						std::rethrow_exception(std::move(copy));
@@ -166,13 +166,13 @@ namespace GL {
 				};
 				void clear_exception() {
 					if (e == nullptr) return;
-					if (std::exception_ptr* eptr = reinterpret_cast<std::exception_ptr*>(::InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&e), nullptr))) {
+					if (std::exception_ptr* eptr = reinterpret_cast<std::exception_ptr*>(::InterlockedExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&e), nullptr))) {
 						delete eptr;
 					}
 				};
 				void catch_exception() {
 					if (!e) {
-						if (std::exception_ptr* eptr = reinterpret_cast<std::exception_ptr*>(::InterlockedExchangePointer(reinterpret_cast<volatile PVOID*>(&e), new std::exception_ptr(std::current_exception())))) {
+						if (std::exception_ptr* eptr = reinterpret_cast<std::exception_ptr*>(::InterlockedExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&e), new std::exception_ptr(std::current_exception())))) {
 							delete eptr;
 						}
 					}

@@ -164,7 +164,7 @@ namespace /* atomic_shared_ptr */ GL {
         };
 
         bool compare_exchange(control_block_base* const expected, control_block_base* released_control_block) {
-            control_block_base* oldP = reinterpret_cast<control_block_base*>(InterlockedCompareExchangePointer(reinterpret_cast<PVOID*>(&controlBlock), released_control_block, expected));
+            control_block_base* oldP = reinterpret_cast<control_block_base*>(InterlockedCompareExchangePointerNoFence(reinterpret_cast<PVOID*>(&controlBlock), released_control_block, expected));
             if (oldP == expected) { // exchange was successful                
                 if (oldP) control_block_base::DeferredDeletion(oldP);   
                 data = reinterpret_cast<T*>(released_control_block ? released_control_block->Pointer() : nullptr);

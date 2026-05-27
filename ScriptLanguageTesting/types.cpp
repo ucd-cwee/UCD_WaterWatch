@@ -51,7 +51,7 @@ namespace GL {
 
             auto& out = scripted_types[ticket];
             if (out.base_hash == 0) {
-                if (InterlockedCompareExchange(reinterpret_cast<volatile GL::type_hash_t*>(&out.base_hash), ticket, 0) == 0) {
+                if (InterlockedCompareExchangeNoFence(reinterpret_cast<volatile GL::type_hash_t*>(&out.base_hash), ticket, 0) == 0) {
                     out.name = type_name;
                     out.T_size = std::numeric_limits<GL::type_hash_t>::max();
                     out.base_classes = {};

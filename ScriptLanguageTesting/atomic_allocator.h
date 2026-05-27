@@ -40,7 +40,7 @@ namespace GL {
         };
 
         template <typename... TArgs> __declspec(noinline) _type_* Alloc(TArgs&&... a) {
-            if constexpr (support_count) InterlockedIncrement(reinterpret_cast<volatile long*>(&count));
+            if constexpr (support_count) InterlockedIncrementNoFence(reinterpret_cast<volatile long*>(&count));
 
             innerType* out;
             const auto threadID = GL::util::get_thread_id();
@@ -56,7 +56,7 @@ namespace GL {
         __declspec(noinline) void Free(void* t) {
             innerType* impl = static_cast<innerType*>(t);
             TLS[impl->threadID].Free(impl);
-            if constexpr (support_count) InterlockedDecrement(reinterpret_cast<volatile long*>(&count));
+            if constexpr (support_count) InterlockedDecrementNoFence(reinterpret_cast<volatile long*>(&count));
         };
         template <typename... TArgs> std::shared_ptr< _type_ > AllocShared(TArgs&&... a) {
             return std::shared_ptr<_type_>(Alloc(std::forward<TArgs>(a)...), [this](_type_* p) { Free(p); });
