@@ -37,6 +37,8 @@ namespace GL {
 
 // Good Language namespace
 namespace GL {
+    using type_hash_t = unsigned long;
+
     // utilities
     namespace util {
         __forceinline static void hash(size_t& seed) { };
@@ -80,13 +82,13 @@ namespace GL {
         double rand_fast(double min, double max);
 
         struct type_hash_impl {
-            static size_t get_next_ticket(size_t hash);
+            static GL::type_hash_t get_next_ticket(size_t hash);
         };
 
         template<typename T>
         struct type_hash {
-            inline static std::size_t hash = std::is_same_v<void, T> ? 0 : type_hash_impl::get_next_ticket(boost::typeindex::type_id<T>().type_info().hash_code());
-            static size_t hash_code() {
+            inline static GL::type_hash_t hash = std::is_same_v<void, T> ? 0ul : type_hash_impl::get_next_ticket(boost::typeindex::type_id<T>().type_info().hash_code());
+            static GL::type_hash_t hash_code() {
                 return hash;
             };
             static const char* name() {

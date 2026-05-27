@@ -932,7 +932,7 @@ namespace GL {
         };
         GL::type impl::BasicScope::DetermineType(GL::string from) {
             from = from.remove_leading_and_trailing(' ');
-            size_t state_modifiers = 0;
+            unsigned long state_modifiers = 0;
             if (from.begins_with("const ")) { from = from.right(from.size() - 6); state_modifiers |= GL::type::Const; }
             if (from.ends_with("&&")) { from = from.left(from.size() - 2); state_modifiers |= GL::type::Temporary; }
             if (from.ends_with("&")) { from = from.left(from.size() - 1); state_modifiers |= GL::type::Reference; }

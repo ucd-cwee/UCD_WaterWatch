@@ -34,16 +34,16 @@ namespace GL {
     namespace impl {
         class cached_type {
         public:
-            constexpr static size_t MAGIC_MASK1 = 0xF800'0000'0000'0000;
-            constexpr static size_t MAGIC_MASK2 = ~MAGIC_MASK1;
+            constexpr static GL::type_hash_t MAGIC_MASK1 = 0xF800'0000;
+            constexpr static GL::type_hash_t MAGIC_MASK2 = ~MAGIC_MASK1;
 
             GL::string // underlying name for this type
                 name{ "void" };
-            std::set<size_t> // hashes to the underlying base classes to this type
+            std::set<GL::type_hash_t> // hashes to the underlying base classes to this type
                 base_classes{};
-            std::vector<size_t> // hashes to the underlying base classes to this type
+            std::vector<GL::type_hash_t> // hashes to the underlying base classes to this type
                 base_classes_ordered{};
-            size_t // without const, ref, etc. 
+            GL::type_hash_t // without const, ref, etc. 
                 base_hash{ 0 };
             size_t
                 T_size{ 0 };
@@ -52,17 +52,17 @@ namespace GL {
                 return T_size != std::numeric_limits<size_t>::max();
             };
             // returns true if this is found to be a child of the parent type (id'd by its base hash) 
-            bool is_derived_from(size_t base) const;
+            bool is_derived_from(GL::type_hash_t base) const;
             // returns true if this is found to be a parent of the derived type (id'd by its base hash) 
-            bool is_base_of(size_t derived) const;
+            bool is_base_of(GL::type_hash_t derived) const;
             // attempts to include the specified hash as a base of this class.
-            bool add_base(size_t base);
+            bool add_base(GL::type_hash_t base);
 
-            bool match_base_hash(size_t to_match) const;
+            bool match_base_hash(GL::type_hash_t to_match) const;
 
             //bool is_any() const noexcept { return modifiers & Modifiers::Any; };
             bool is_void() const noexcept {
-                static size_t void_type{ util::type_id<void>().hash_code() & MAGIC_MASK2 };
+                static GL::type_hash_t void_type{ util::type_id<void>().hash_code() & MAGIC_MASK2 };
                 return void_type == this->base_hash;
             };
             // bool is_value() const noexcept { return modifiers & Modifiers::ValueType; };
@@ -70,14 +70,14 @@ namespace GL {
         };
 
         // get the unique hash for this scripted type and perform set-up. This hash will always point this object until the "return" is called. 
-        size_t checkout_scripted_type(GL::string type_name);
+        GL::type_hash_t checkout_scripted_type(GL::string type_name);
         // unloads the scripted type and allows the index (or hash) to be re-used. 
-        void return_scripted_type(size_t ticket);
+        void return_scripted_type(GL::type_hash_t ticket);
         // get the cached, scripted type info based on the ticketed hash. Must have been previously "checked out" otherwise may perform an out-of-bounds index call. 
-        cached_type& get_scripted_type(size_t hash);
+        cached_type& get_scripted_type(GL::type_hash_t hash);
 
         // get the cached, built-in cpp type info based on the boost::type hash
-        cached_type& get_impl(size_t hash);
+        cached_type& get_impl(GL::type_hash_t hash);
 
         // get the cached, built-in cpp type info
         template <typename T> cached_type& get_impl() {
@@ -87,7 +87,7 @@ namespace GL {
             auto hash = this_type.hash_code() & cached_type::MAGIC_MASK2;
             auto& out = get_impl(hash);
             if (out.base_hash == 0) {
-                if (InterlockedCompareExchangeNoFence(reinterpret_cast<volatile size_t*>(&out.base_hash), hash, 0) == 0) {
+                if (InterlockedCompareExchangeNoFence(reinterpret_cast<volatile GL::type_hash_t*>(&out.base_hash), hash, 0) == 0) {
                     out.name = GL::string(std::string_view(this_type.name())).remove_leading_and_trailing(':').remove_suffix(" __cdecl(void)");
                     if constexpr (!std::is_void_v<T>) out.T_size = sizeof(BaseType);
                     else out.T_size = 0;
@@ -123,69 +123,69 @@ namespace GL {
 
     protected:
         // combination of the base hash and the qualifiers. Limited to four qualifier types with the current magic mask set-up. 
-        size_t hash; // e.g. int, long, std::string, or a (registered) scripted type
-        static size_t const& any_hash_code() {
-            static size_t out{ util::type_id<any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+        GL::type_hash_t hash; // e.g. int, long, std::string, or a (registered) scripted type
+        static GL::type_hash_t const& any_hash_code() {
+            static GL::type_hash_t out{ util::type_id<any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
             return out;
         };
-        static size_t const& void_hash_code() {
-            static size_t out{ util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+        static GL::type_hash_t const& void_hash_code() {
+            static GL::type_hash_t out{ util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2 };
             return out;
         };
-        static constexpr size_t default_hash_code = (0ull & impl::cached_type::MAGIC_MASK2) | ((size_t)CppType << 59ull);
-        //static size_t const& default_hash_code() {
-        //    static size_t out{ (util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2) | ((size_t)CppType << 59ull) };
+        static constexpr GL::type_hash_t default_hash_code = (0ull & impl::cached_type::MAGIC_MASK2) | ((GL::type_hash_t)CppType << 27ull);
+        //static GL::type_hash_t const& default_hash_code() {
+        //    static GL::type_hash_t out{ (util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2) | ((GL::type_hash_t)CppType << 27ull) };
         //    return out;
         //};
 
     public:
         type() : hash(default_hash_code) {};
-        explicit type(size_t _hash) : hash(_hash) {};
+        explicit type(GL::type_hash_t _hash) : hash(_hash) {};
         type(type const&) = default;
         type(type &&) = default;
         type& operator=(type const& rhs) {
-            InterlockedExchangeNoFence(reinterpret_cast<volatile size_t*>(&hash), rhs.hash);
+            InterlockedExchangeNoFence(reinterpret_cast<volatile GL::type_hash_t*>(&hash), rhs.hash);
             return *this;
         };
         type& operator=(type && rhs) noexcept {
-            InterlockedExchangeNoFence(reinterpret_cast<volatile size_t*>(&hash), rhs.hash);
+            InterlockedExchangeNoFence(reinterpret_cast<volatile GL::type_hash_t*>(&hash), rhs.hash);
             return *this;
         };
         ~type() = default;
 
         std::vector<type> all_base_types(bool local_only = true) const;
         // removes the qualifiers and returns only the base hash value
-        size_t get_base_hash() const {
+        GL::type_hash_t get_base_hash() const {
             return hash & impl::cached_type::MAGIC_MASK2;
         };
         // returns the qualifiers attached to this hash, shifted to easily compare with the Qualifiers enum directly. 
-        size_t get_qualifiers() const {
-            return (hash & impl::cached_type::MAGIC_MASK1) >> 59ull;
+        GL::type_hash_t get_qualifiers() const {
+            return (hash & impl::cached_type::MAGIC_MASK1) >> 27ull;
         };
         // atomicly swaps this type with a new hash and qualifier(s)
-        void set_qualifiers(size_t qualifiers) {
+        void set_qualifiers(GL::type_hash_t qualifiers) {
             if ((qualifiers & Temporary) > 0) {
                 qualifiers &= ~Const;
                 qualifiers &= ~Reference;
             }
-            InterlockedExchangeNoFence(reinterpret_cast<volatile size_t*>(&hash), (hash & impl::cached_type::MAGIC_MASK2) | ((qualifiers << 59ull) & impl::cached_type::MAGIC_MASK1));
+            InterlockedExchangeNoFence(reinterpret_cast<volatile GL::type_hash_t*>(&hash), (hash & impl::cached_type::MAGIC_MASK2) | ((qualifiers << 27ull) & impl::cached_type::MAGIC_MASK1));
         };
 
-        bool is_temp() const noexcept { return ((hash & ((size_t)Temporary << 59ull)) > 0); };
-        bool is_const() const noexcept { return /*is_temp() ? false : */((hash & ((size_t)Const << 59ull)) > 0); };
-        bool is_ref() const noexcept { return /*is_temp() ? false : */((hash & ((size_t)Reference << 59ull)) > 0); };
-        bool is_const_ref() const noexcept { return /*is_temp() ? false : */((hash & (((size_t)Const + (size_t)Reference) << 59ull)) == (((size_t)Const + (size_t)Reference) << 59ull)); };
+        bool is_temp() const noexcept { return ((hash & ((GL::type_hash_t)Temporary << 27ull)) > 0); };
+        bool is_const() const noexcept { return /*is_temp() ? false : */((hash & ((GL::type_hash_t)Const << 27ull)) > 0); };
+        bool is_ref() const noexcept { return /*is_temp() ? false : */((hash & ((GL::type_hash_t)Reference << 27ull)) > 0); };
+        bool is_const_ref() const noexcept { return /*is_temp() ? false : */((hash & (((GL::type_hash_t)Const + (GL::type_hash_t)Reference) << 27ull)) == (((GL::type_hash_t)Const + (GL::type_hash_t)Reference) << 27ull)); };
         bool is_base() const noexcept { 
-            return 0 == ((hash & impl::cached_type::MAGIC_MASK1) & ~((size_t)CppType << 59ull));
+            return 0 == ((hash & impl::cached_type::MAGIC_MASK1) & ~((GL::type_hash_t)CppType << 27ull));
         };
         bool is_void() const noexcept {
-            // thread_local size_t const h{ void_hash_code() };
+            // thread_local GL::type_hash_t const h{ void_hash_code() };
             return get_base_hash() == void_hash_code();
         };
         bool is_template() const noexcept {
-            return ((hash & ((size_t)TemplateType << 59ull)) > 0);
+            return ((hash & ((GL::type_hash_t)TemplateType << 27ull)) > 0);
         };
-        bool is_cpp_type() const noexcept { return (hash & ((size_t)CppType << 59ull)) > 0; };
+        bool is_cpp_type() const noexcept { return (hash & ((GL::type_hash_t)CppType << 27ull)) > 0; };
         bool is_any() const noexcept;
         bool is_var() const noexcept;
         bool is_dynamic_object() const noexcept;
@@ -201,7 +201,7 @@ namespace GL {
         // this is NOT a thread-safe operation. Ideally should be done on start-up. 
         bool try_update_name(GL::string const& new_name) const;
 
-        size_t get_hash() const {
+        GL::type_hash_t get_hash() const {
             return hash;
         };
 
@@ -212,33 +212,33 @@ namespace GL {
         friend bool operator<=(const type& a, const type& b) noexcept { return a.hash <= b.hash; };
         friend bool operator>(const type& a, const type& b) noexcept { return a.hash > b.hash; };
         friend bool operator>=(const type& a, const type& b) noexcept { return a.hash >= b.hash; };
-        bool operator&(size_t p_modifiers) const {
+        bool operator&(GL::type_hash_t p_modifiers) const {
             return (get_qualifiers() & p_modifiers) > 0;
         };
-        type operator|(size_t p_modifiers) const {
+        type operator|(GL::type_hash_t p_modifiers) const {
             type out = *this;
             out.set_qualifiers(out.get_qualifiers() | p_modifiers);
             return out;
         };
-        type& operator|=(size_t p_modifiers) {
+        type& operator|=(GL::type_hash_t p_modifiers) {
             set_qualifiers(get_qualifiers() | p_modifiers);
             return *this;
         };
-        type operator+(size_t p_modifiers) const {
+        type operator+(GL::type_hash_t p_modifiers) const {
             type out = *this;
             out.set_qualifiers(out.get_qualifiers() | p_modifiers);
             return out;
         };
-        type& operator+=(size_t p_modifiers) {
+        type& operator+=(GL::type_hash_t p_modifiers) {
             set_qualifiers(get_qualifiers() | p_modifiers);
             return *this;
         };
-        type operator-(size_t p_modifiers) const {
+        type operator-(GL::type_hash_t p_modifiers) const {
             type out = *this;
             out.set_qualifiers(out.get_qualifiers() & ~p_modifiers);
             return out;
         };
-        type& operator-=(size_t p_modifiers) {
+        type& operator-=(GL::type_hash_t p_modifiers) {
             set_qualifiers(get_qualifiers() & ~p_modifiers);
             return *this;
         };
@@ -320,7 +320,7 @@ namespace GL {
     // owner for a scripted type. types can be generated from this to be shared / manipulated as normal. Checks-out and returns space on the heap that can be accessed outside of the type itself. 
     class script_type {
     private:
-        size_t ticket;
+        GL::type_hash_t ticket;
     public:
         script_type(GL::string name) : ticket{ impl::checkout_scripted_type(name) } {};
         script_type(script_type const&) = delete;
@@ -343,18 +343,18 @@ namespace GL {
     template<typename T> /*__forceinline*//*__declspec(noinline)*/ static GL::type const& type_of() noexcept {
         using BaseType = typename std::remove_const_t<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>; // e.g. int&& -> int, or const int& -> int, or int* const& -> int*        
 
-        static constexpr size_t template_modifier{ 
+        static constexpr GL::type_hash_t template_modifier{ 
             (std::is_base_of_v< template_t, BaseType> || std::is_same_v< template_t, BaseType>) ? type::Qualifiers::TemplateType : 0
         };
 
         if constexpr (std::is_rvalue_reference<T>::value) {
-            static GL::type Base((GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((size_t)((size_t)type::Qualifiers::Temporary | (size_t)type::Qualifiers::CppType | template_modifier) << 59ull) & impl::cached_type::MAGIC_MASK1));
+            static GL::type Base((GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((GL::type_hash_t)((GL::type_hash_t)type::Qualifiers::Temporary | (GL::type_hash_t)type::Qualifiers::CppType | template_modifier) << 27ull) & impl::cached_type::MAGIC_MASK1));
             return Base;
         }
         else {
-            static constexpr size_t const_modifier{ std::is_const<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>::value ? type::Qualifiers::Const : 0 };
-            static constexpr size_t ref_modifier{ std::is_reference<typename std::remove_pointer<T>::type>::value ? type::Qualifiers::Reference : 0 };
-            static GL::type Base((GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((const_modifier | ref_modifier | (size_t)type::Qualifiers::CppType | template_modifier) << 59ull) & impl::cached_type::MAGIC_MASK1));
+            static constexpr GL::type_hash_t const_modifier{ std::is_const<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>::value ? type::Qualifiers::Const : 0 };
+            static constexpr GL::type_hash_t ref_modifier{ std::is_reference<typename std::remove_pointer<T>::type>::value ? type::Qualifiers::Reference : 0 };
+            static GL::type Base((GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((const_modifier | ref_modifier | (GL::type_hash_t)type::Qualifiers::CppType | template_modifier) << 27ull) & impl::cached_type::MAGIC_MASK1));
             return Base;
         }
     };
@@ -1547,28 +1547,28 @@ namespace GL {
     //    return type_erasure::fast_any_cast{ const_cast<fast_any*>(this) };
     //};
     ///*__forceinline*/ bool GL::type::is_any() const noexcept {
-    //    static size_t const h{ util::type_id<any>().hash_code() };
-    //    static size_t const h2{ util::type_id<any::fast_any>().hash_code() };
+    //    static GL::type_hash_t const h{ util::type_id<any>().hash_code() };
+    //    static GL::type_hash_t const h2{ util::type_id<any::fast_any>().hash_code() };
     //    return (((hash ^ h) & impl::cached_type::MAGIC_MASK2) == 0) || (((hash ^ h2) & impl::cached_type::MAGIC_MASK2) == 0);
 
-    //    //static size_t const h{ util::type_id<any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
-    //    //static size_t const h2{ util::type_id<any::fast_any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
-    //    //size_t this_h{ get_base_hash() };
+    //    //static GL::type_hash_t const h{ util::type_id<any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+    //    //static GL::type_hash_t const h2{ util::type_id<any::fast_any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+    //    //GL::type_hash_t this_h{ get_base_hash() };
     //    //return (this_h == h) || (this_h == h2);
     //};
     ///*__forceinline*/ bool GL::type::is_var() const noexcept {
-    //    static size_t const h{ util::type_id<var>().hash_code() };
+    //    static GL::type_hash_t const h{ util::type_id<var>().hash_code() };
     //    return ((hash ^ h) & impl::cached_type::MAGIC_MASK2) == 0;
 
-    //    // static size_t const h{ util::type_id<var>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+    //    // static GL::type_hash_t const h{ util::type_id<var>().hash_code() & impl::cached_type::MAGIC_MASK2 };
     //    // return (hash & impl::cached_type::MAGIC_MASK2) == h;
     //};
     ///*__forceinline*/ bool GL::type::is_dynamic_object() const noexcept {
-    //    static size_t const h{ util::type_id<dynamic_object>().hash_code() };
+    //    static GL::type_hash_t const h{ util::type_id<dynamic_object>().hash_code() };
     //    return ((hash ^ h) & impl::cached_type::MAGIC_MASK2) == 0;
 
-    //    //static size_t const h{ util::type_id<dynamic_object>().hash_code() & impl::cached_type::MAGIC_MASK2 };
-    //    //size_t this_h{ get_base_hash() };
+    //    //static GL::type_hash_t const h{ util::type_id<dynamic_object>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+    //    //GL::type_hash_t this_h{ get_base_hash() };
     //    //return this_h == h;
     //};
 
@@ -1599,15 +1599,15 @@ namespace GL {
 
     class is_template {
     public:
-        template <size_t index> static GL::type type(GL::string const& name) {
-            return GL::type((((size_t)GL::type::TemplateType + (size_t)GL::type::CppType) << 59ull) | (name.hash() & GL::impl::cached_type::MAGIC_MASK2 & ~0x0000'0000'0000'000F) | index);
+        template <GL::type_hash_t index> static GL::type type(GL::string const& name) {
+            return GL::type((((GL::type_hash_t)GL::type::TemplateType + (GL::type_hash_t)GL::type::CppType) << 27ull) | (name.hash() & GL::impl::cached_type::MAGIC_MASK2 & ~0x0000'000F) | index);
         };
-        static GL::type type(size_t index, GL::string const& name) {
-            return GL::type((((size_t)GL::type::TemplateType + (size_t)GL::type::CppType) << 59ull) | (name.hash() & GL::impl::cached_type::MAGIC_MASK2 & ~0x0000'0000'0000'000F) | index);
+        static GL::type type(GL::type_hash_t index, GL::string const& name) {
+            return GL::type((((GL::type_hash_t)GL::type::TemplateType + (GL::type_hash_t)GL::type::CppType) << 27ull) | (name.hash() & GL::impl::cached_type::MAGIC_MASK2 & ~0x0000'000F) | index);
         };
         static int index(GL::type const& what) {
             if (what & GL::type::TemplateType) {
-                return (int)(what.get_base_hash() & 0x0000'0000'0000'000F);
+                return (int)(what.get_base_hash() & 0x0000'000F);
             }
             else {
                 return -1;

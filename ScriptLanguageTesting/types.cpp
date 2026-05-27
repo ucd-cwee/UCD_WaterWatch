@@ -15,28 +15,28 @@ namespace GL {
     };
 
     bool type::is_any() const noexcept {
-        static size_t const h{ util::type_id<any>().hash_code() };
-        static size_t const h2{ util::type_id<any::fast_any>().hash_code() };
+        static GL::type_hash_t const h{ util::type_id<any>().hash_code() };
+        static GL::type_hash_t const h2{ util::type_id<any::fast_any>().hash_code() };
         return (((hash ^ h) & impl::cached_type::MAGIC_MASK2) == 0) || (((hash ^ h2) & impl::cached_type::MAGIC_MASK2) == 0);
 
-        //static size_t const h{ util::type_id<any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
-        //static size_t const h2{ util::type_id<any::fast_any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
-        //size_t this_h{ get_base_hash() };
+        //static GL::type_hash_t const h{ util::type_id<any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+        //static GL::type_hash_t const h2{ util::type_id<any::fast_any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+        //GL::type_hash_t this_h{ get_base_hash() };
         //return (this_h == h) || (this_h == h2);
     };
     bool type::is_var() const noexcept {
-        static size_t const h{ util::type_id<var>().hash_code() };
+        static GL::type_hash_t const h{ util::type_id<var>().hash_code() };
         return ((hash ^ h) & impl::cached_type::MAGIC_MASK2) == 0;
 
-        // static size_t const h{ util::type_id<var>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+        // static GL::type_hash_t const h{ util::type_id<var>().hash_code() & impl::cached_type::MAGIC_MASK2 };
         // return (hash & impl::cached_type::MAGIC_MASK2) == h;
     };
     bool type::is_dynamic_object() const noexcept {
-        static size_t const h{ util::type_id<dynamic_object>().hash_code() };
+        static GL::type_hash_t const h{ util::type_id<dynamic_object>().hash_code() };
         return ((hash ^ h) & impl::cached_type::MAGIC_MASK2) == 0;
 
-        //static size_t const h{ util::type_id<dynamic_object>().hash_code() & impl::cached_type::MAGIC_MASK2 };
-        //size_t this_h{ get_base_hash() };
+        //static GL::type_hash_t const h{ util::type_id<dynamic_object>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+        //GL::type_hash_t this_h{ get_base_hash() };
         //return this_h == h;
     };
 
@@ -45,34 +45,34 @@ namespace GL {
         static GL::atomic_vector< impl::cached_type > scripted_types; // atomic_vector because ticket system will prefer small values.         
         static GL::ticket_dispensor scripted_types_ticket_dispensor; // ticket system helps ensure values remain small. 
 
-        size_t checkout_scripted_type(GL::string type_name) {
-            size_t ticket = scripted_types_ticket_dispensor.get_ticket() - 1;
-            scripted_types.grow_to_at_least(ticket + 1); // desired size
+        GL::type_hash_t checkout_scripted_type(GL::string type_name) {
+            GL::type_hash_t ticket = (GL::type_hash_t)(scripted_types_ticket_dispensor.get_ticket() - 1);
+            scripted_types.grow_to_at_least((size_t)(ticket + 1)); // desired size
 
             auto& out = scripted_types[ticket];
             if (out.base_hash == 0) {
-                if (InterlockedCompareExchange(reinterpret_cast<volatile size_t*>(&out.base_hash), ticket, 0) == 0) {
+                if (InterlockedCompareExchange(reinterpret_cast<volatile GL::type_hash_t*>(&out.base_hash), ticket, 0) == 0) {
                     out.name = type_name;
-                    out.T_size = std::numeric_limits<size_t>::max();
+                    out.T_size = std::numeric_limits<GL::type_hash_t>::max();
                     out.base_classes = {};
                     out.base_classes_ordered = {};
                 }
             }
             return ticket;
         };
-        void return_scripted_type(size_t ticket) {
+        void return_scripted_type(GL::type_hash_t ticket) {
             auto& out = scripted_types[ticket];            
             out.name = "";
-            out.T_size = std::numeric_limits<size_t>::max();            
+            out.T_size = std::numeric_limits<GL::type_hash_t>::max();            
             out.base_classes = {};
             out.base_classes_ordered = {};
             out.base_hash = 0;
             scripted_types_ticket_dispensor.return_ticket(ticket + 1);
         };
-        cached_type& get_scripted_type(size_t hash) {
+        cached_type& get_scripted_type(GL::type_hash_t hash) {
             return scripted_types[hash];
         };
-        cached_type& get_impl(size_t hash) {
+        cached_type& get_impl(GL::type_hash_t hash) {
             if (hash >= (1 << 20)) {
                 return builtin_cpp_types.get_or_make((hash - (1 << 20)));
             }
@@ -81,7 +81,7 @@ namespace GL {
             }
         };
 #undef use_btree_for_cpp_types
-        bool cached_type::is_derived_from(size_t base) const {
+        bool cached_type::is_derived_from(GL::type_hash_t base) const {
             if (this->base_hash == base) {
                 return true;
             }
@@ -104,7 +104,7 @@ namespace GL {
                 return false;
             }
         };
-        bool cached_type::is_base_of(size_t derived) const {
+        bool cached_type::is_base_of(GL::type_hash_t derived) const {
             if (this->is_cpp_type()) {
                 auto& base = get_impl(derived);
                 return base.is_derived_from(this->base_hash);
@@ -114,7 +114,7 @@ namespace GL {
                 return base.is_derived_from(this->base_hash);
             }  
         };
-        bool cached_type::add_base(size_t base) {
+        bool cached_type::add_base(GL::type_hash_t base) {
             if (this->is_cpp_type()) {
                 auto& Base = get_impl(base);
                 if (Base.is_cpp_type() && Base.T_size != 0) {
@@ -143,7 +143,7 @@ namespace GL {
             }
             return false;
         };
-        bool cached_type::match_base_hash(size_t to_match) const {
+        bool cached_type::match_base_hash(GL::type_hash_t to_match) const {
             if (base_hash == to_match) return true;
             if (this->base_classes.find(to_match) != this->base_classes.end()) return true;
             for (auto& x : base_classes_ordered) {

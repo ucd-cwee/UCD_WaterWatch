@@ -30,35 +30,34 @@
 
 // Declaration
 namespace uuid {
-    static constexpr size_t FLAGS = 0xF000'0000'0000'0000;
-    static constexpr size_t INV_FLAGS = ~FLAGS;
-
+    static constexpr unsigned long FLAGS = 0xF000'0000;
+    static constexpr unsigned long INV_FLAGS = ~FLAGS;
     struct uuid_ticket {
         size_t count{ 0 };
         GL::shared_ptr<void> data{ nullptr };
     };
-    static size_t new_uuid(GL::shared_ptr<void>&& rhs) noexcept;
-    static void free_uuid(size_t uuid) noexcept;
-    static uuid_ticket& get_uuid(size_t rhs) noexcept;
+    static unsigned long new_uuid(GL::shared_ptr<void>&& rhs) noexcept;
+    static void free_uuid(unsigned long uuid) noexcept;
+    static uuid_ticket& get_uuid(unsigned long rhs) noexcept;
 };
 
+// wrapper
 class any {
-private:
-    size_t m_uuid;
-    void* m_ptr;
 public:
+    void* m_ptr;
+    unsigned long m_uuid;    
     GL::type m_type;
 
 public:
-    any(size_t&& uuid, void* data, GL::type const& type) noexcept : m_uuid{ std::forward<size_t>(uuid) }, m_type{ type }, m_ptr{ std::move(data) } {};
+    any(unsigned long&& uuid, void* data, GL::type const& type) noexcept : m_uuid{ std::forward<unsigned long>(uuid) }, m_type{ type }, m_ptr{ std::move(data) } {};
     any() noexcept : m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
     any(std::nullptr_t) noexcept : m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
     any(any const& rhs) : m_uuid{ rhs.m_uuid & uuid::INV_FLAGS }, m_type{ rhs.m_type }, m_ptr{ rhs.m_ptr } { if (m_uuid > 0) InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count)); };
     // declares that the parent will NOT go out-of-scope before this child does. That guarrantee allows us to skip a increment and decrement call to the counter. 
-    any(any const& rhs, bool) : m_uuid{ rhs.m_uuid | 0x1000'0000'0000'0000 }, m_type{ rhs.m_type }, m_ptr{ rhs.m_ptr } {};
+    any(any const& rhs, bool) : m_uuid{ rhs.m_uuid | 0x1000'0000 }, m_type{ rhs.m_type }, m_ptr{ rhs.m_ptr } {};
     any(any && rhs) noexcept : m_uuid{ std::move(rhs.m_uuid) }, m_type{ std::move(rhs.m_type) }, m_ptr{ std::move(rhs.m_ptr) } { rhs.m_uuid = 0; };
     any const& operator=(any const& rhs) {
-        if ((m_uuid & 0x1000'0000'0000'0000) == 0)
+        if ((m_uuid & 0x1000'0000) == 0)
             if ((m_uuid & uuid::INV_FLAGS) > 0)
                 if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count)) == 0)
                     uuid::free_uuid(m_uuid);
@@ -70,7 +69,7 @@ public:
         return *this;
     };
     any const& operator=(any&& rhs) noexcept {
-        if ((m_uuid & 0x1000'0000'0000'0000) == 0)
+        if ((m_uuid & 0x1000'0000) == 0)
             if ((m_uuid & uuid::INV_FLAGS) > 0)
                 if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count)) == 0)
                     uuid::free_uuid(m_uuid);
@@ -82,24 +81,29 @@ public:
         return *this;
     };
     ~any() {
-        if ((m_uuid & 0x1000'0000'0000'0000) == 0) 
+        if ((m_uuid & 0x1000'0000) == 0) 
             if ((m_uuid & uuid::INV_FLAGS) > 0) 
                 if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count)) == 0)
                     uuid::free_uuid(m_uuid);
     };
 
     template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> static any instance(const ValueType& value) noexcept {
-        size_t uuid = uuid::new_uuid(GL::type_erasure::wrap(value));
-        return any((size_t)uuid, reinterpret_cast<GL::shared_ptr<GL::type_erasure::any_data>*>(&uuid::get_uuid(uuid).data)->operator->()->get(), GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>());
+        auto wrapped = GL::type_erasure::wrap(value);
+        auto* ptr = wrapped->get();
+        return any(uuid::new_uuid(std::move(wrapped)), ptr, GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>());
     };
     template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> static any instance(ValueType&& value) noexcept {
-        size_t uuid = uuid::new_uuid(GL::type_erasure::wrap(std::forward<ValueType>(value)));
-        return any((size_t)uuid, reinterpret_cast<GL::shared_ptr<GL::type_erasure::any_data>*>(&uuid::get_uuid(uuid).data)->operator->()->get(), GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>());
+        auto wrapped = GL::type_erasure::wrap(std::forward<ValueType>(value));
+        auto* ptr = wrapped->get();
+        return any(uuid::new_uuid(std::move(wrapped)), ptr, GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>());
     };
     static any instance(any&& value) noexcept {
         return std::forward<any>(value);
     };
-    static any instance(const any& value) noexcept {
+    static any& instance(any& value) noexcept {
+        return value;
+    };
+    static any const& instance(const any& value) noexcept {
         return value;
     };
 
@@ -267,22 +271,22 @@ public:
 
     /// \todo it is a performance increase to allow the return value to be "referenced" rather than incremented/decremented properly, however, is this safe in practice?
     template <typename T> __declspec(noinline) static any wrap_member(any const& parent, T const& ref) noexcept {       
-        if ((parent.m_uuid & 0x1000'0000'0000'0000) > 0) {
-            return any((size_t)parent.m_uuid, &const_cast<T&>(ref), GL::type_of<T const&>());
+        if ((parent.m_uuid & 0x1000'0000) > 0) {
+            return any((unsigned long)parent.m_uuid, &const_cast<T&>(ref), GL::type_of<T const&>());
         }
         else {
-            size_t uuid = parent.m_uuid & uuid::INV_FLAGS;
+            unsigned long uuid = parent.m_uuid & uuid::INV_FLAGS;
             if (uuid > 0) InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(uuid).count));
             return any(std::move(uuid), &const_cast<T&>(ref), GL::type_of<T const&>());
         }
     };
     /// \todo it is a performance increase to allow the return value to be "referenced" rather than incremented/decremented properly, however, is this safe in practice?
     template <typename T> __declspec(noinline) static any wrap_member(any const& parent, T& ref) noexcept {
-        if ((parent.m_uuid & 0x1000'0000'0000'0000) > 0) {
-            return any((size_t)parent.m_uuid, &ref, GL::type_of<T&>());
+        if ((parent.m_uuid & 0x1000'0000) > 0) {
+            return any((unsigned long)parent.m_uuid, &ref, GL::type_of<T&>());
         }
         else {
-            size_t uuid = parent.m_uuid & uuid::INV_FLAGS;
+            unsigned long uuid = parent.m_uuid & uuid::INV_FLAGS;
             if (uuid > 0) InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(uuid).count));
             return any(std::move(uuid), &ref, GL::type_of<T&>());
         }
@@ -294,21 +298,21 @@ public:
 namespace uuid {
     static GL::fast_ticket_dispensor tickets;
     static GL::atomic_vector< uuid_ticket > slots; 
-    size_t new_uuid(GL::shared_ptr<void>&& rhs) noexcept {
-        size_t uuid = tickets.get_ticket();
+    unsigned long new_uuid(GL::shared_ptr<void>&& rhs) noexcept {
+        unsigned long uuid = (unsigned long)tickets.get_ticket();
         auto& ref = slots.get_or_make(uuid);
         ref.count = 1;
         ref.data = std::forward<GL::shared_ptr<void>>(rhs);
         return uuid;
     };
-    void free_uuid(size_t uuid) noexcept {
+    void free_uuid(unsigned long uuid) noexcept {
         uuid = uuid & INV_FLAGS;
         if (uuid > 0) {
             slots[uuid].data = nullptr;
             tickets.return_ticket(uuid);
         }
     };
-    uuid_ticket& get_uuid(size_t uuid) noexcept {
+    uuid_ticket& get_uuid(unsigned long uuid) noexcept {
         return slots.at(uuid & INV_FLAGS);
     };
 };
@@ -827,9 +831,10 @@ public:
     };
 };
 
+
 class Function_Caller {
 public:
-    virtual ~Function_Caller() = default;   
+    virtual ~Function_Caller() = default;
     // implimentation-specific function
     virtual void call(const any* begin, any* out) const = 0;
     virtual size_t num_arguments() const = 0;
@@ -837,10 +842,10 @@ public:
     virtual GL::type const& returns() const = 0;
     std::array<const GL::type*, 16> arguments() const {
         return std::array<const GL::type*, 16>{
-            &argument(0),&argument(1),&argument(2),&argument(3),
-            &argument(4),&argument(5),&argument(6),&argument(7),
-            &argument(8),&argument(9),&argument(10),&argument(11),
-            &argument(12),&argument(13),&argument(14),&argument(15)
+            &argument(0), & argument(1), & argument(2), & argument(3),
+                & argument(4), & argument(5), & argument(6), & argument(7),
+                & argument(8), & argument(9), & argument(10), & argument(11),
+                & argument(12), & argument(13), & argument(14), & argument(15)
         };
     };
 
@@ -1400,12 +1405,39 @@ namespace {
             }
             else {
                 if (out) {
+#if 1
+                    if ((out->m_uuid & 0x1000'0000) == 0){
+                        if ((out->m_uuid & uuid::INV_FLAGS) > 0) {
+                            auto& ref = uuid::get_uuid(out->m_uuid);
+                            if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&ref.count)) == 0) {
+                                auto wrapped = GL::type_erasure::wrap(call(std::move(begin)));
+                                auto* ptr = wrapped->get();
+                                out->m_ptr = ptr;
+                                out->m_type = GL::type_of<typename traits::returnType>();
+                                ref.count = 1;
+                                ref.data = std::move(wrapped);
+                            }
+                            else {
+                                out->m_uuid = 0;
+                                *out = any::instance(call(std::move(begin)));
+                            }
+                        }
+                        else {
+                            *out = any::instance(call(std::move(begin)));
+                        }
+                    }
+                    else {
+                        *out = any::instance(call(std::move(begin)));
+                    }
+#else
                     *out = any::instance(call(std::move(begin)));
+#endif
+
                 }
                 else {
                     call(std::move(begin));
-                }
-            }
+    }
+}
         };
         size_t num_arguments() const override {
             return traits::numArgs;
@@ -1492,7 +1524,7 @@ namespace {
         GL::type const& argument(size_t index) const override {
             switch (index) {
             case 0: if constexpr (traits::numArgs > 0) return GL::type_of<std::tuple_element_t<0, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();   
+                  else return GL::type_of<GL::undefined>();
             case 1: if constexpr (traits::numArgs > 1) return GL::type_of<std::tuple_element_t<1, typename traits::argType>>();
                   else return GL::type_of<GL::undefined>();
             case 2: if constexpr (traits::numArgs > 2) return GL::type_of<std::tuple_element_t<2, typename traits::argType>>();
@@ -1512,17 +1544,17 @@ namespace {
             case 9: if constexpr (traits::numArgs > 9) return GL::type_of<std::tuple_element_t<9, typename traits::argType>>();
                   else return GL::type_of<GL::undefined>();
             case 10: if constexpr (traits::numArgs > 10) return GL::type_of<std::tuple_element_t<10, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
+                   else return GL::type_of<GL::undefined>();
             case 11: if constexpr (traits::numArgs > 11) return GL::type_of<std::tuple_element_t<11, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
+                   else return GL::type_of<GL::undefined>();
             case 12: if constexpr (traits::numArgs > 12) return GL::type_of<std::tuple_element_t<12, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
+                   else return GL::type_of<GL::undefined>();
             case 13: if constexpr (traits::numArgs > 13) return GL::type_of<std::tuple_element_t<13, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
+                   else return GL::type_of<GL::undefined>();
             case 14: if constexpr (traits::numArgs > 14) return GL::type_of<std::tuple_element_t<14, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
+                   else return GL::type_of<GL::undefined>();
             case 15: if constexpr (traits::numArgs > 15) return GL::type_of<std::tuple_element_t<15, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
+                   else return GL::type_of<GL::undefined>();
             default:
                 return GL::type_of<GL::undefined>();
             }
@@ -1562,7 +1594,7 @@ template <typename Function> GL::shared_ptr<Function_Caller> make_callable(Funct
 
 class Function {
 public:
-    const GL::fast_shared_ptr<Function_Caller> ptr;
+    const GL::shared_ptr<Function_Caller> ptr;
     GL::string name;
     const size_t num_arguments;
     std::array<GL::type, 16> arguments;
@@ -1578,10 +1610,10 @@ public:
         , defaults{}
     {
         auto actual_args = ptr->arguments();
-        for (int i = 0; i < 16; ++i) 
+        for (int i = 0; i < 16; ++i)
             if (actual_args[i]) arguments[i] = *actual_args[i];
             else arguments[i] = GL::type_of<GL::undefined>();
-        
+
     };
 
 private:
@@ -1598,7 +1630,7 @@ private:
             return arguments[index].name();
         }
     };
-    GL::string arguments_string() const  {
+    GL::string arguments_string() const {
         GL::string out;
         for (size_t i = 0; i < num_arguments; ++i)
             out = out.add_to_delim(argument_string(i), ", ");
@@ -1615,56 +1647,37 @@ public:
     // Does NOT handle type-conversions and assumes perfect type matches, INCLUDING WITH THE DEFAULT VALUES.
     template<typename T = void, typename... Args> decltype(auto) do_call(Args&&... args) const {
         static constexpr size_t num_provided_args{ std::tuple_size_v< std::tuple<Args...> > };
-        if (num_provided_args >= num_arguments) {
-            if constexpr (std::is_same_v<void, T>) {
-                ptr->call(any::instance(std::forward<Args>(args))..., nullptr);
+        unsigned char buf[sizeof(any) * 16];
+        int position = 0;
+        ([&] { // unwrap the parameter pack
+            if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>) {
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<decltype(args)>(args), true);
             }
             else {
-                any out;
-                ptr->call(any::instance(std::forward<Args>(args))..., &out);
-                if constexpr (std::is_same_v<any, T>) {
-                    return out;
-                }
-                else {
-                    return (T)out.cast<T>();
-                }
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any((any&&)any::instance(std::forward<decltype(args)>(args)));
             }
+        }(), ...);
+        for (; position < num_arguments; ++position) {
+            new (&reinterpret_cast<any*>(&buf[0])[position]) any(defaults[position], true);
+        }
+        if constexpr (std::is_same_v<void, T>) {
+            ptr->call(reinterpret_cast<any*>(&buf[0]), nullptr);
         }
         else {
-            unsigned char buf[sizeof(any) * 16];
-            int position = 0;
-            ([&]{ // unwrap the parameter pack
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<decltype(args)>(args), true); 
-            }(), ...);
-            for (; position < num_arguments; ++position) {
-                new (&reinterpret_cast<any*>(&buf[0])[position]) any(defaults[position], true);
-            }
-            
-            if constexpr (std::is_same_v<void, T>) {
-                ptr->call(reinterpret_cast<any*>(&buf[0]), nullptr);
+            thread_local any out;
+            ptr->call(reinterpret_cast<any*>(&buf[0]), &out);
+            if constexpr (std::is_same_v<any, T>) {
+                return out;
             }
             else {
-                any out;
-                ptr->call(reinterpret_cast<any*>(&buf[0]), &out);
-                if constexpr (std::is_same_v<any, T>) {
-                    return out;
-                }
-                else {
-                    return (T)out.cast<T>();
-                }
+                T to_return = out.cast<T>();
+                if ((out.m_uuid & 0x1000'0000) == 0) out = nullptr; // if not temporary, then potentially call the destructor
+                return to_return;
             }
-        }
+        }        
     };
 
 };
-
-
-
-
-
-
-
-
 
 int main() {
 #if 1
@@ -1691,44 +1704,41 @@ int main() {
         std::cout << unix_s->do_call<GL::datetime>(N, 120000000_s) << std::endl;
     }
 
-
-
-
-    while (1) {  
+    while (1) {
         switch ((int)std::floor(GL::util::rand(0, 14.999))) {
         case 0: {
-                GL::string ref = "this";
-                if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (unboxed value)\t")) {
-                    for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
-                        (void)ref.begins_with("this");
-                    }//);
-                }
-            } break;
+            GL::string ref = "this";
+            if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (unboxed value)\t")) {
+                for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
+                    (void)ref.begins_with("this");
+                }//);
+            }
+        } break;
         case 1: {
-                GL::string ref = "this";
-                if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (unboxed ref)\t")) {
-                    for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
-                        GL::string& Ref = ref;
-                        (void)Ref.begins_with("this");
-                    }//);
-                }
-            } break;
+            GL::string ref = "this";
+            if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (unboxed ref)\t")) {
+                for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
+                    GL::string& Ref = ref;
+                    (void)Ref.begins_with("this");
+                }//);
+            }
+        } break;
         case 2: {
-                auto boxed = any::instance(GL::make_shared<GL::string>("this"));
-                if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (from boxed GL::shared_ptr)\t")) {
-                    for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
-                        (void)boxed.cast<GL::string&>().begins_with("this");
-                    }//);
-                }
-            } break;
+            auto boxed = any::instance(GL::make_shared<GL::string>("this"));
+            if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (from boxed GL::shared_ptr)\t")) {
+                for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
+                    (void)boxed.cast<GL::string&>().begins_with("this");
+                }//);
+            }
+        } break;
         case 3: {
-                auto boxed = any::instance(GL::string("this"));
-                if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (from boxed value)\t")) {
-                    for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
-                        (void)boxed.cast<GL::string&>().begins_with("this");
-                    }//);
-                }
-            } break;
+            auto boxed = any::instance(GL::string("this"));
+            if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (from boxed value)\t")) {
+                for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
+                    (void)boxed.cast<GL::string&>().begins_with("this");
+                }//);
+            }
+        } break;
         case 4: if (0) {
             //auto boxed = any::instance(GL::string("this"));
             //if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (from boxed cast)\t")) {
@@ -1738,7 +1748,7 @@ int main() {
             //    }
             //}
         } break;
-        case 5: {            
+        case 5: {
             auto callable = GL::make_callable("begins_with", &GL::string::begins_with);
             std::array<GL::any::fast_any, 2> example{
                 GL::any::fast_any::instance(GL::string("this")),
@@ -1748,18 +1758,18 @@ int main() {
                 for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
                     (void)callable->operator()(&example[0], &example[0] + example.size(), false);
                 }//);
-            }            
+            }
         } break;
         case 6: {
             auto callable{ Const_Member_Function_Caller(&GL::string::begins_with) };
 
-            std::array<any, 2> example {
+            std::array<any, 2> example{
                 any::instance(GL::string("this")),
                 any::instance(GL::string("this"))
             };
             if (auto timer = GL::stopwatch().debug_timer("\"this\".begins_with(\"this\") with templatized callable and w/o converters, no conversion needed, w/ return")) {
                 for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
-                   (void)callable.call(&example[0]);
+                    (void)callable.call(&example[0]);
                 }//);
             }
         } break;
@@ -1828,8 +1838,8 @@ int main() {
             };
             Function callable{ make_callable(&TEST::obj2) };
             //std::cout << callable.to_string() << std::endl;
-            if (auto timer = GL::stopwatch().debug_timer("TEST::obj, w/ return")) {                
-                for (int i = 0; i < 1'000'000; ++i){//GL::parallel::For(0, 1'000'000, [&]() { any out;
+            if (auto timer = GL::stopwatch().debug_timer("TEST::obj, w/ return")) {
+                for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() { any out;
                     (void)callable.do_call<GL::string&>(any(example[0], true));
                     // if (callable.do_call<GL::string&>(any(example[0], true)) != GL::string("that")) throw "ERROR";
                 }//);                
@@ -1852,7 +1862,7 @@ int main() {
         } break;
         case 14: {
             GL::script_type Custom_Type("Custom");
-            Function callable{ make_callable([](any const& LHS, any const& RHS) -> bool { 
+            Function callable{ make_callable([](any const& LHS, any const& RHS) -> bool {
                 return LHS.cast<GL::string const&>().begins_with(RHS.cast<GL::string const&>());
             }) };
             callable.name = "begins_with";
@@ -1875,7 +1885,7 @@ int main() {
 
 
 
-    }   
+    }
 #endif
     using namespace GL::literals;
     struct F {

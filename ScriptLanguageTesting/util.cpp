@@ -37,20 +37,26 @@ namespace GL {
     namespace util {
         class ticket_return {
         private:
-            GL::ticket_dispensor<false>& parent;
-            size_t ticket;
+            static GL::ticket_dispensor<false>& parent() {
+                static GL::ticket_dispensor<false> out;
+                return out;
+            };
         public:
-            ticket_return(GL::ticket_dispensor<false>& p, size_t t) : parent{ p }, ticket{ t }  {}
+            const size_t ticket;
+        public:
+            static size_t get_ticket() {
+                return parent().get_ticket();
+            };
+            ticket_return() : ticket{ get_ticket() }  {}
             ~ticket_return() {
-                parent.return_ticket(ticket);
+                parent().return_ticket(ticket);
             };
         };
 
+
         size_t get_thread_id() {
-            static ticket_dispensor<false> tickets;
-            thread_local auto ticket{ tickets.get_ticket() };
-            thread_local ticket_return r(tickets, ticket);
-            return ticket;
+            thread_local ticket_return ticket;
+            return ticket.ticket;
         };
 #if 1
         template <void (*Func)(void)> class Taskable {
@@ -328,12 +334,12 @@ namespace GL {
             else return rand_impl().FastRandom(max, min);
         };
 
-        size_t type_hash_impl::get_next_ticket(size_t original_hash) {
+        GL::type_hash_t type_hash_impl::get_next_ticket(size_t original_hash) {
             static GL::ticket_dispensor builtin_ticket_dispensor{};
-            static std::map<size_t, size_t> builtin_tickets{};
-            size_t& out = builtin_tickets[original_hash];
+            static std::map<size_t, GL::type_hash_t> builtin_tickets{};
+            GL::type_hash_t& out = builtin_tickets[original_hash];
             if (out == 0) {
-                InterlockedCompareExchange(reinterpret_cast<volatile size_t*>(&out), builtin_ticket_dispensor.get_ticket() | (1 << 20), 0);
+                InterlockedCompareExchange(reinterpret_cast<volatile GL::type_hash_t*>(&out), (GL::type_hash_t)(builtin_ticket_dispensor.get_ticket() | (1 << 20)), 0);
             }
             return out;
         };
