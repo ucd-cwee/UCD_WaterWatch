@@ -841,7 +841,7 @@ class Function_Caller {
 public:
     virtual ~Function_Caller() = default;
     // implimentation-specific function
-    virtual void call(const any* const& begin, any* const& out) const = 0;
+    virtual void call(const any* const begin, any* const out) const = 0;
     virtual size_t num_arguments() const = 0;
     virtual GL::type const& argument(size_t index) const = 0;
     virtual GL::type const& returns() const = 0;
@@ -1160,7 +1160,7 @@ namespace {
         static typename traits::returnType call(const any* begin) {
             return traits::call(begin);
         };
-        void call(const any* const& begin, any* const& out) const override {
+        void call(const any* const begin, any* const out) const override {
             if constexpr (std::is_same_v<void, typename traits::returnType>) {
                 call(begin);
             }
@@ -1254,7 +1254,7 @@ namespace {
         static typename traits::returnType call(const any* begin) {
             return traits::call(begin);
         };
-        void call(const any* const& begin, any* const& out) const override {
+        void call(const any* const begin, any* const out) const override {
             if constexpr (std::is_same_v<void, typename traits::returnType>) {
                 call(begin);
             }
@@ -1356,7 +1356,7 @@ namespace {
         static typename traits::returnType& call(const any* begin) {
             return traits::call(begin);
         };
-        void call(const any* const& begin, any* const& out) const override {
+        void call(const any* const begin, any* const out) const override {
             if (out) {
                 if constexpr (std::is_same_v<GL::any, std::decay_t<typename traits::returnType>> || std::is_same_v<any, std::decay_t<typename traits::returnType>>) {
                     *out = call(begin);
@@ -1394,7 +1394,7 @@ namespace {
         static typename traits::returnType& call(const any* begin) {
             return traits::call(begin);
         };
-        void call(const any* const& begin, any* const& out) const override {
+        void call(const any* const begin, any* const out) const override {
             if (out) {
                 if constexpr (std::is_same_v<GL::any, std::decay_t<typename traits::returnType>> || std::is_same_v<any, std::decay_t<typename traits::returnType>>) {
                     *out = call(begin);
@@ -1433,7 +1433,7 @@ namespace {
         static typename traits::returnType call(const any* begin) {
             return traits::call(begin);
         };
-        void call(const any* const& begin, any* const& out) const override {
+        void call(const any* const begin, any* const out) const override {
             if constexpr (std::is_same_v<void, typename traits::returnType>) {
                 call(begin);
             }
@@ -1537,7 +1537,7 @@ namespace {
                 return Lambda_Function_Traits< Function >::call(begin, func);
             }
         };
-        void call(const any* const& begin, any* const& out) const override {
+        void call(const any* const begin, any* const out) const override {
             if constexpr (std::is_same_v<void, typename traits::returnType>) {
                 call(begin);
             }
@@ -1698,6 +1698,41 @@ public:
         return (returns_string() + " " + name + "(" + arguments_string() + ")").remove_leading_and_trailing(' ');
     };
 
+private:
+    //static constexpr size_t maximum_recursion_depth = 100'000;
+    //static size_t& current_buffer_position() {
+    //    thread_local size_t q{ 0ull };
+    //    return q;
+    //};
+    //static size_t& current_buffer_depth() {
+    //    thread_local size_t q{ 0ull };
+    //    return q;
+    //};
+    //static auto& buffer_scopes() {
+    //    thread_local std::array<size_t, maximum_recursion_depth> q;
+    //    return q;
+    //};
+
+    //// returns the start position of the next 16 items
+    //__declspec(noinline) static size_t push_scope() {
+    //    buffer_scopes()[current_buffer_position()++] = 16;
+    //    current_buffer_depth() += 16;
+    //    return current_buffer_depth() - 16;
+    //};
+    //__declspec(noinline) static void resize_scope(size_t actual_num_items) {
+    //    current_buffer_depth() -= 16;
+    //    current_buffer_depth() += actual_num_items;
+    //    buffer_scopes()[current_buffer_position()-1] = actual_num_items;
+    //};
+    //__declspec(noinline) static void pop_scope() {
+    //    current_buffer_depth() -= buffer_scopes()[--current_buffer_position()];
+    //};
+    //static any* local_buffer() {        
+    //    thread_local unsigned char buf[sizeof(any) * 16 * maximum_recursion_depth];
+    //    return reinterpret_cast<any*>(&buf[0]);
+    //};
+
+public:
     // Convenience function that will allow the user to easily call a proxy function with arguments.
     // Will automatically add default parameters if the number of arguments is less than required. 
     // Does NOT handle type-conversions and assumes perfect type matches, INCLUDING WITH THE DEFAULT VALUES.
@@ -1705,7 +1740,7 @@ public:
         static constexpr size_t num_provided_args{ std::tuple_size_v< std::tuple<Args...> > };
         unsigned char buf[sizeof(any) * 16];
         int position = 0;
-        ([&] { // unwrap the parameter pack
+        ([&] { // unwrap the parameter pack and copy the relevant data
             if constexpr (std::is_same_v<decltype(args), any const&>) {
                 std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));
             }
@@ -1722,8 +1757,8 @@ public:
                 new (&reinterpret_cast<any*>(&buf[0])[position++]) any((any&&)any::instance(std::forward<decltype(args)>(args)));
             }
         }(), ...);
-        
-        defer(position = 0; ([&] { // unwrap the parameter pack
+
+        defer(position = 0; ([&] { // unwrap the parameter pack and unload the non-reference data
             if constexpr (std::is_same_v<decltype(args), any const&>) {
                 position++;
             }
@@ -1740,6 +1775,7 @@ public:
                 reinterpret_cast<any*>(&buf[0])[position++].~any();
             }
         }(), ...));
+
         for (; position < num_arguments; ++position) {
             std::memcpy((&reinterpret_cast<any*>(&buf[0])[position]), &defaults[position], sizeof(any));
         }
@@ -1761,11 +1797,11 @@ public:
                         if (!ref.data->is_pod()) {
                             out = nullptr;
                         }
-                    }                    
+                    }
                 }
                 return to_return;
             }
-        }        
+        }
     };
 
 };
@@ -1790,9 +1826,10 @@ int main() {
         auto N = GL::datetime::Now();
         std::cout << unix_s.do_call<GL::datetime>(N, 0_s) << std::endl;
         std::cout << unix_s.do_call<GL::datetime>(N, 120_s) << std::endl;
+        std::cout << unix_s.do_call<GL::datetime>(N, 1_d) << std::endl;
         std::cout << unix_s.do_call<GL::datetime>(N, 12000_s) << std::endl;
         std::cout << unix_s.do_call<GL::datetime>(N, 1200000_s) << std::endl;
-        std::cout << unix_s.do_call<GL::datetime>(N, 120000000_s) << std::endl;
+        std::cout << unix_s.do_call<GL::datetime>(N, 120000000_s) << std::endl;        
     }
 
     while (1) {
@@ -1800,34 +1837,38 @@ int main() {
         case 0: {
             GL::string ref = "this";
             if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (unboxed value)\t")) {
-                for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
+                // for (int i = 0; i < 1'000'000; ++i) {
+                GL::parallel::For(0, 1'000'000, [&]() {
                     (void)ref.begins_with("this");
-                }//);
+                });
             }
         } break;
         case 1: {
             GL::string ref = "this";
             if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (unboxed ref)\t")) {
-                for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
+                //for (int i = 0; i < 1'000'000; ++i) {
+                GL::parallel::For(0, 1'000'000, [&]() {
                     GL::string& Ref = ref;
                     (void)Ref.begins_with("this");
-                }//);
+                });
             }
         } break;
         case 2: {
             auto boxed = any::instance(GL::make_shared<GL::string>("this"));
             if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (from boxed GL::shared_ptr)\t")) {
-                for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
+                //for (int i = 0; i < 1'000'000; ++i) {
+                GL::parallel::For(0, 1'000'000, [&]() {
                     (void)boxed.cast<GL::string&>().begins_with("this");
-                }//);
+                });
             }
         } break;
         case 3: {
             auto boxed = any::instance(GL::string("this"));
             if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (from boxed value)\t")) {
-                for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
+                //for (int i = 0; i < 1'000'000; ++i) {
+                GL::parallel::For(0, 1'000'000, [&]() {
                     (void)boxed.cast<GL::string&>().begins_with("this");
-                }//);
+                });
             }
         } break;
         case 4: if (0) {
@@ -1846,9 +1887,10 @@ int main() {
                 GL::any::fast_any::instance(GL::string("this"))
             };
             if (auto timer = GL::stopwatch().debug_timer("\"this\".begins_with(\"this\") with callable and w/o converters, no conversion needed, w/o return")) {
-                for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
+                //for (int i = 0; i < 1'000'000; ++i) {
+                GL::parallel::For(0, 1'000'000, [&]() {
                     (void)callable->operator()(&example[0], &example[0] + example.size(), false);
-                }//);
+                });
             }
         } break;
         case 6: {
@@ -1859,9 +1901,10 @@ int main() {
                 any::instance(GL::string("this"))
             };
             if (auto timer = GL::stopwatch().debug_timer("\"this\".begins_with(\"this\") with templatized callable and w/o converters, no conversion needed, w/ return")) {
-                for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
+                //for (int i = 0; i < 1'000'000; ++i) {
+                GL::parallel::For(0, 1'000'000, [&]() {
                     (void)callable.call(&example[0]);
-                }//);
+                });
             }
         } break;
         case 7: {
@@ -1872,9 +1915,10 @@ int main() {
                 any::instance(GL::string("this"))
             };
             if (auto timer = GL::stopwatch().debug_timer("\"this\".begins_with(\"this\") with generalized callable and w/o converters, no conversion needed, w/o return")) {
-                for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
+                //for (int i = 0; i < 1'000'000; ++i) {
+                GL::parallel::For(0, 1'000'000, [&]() {
                     (void)callable.do_call(example[0], example[1]);
-                }//);
+                });
             }
         } break;
         case 9: {
@@ -1885,9 +1929,10 @@ int main() {
                 any::instance(GL::string("this"))
             };
             if (auto timer = GL::stopwatch().debug_timer("GL::string::begins_with() with non-capturing lambda function and w/o converters, no conversion needed, w/o return")) {
-                for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
+                //for (int i = 0; i < 1'000'000; ++i) {
+                GL::parallel::For(0, 1'000'000, [&]() {
                     (void)callable.do_call(example[0], example[1]);
-                }//);
+                });
             }
         } break;
         case 10: {
@@ -1898,10 +1943,11 @@ int main() {
                 any::instance(GL::string("this"))
             };
             if (auto timer = GL::stopwatch().debug_timer("GL::string::begins_with() with do-call w/ return")) {
-                for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
+                //for (int i = 0; i < 1'000'000; ++i) {
+                GL::parallel::For(0, 1'000'000, [&]() {
                     // callable.do_call<bool>(any(example[0], true), any(example[1], true));
                     callable.do_call<bool>(example[0], example[1]);
-                }//);
+                });
 
             }
         } break;
@@ -1916,9 +1962,10 @@ int main() {
             Function callable{ make_callable(&TEST::obj2) };
             //std::cout << callable.to_string() << std::endl;
             if (auto timer = GL::stopwatch().debug_timer("TEST::obj, w/o return")) {
-                for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
+                //for (int i = 0; i < 1'000'000; ++i) {
+                GL::parallel::For(0, 1'000'000, [&]() {
                     (void)callable.do_call(any(example[0], true));
-                }//);
+                });
             }
         } break;
         case 12: {
@@ -1932,10 +1979,11 @@ int main() {
             Function callable{ make_callable(&TEST::obj2) };
             //std::cout << callable.to_string() << std::endl;
             if (auto timer = GL::stopwatch().debug_timer("TEST::obj, w/ return")) {
-                for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() { any out;
+                //for (int i = 0; i < 1'000'000; ++i) {
+                GL::parallel::For(0, 1'000'000, [&]() { any out;
                     (void)callable.do_call<GL::string&>(any(example[0], true));
                     // if (callable.do_call<GL::string&>(any(example[0], true)) != GL::string("that")) throw "ERROR";
-                }//);                
+                });                
             }
         } break;
         case 13: {
@@ -1948,9 +1996,10 @@ int main() {
                 any::instance(GL::string("this"))
             };
             if (auto timer = GL::stopwatch().debug_timer("GL::string::begins_with() with do-call w/o return w/ default value")) {
-                for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
+                // for (int i = 0; i < 1'000'000; ++i) {
+                GL::parallel::For(0, 1'000'000, [&]() {
                     callable.do_call(any(example[0], true));
-                }//);
+                });
             }
         } break;
         case 14: {
@@ -1968,9 +2017,10 @@ int main() {
                 any::instance(GL::string("this"))
             };
             if (auto timer = GL::stopwatch().debug_timer("Custom::begins_with(LHS, RHS) with do-call w/o return w/ default value")) {
-                for (int i = 0; i < 1'000'000; ++i) {//GL::parallel::For(0, 1'000'000, [&]() {
+                //for (int i = 0; i < 1'000'000; ++i) {
+                GL::parallel::For(0, 1'000'000, [&]() {
                     callable.do_call(any(example[0], true));
-                }//);
+                });
             }
         } break;
         }

@@ -389,6 +389,7 @@ namespace GL {
 
         class any_data {
         public:
+            virtual ~any_data() = default;
             virtual bool is_pod() const = 0;
             virtual GL::type const& get_type() const = 0;
             virtual void* get() const = 0;
@@ -409,7 +410,7 @@ namespace GL {
         class shared_data final : public any_data {
         public:
             shared_data(GL::shared_ptr<T>&& p_ptr) : m_ptr(std::forward<GL::shared_ptr<T>>(p_ptr)) {};
-            ~shared_data() = default;
+            virtual ~shared_data() = default;
 
             bool is_pod() const override {
                 return std::is_pod_v<T>;
@@ -486,7 +487,7 @@ namespace GL {
             GL::shared_ptr< T > m_ptr;
 
         };
-        
+
         template <typename T>
         class instanced_data final : public any_data {
         public:
@@ -499,7 +500,7 @@ namespace GL {
                     std::memset(&m_obj[0], 0, sizeof(m_obj));
                 }
             };
-            ~instanced_data() {
+            virtual ~instanced_data() {
                 if constexpr (!std::is_pod_v<T>) {
                     reinterpret_cast<T*>(&m_obj[0])->~T();
                 }
@@ -590,7 +591,7 @@ namespace GL {
         class std_shared_data final : public any_data {
         public:
             std_shared_data(std::shared_ptr<T> && a) noexcept : m_obj(std::forward<std::shared_ptr<T>>(a)) {};
-            ~std_shared_data() = default;
+            virtual ~std_shared_data() = default;
 
             bool is_pod() const override {
                 return std::is_pod_v<T>;

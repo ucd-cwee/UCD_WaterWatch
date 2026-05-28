@@ -859,6 +859,21 @@ namespace GL {
 			return task(start, end, std::move(ToDo), this);
 		};
 
+		__forceinline void fire_and_forget(void(*Func)(void)) {
+			struct Wrapper {
+				static void Callback(void* _args) {
+					if (impl::dispatch_context* data = reinterpret_cast<impl::dispatch_context*>(_args); data != nullptr)
+						delete data;
+				};
+				static void DoTask(impl::job_argument const& _args) {
+					reinterpret_cast<void(*)(void)>(_args.task_memory)();
+				};
+			};
+			impl::dispatch_context* ctx = new impl::dispatch_context{ 0, nullptr, &Wrapper::Callback, nullptr };
+			ctx->callback_data = reinterpret_cast<void*>(ctx);
+			impl::DispatchOnce(*ctx, &Wrapper::DoTask, Func);
+		};
+
 		/* Generic form of a future<T>, which can be used to wait on and get the results of any job. Can be safely shared if multiple places will need access to the result once available. */
 		class promise {
 		protected:

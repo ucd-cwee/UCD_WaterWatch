@@ -15,6 +15,6 @@ namespace GL {
             to_delete->Delete();
             to_delete->DeleteSelf(to_delete);
         } 
-        // to_delete = nullptr;
+        to_delete = nullptr;
     };
 };
