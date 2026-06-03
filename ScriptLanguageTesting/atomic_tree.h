@@ -3159,7 +3159,7 @@ namespace GL {
 
 			return false;
 		};
-		template <typename Func> __declspec(noinline) bool // calls func(key, object) on the last (largest key) node in the map
+		template <typename Func> bool // calls func(key, object) on the last (largest key) node in the map
 			do_at_end(Func const& func) {
 			auto g{ ProtectCurrentEpoch() };
 			if (auto* L = last; L) {

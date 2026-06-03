@@ -1677,7 +1677,7 @@ public:
     template<int category> __declspec(noinline) GL::shared_ptr<T> try_at(size_t cache_version) {
         GL::shared_ptr<T> out{ nullptr };
         auto Protected{ _current_cache.ProtectCurrentEpoch() };
-        _current_cache.do_at_end([cache_version, &out](size_t const& Key, std::array<GL::shared_ptr<T>, numCategories> const& Value) {
+        _current_cache.do_at_end([&cache_version, &out](size_t const& Key, std::array<GL::shared_ptr<T>, numCategories> const& Value) {
             if (Key >= cache_version) {
                 out = Value[category];
             }
@@ -1689,12 +1689,10 @@ public:
     template<int category> __declspec(noinline) GL::shared_ptr<T> at(size_t cache_version) {
         auto Protected{ _current_cache.ProtectCurrentEpoch() };
         while (true) {
-            if (GL::shared_ptr<T> out = try_at<category>(cache_version); out) {
-                return out;
-            }
-            else {
-                insert<category>(cache_version, GL::make_shared<T>());
-            }
+            if (GL::shared_ptr<T> out = try_at<category>(cache_version); out) 
+                return out;            
+            else 
+                insert<category>(cache_version, GL::make_shared<T>());            
         }
     };
 
@@ -1702,12 +1700,10 @@ public:
     template<int category, typename F, typename... Args> __declspec(noinline) GL::shared_ptr<T> at(size_t cache_version, F&& constructor, Args&&... arguments) {
         auto Protected{ _current_cache.ProtectCurrentEpoch() };
         while (true) {
-            if (GL::shared_ptr<T> out = try_at<category>(cache_version); out) {
-                return out;
-            }
-            else {
-                insert<category>(cache_version, GL::make_shared<T>(constructor(std::forward<Args>(arguments)...)));
-            }
+            if (GL::shared_ptr<T> out = try_at<category>(cache_version); out) 
+                return out;            
+            else 
+                insert<category>(cache_version, GL::make_shared<T>(constructor(std::forward<Args>(arguments)...)));            
         }
     };
 
