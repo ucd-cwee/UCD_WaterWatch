@@ -66,7 +66,7 @@ namespace GL {
 			newNode->key = key;
 			newNode->object = object;
 
-			for (node = root; node->firstChild != nullptr; node = child) {
+			for (node = root; node->firstChild; node = child) {
 				if (key > node->key) node->key = key;
 
 				// find the first child with a key larger equal to the key of the new node
@@ -139,7 +139,7 @@ namespace GL {
 				}
 			}
 			// a parent may not use a key higher than the key of it's last child
-			for (; (parent != nullptr) && (parent->lastChild != nullptr); parent = parent->parent)
+			for (; (parent) && (parent->lastChild); parent = parent->parent)
 				if (parent->key > parent->lastChild->key)
 					parent->key = parent->lastChild->key;
 
@@ -157,7 +157,7 @@ namespace GL {
 		// find an object using the given key
 		bTreeNode* NodeFind(keyType key) const {
 			if (!root) return nullptr;
-			for (bTreeNode* node = root->firstChild; node != nullptr; node = node->firstChild) {
+			for (bTreeNode* node = root->firstChild; node; node = node->firstChild) {
 				while (node->next) {
 					if (node->key >= key) break;
 					node = node->next;
@@ -172,7 +172,7 @@ namespace GL {
 		// find an object with the smallest key larger equal the given key
 		bTreeNode* NodeFindSmallestLargerEqual(keyType key) const {
 			if (root == nullptr) return nullptr;
-			for (bTreeNode* node = root->firstChild; node != nullptr; node = node->firstChild) {
+			for (bTreeNode* node = root->firstChild; node; node = node->firstChild) {
 				while (node->next) {
 					if (node->key >= key) break;
 					node = node->next;
@@ -191,7 +191,7 @@ namespace GL {
 				* smaller;
 
 			if (root == nullptr) return nullptr;
-			for (node = root->firstChild, smaller = nullptr; node != nullptr; node = node->firstChild) {
+			for (node = root->firstChild, smaller = nullptr; node; node = node->firstChild) {
 				while (node->next) {
 					if (node->key >= key) break;
 					smaller = node;
@@ -604,7 +604,7 @@ namespace GL {
 				clear();
 			};
 			operator bool() const {
-				return locked != nullptr;
+				return locked;
 			};
 
 		public:
@@ -674,11 +674,11 @@ namespace GL {
 			};
 			size_t // count of locks
 				size() const {
-				return (locked != nullptr) ? 1 : 0;
+				return (locked) ? 1 : 0;
 			};
 			void // clear all locks
 				clear() {
-				if (locked != nullptr) {
+				if (locked) {
 					if (hard_locked) locked->unlock();
 					else locked->unlock_shared();
 					locked = nullptr;
@@ -991,7 +991,7 @@ namespace GL {
 				return out;
 			}
 
-			for (node = root->firstChild, smaller = nullptr; node != nullptr; ) {
+			for (node = root->firstChild, smaller = nullptr; node; ) {
 				while (node->next) {
 					if (node->key >= key) break;
 					smaller = node;
@@ -1598,7 +1598,7 @@ namespace GL {
 				return out;
 			}
 
-			for (node = root->firstChild, smaller = nullptr; node != nullptr; ) {
+			for (node = root->firstChild, smaller = nullptr; node; ) {
 				while (node->next) {
 					if (node->key >= key) break;
 					smaller = node;
@@ -2108,7 +2108,7 @@ namespace GL {
 			}
 		};
 		void Free(dynamic_block* free_block) {
-			if (free_block != nullptr) {
+			if (free_block) {
 				allocator[free_block->thread_id].Free(free_block);
 			}
 		};
@@ -2457,7 +2457,7 @@ namespace GL {
 				clear();
 			};
 			operator bool() const {
-				return locked != nullptr;
+				return locked;
 			};
 
 		public:
@@ -2527,11 +2527,11 @@ namespace GL {
 			};
 			size_t // count of locks
 				size() const {
-				return (locked != nullptr) ? 1 : 0;
+				return (locked) ? 1 : 0;
 			};
 			void // clear all locks
 				clear() {
-				if (locked != nullptr) {
+				if (locked) {
 					if (hard_locked) locked->unlock();
 					else locked->unlock_shared();
 					locked = nullptr;
@@ -2967,7 +2967,7 @@ namespace GL {
 				return out;
 			}
 
-			for (node = root->firstChild, smaller = nullptr; node != nullptr; ) {
+			for (node = root->firstChild, smaller = nullptr; node; ) {
 				while (node->next) {
 					if (node->key >= key) break;
 					smaller = node;
@@ -3133,7 +3133,7 @@ namespace GL {
 			auto g{ ProtectCurrentEpoch() };
 
 			if (1) {
-				if (epoch_search_treeNode* node = first; node != nullptr) {
+				if (epoch_search_treeNode* node = first; node) {
 					if (func(node->key, *node->object())) {
 						// need to do removal
 					}
@@ -3162,7 +3162,7 @@ namespace GL {
 		template <typename Func> __declspec(noinline) bool // calls func(key, object) on the last (largest key) node in the map
 			do_at_end(Func const& func) {
 			auto g{ ProtectCurrentEpoch() };
-			if (auto* L = last; L != nullptr) {
+			if (auto* L = last; L) {
 				func(L->key, *L->object());
 				return true;
 			}
