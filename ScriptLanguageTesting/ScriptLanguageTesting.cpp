@@ -44,9 +44,9 @@ namespace uuid {
 // wrapper
 class any {
 public:
-    void* m_ptr;
-    unsigned long m_uuid;    
+    void* m_ptr;    
     GL::type m_type;
+    unsigned long m_uuid;
 
 public:
     any(unsigned long&& uuid, void* data, GL::type const& type) noexcept : m_uuid{ std::forward<unsigned long>(uuid) }, m_type{ type }, m_ptr{ data } {};
@@ -305,14 +305,14 @@ namespace uuid {
         unsigned long uuid = (unsigned long)tickets.get_ticket();
         auto& ref = slots.get_or_make(uuid);
         ref.count = 1;
-        ref.data = std::forward<GL::shared_ptr<void>>(rhs);
+        ref.data = std::forward<GL::shared_ptr<GL::type_erasure::any_data>>(rhs);
         return uuid;
     };
     void free_uuid(unsigned long uuid) noexcept {
-        uuid = uuid & INV_FLAGS;
+        uuid &= INV_FLAGS;
         if (uuid > 0) {
             auto& ref = slots[uuid];
-            if (!ref.data->is_pod()) 
+            // if (!ref.data->is_pod()) 
                 ref.data = nullptr;            
             tickets.return_ticket(uuid);
         }
@@ -835,7 +835,6 @@ public:
         }
     };
 };
-
 
 class Function_Caller {
 public:
@@ -1619,7 +1618,7 @@ namespace {
             return GL::type_of<typename traits::returnType>();
         };
     };
-}
+};
 template <typename Function> GL::shared_ptr<Function_Caller> make_callable(Function&& func) {
     typedef decltype(GL::details::detail::function_signature(func)) function_header;
     if constexpr (function_header::is_object) { // function objects, e.g. auto x = [](){};
@@ -1647,6 +1646,74 @@ template <typename Function> GL::shared_ptr<Function_Caller> make_callable(Funct
         throw std::runtime_error("Did not handle conversion of provided function.");
     }
 };
+
+// Thread-safe access to a cache of data. Multiple caches are provided that are all, simultanously 
+template <typename T, int numCategories = 4> class CategoricalCache {
+private: // CacheVersion -> CacheCategory -> Inputs -> Result
+    GL::epoch_search_tree< std::array<GL::atomic_shared_ptr<T>, numCategories>, size_t>
+        _current_cache;
+
+public:
+    CategoricalCache() = default;
+    CategoricalCache(CategoricalCache const&) = delete;
+    CategoricalCache(CategoricalCache&&) = delete;
+    CategoricalCache& operator=(CategoricalCache const&) = delete;
+    CategoricalCache& operator=(CategoricalCache&&) = delete;
+    ~CategoricalCache() = default;
+
+    void clear() {
+        _current_cache.clear();
+    };
+
+    // Insert an item into the cache, only if it does not yet exist. If the insert succeeds, it will also remove the older cache. 
+    template<int category> void insert(size_t cache_version, GL::shared_ptr<T>&& result) {
+        if (_current_cache[cache_version][category].compare_exchange(nullptr, std::forward<GL::shared_ptr<T>>(result))) {
+            while (_current_cache.pop_front_if([cache_version](size_t const& Key, std::array<GL::atomic_shared_ptr<T>, numCategories> const& Value) {
+                return Key < cache_version;
+            })) {};
+        }; // handles the deletion of the control block if the swap fails
+    };
+
+    // Try to find an item from the cache.
+    template<int category> GL::fast_shared_ptr<T> try_at(size_t cache_version) {
+        GL::fast_shared_ptr<T> out;
+        auto locker{ _current_cache.lock_shared() };
+        _current_cache.do_at_end([cache_version, &out](size_t const& Key, std::array<GL::atomic_shared_ptr<T>, numCategories> const& Value) {
+            if (Key >= cache_version) {
+                out = const_cast<GL::atomic_shared_ptr<T>&>(Value[category]).load_fast();
+            }
+        });
+        return out;
+    };
+
+    // get or make the new ptr
+    template<int category> GL::fast_shared_ptr<T> at(size_t cache_version) {
+        while (true) {
+            if (GL::fast_shared_ptr<T> out = try_at<category>(cache_version); out) {
+                // (void)_current_cache.pop_front_if([cache_version](size_t const& Key, std::array<GL::atomic_shared_ptr<T>, numCategories> const& Value) { return Key < cache_version; });
+                return std::move(out);
+            }
+            else {
+                insert<category>(cache_version, GL::make_shared<T>());
+            }
+        }
+    };
+
+    // get the most current value
+    template<int category> GL::fast_shared_ptr<T> current() {
+        GL::fast_shared_ptr<T> out;
+        auto locker{ _current_cache.lock_shared() };
+        _current_cache.do_at_end([&out](size_t const& Key, std::array<GL::atomic_shared_ptr<T>, numCategories> const& Value) {
+            out = const_cast<GL::atomic_shared_ptr<T>&>(Value[category]).load_fast();
+        });
+        return out;
+    };
+};
+
+
+
+
+
 
 class Function {
 public:
@@ -1699,114 +1766,178 @@ public:
     };
 
 private:
-    //static constexpr size_t maximum_recursion_depth = 100'000;
-    //static size_t& current_buffer_position() {
-    //    thread_local size_t q{ 0ull };
-    //    return q;
-    //};
-    //static size_t& current_buffer_depth() {
-    //    thread_local size_t q{ 0ull };
-    //    return q;
-    //};
-    //static auto& buffer_scopes() {
-    //    thread_local std::array<size_t, maximum_recursion_depth> q;
-    //    return q;
-    //};
-
-    //// returns the start position of the next 16 items
-    //__declspec(noinline) static size_t push_scope() {
-    //    buffer_scopes()[current_buffer_position()++] = 16;
-    //    current_buffer_depth() += 16;
-    //    return current_buffer_depth() - 16;
-    //};
-    //__declspec(noinline) static void resize_scope(size_t actual_num_items) {
-    //    current_buffer_depth() -= 16;
-    //    current_buffer_depth() += actual_num_items;
-    //    buffer_scopes()[current_buffer_position()-1] = actual_num_items;
-    //};
-    //__declspec(noinline) static void pop_scope() {
-    //    current_buffer_depth() -= buffer_scopes()[--current_buffer_position()];
-    //};
-    //static any* local_buffer() {        
-    //    thread_local unsigned char buf[sizeof(any) * 16 * maximum_recursion_depth];
-    //    return reinterpret_cast<any*>(&buf[0]);
-    //};
-
 public:
     // Convenience function that will allow the user to easily call a proxy function with arguments.
     // Will automatically add default parameters if the number of arguments is less than required. 
     // Does NOT handle type-conversions and assumes perfect type matches, INCLUDING WITH THE DEFAULT VALUES.
     template<typename T = void, typename... Args> decltype(auto) do_call(Args&&... args) const {
-        static constexpr size_t num_provided_args{ std::tuple_size_v< std::tuple<Args...> > };
         unsigned char buf[sizeof(any) * 16];
         int position = 0;
         ([&] { // unwrap the parameter pack and copy the relevant data
-            if constexpr (std::is_same_v<decltype(args), any const&>) {
-                std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));
-            }
-            else if constexpr (std::is_same_v<decltype(args), any&>) {
-                std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));
-            }
-            else if constexpr (std::is_same_v<decltype(args), any&&>) {
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<any>(args));
-            }
-            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>) {
-                std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));
-            }
-            else {
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any((any&&)any::instance(std::forward<decltype(args)>(args)));
-            }
+            if constexpr (std::is_same_v<decltype(args), any const&>) 
+                std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));            
+            else if constexpr (std::is_same_v<decltype(args), any&>) 
+                std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));            
+            else if constexpr (std::is_same_v<decltype(args), any&&>) 
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<any>(args));            
+            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>) 
+                std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));            
+            else 
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(any::instance(std::forward<decltype(args)>(args)));            
         }(), ...);
 
-        defer(position = 0; ([&] { // unwrap the parameter pack and unload the non-reference data
-            if constexpr (std::is_same_v<decltype(args), any const&>) {
-                position++;
-            }
-            else if constexpr (std::is_same_v<decltype(args), any&>) {
-                position++;
-            }
-            else if constexpr (std::is_same_v<decltype(args), any&&>) {
-                reinterpret_cast<any*>(&buf[0])[position++].~any();
-            }
-            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>) {
-                position++;
-            }
-            else {
-                reinterpret_cast<any*>(&buf[0])[position++].~any();
-            }
-        }(), ...));
-
-        for (; position < num_arguments; ++position) {
+        for (; position < num_arguments; ++position) 
             std::memcpy((&reinterpret_cast<any*>(&buf[0])[position]), &defaults[position], sizeof(any));
-        }
-        if constexpr (std::is_same_v<void, T>) {
-            ptr->call(reinterpret_cast<any*>(&buf[0]), nullptr);
-        }
+        
+        defer(position = 0; ([&] { // unwrap the parameter pack and unload the non-reference data
+            if constexpr (std::is_same_v<decltype(args), any const&>) 
+                position++;            
+            else if constexpr (std::is_same_v<decltype(args), any&>) 
+                position++;            
+            else if constexpr (std::is_same_v<decltype(args), any&&>) 
+                reinterpret_cast<any*>(&buf[0])[position++].~any();            
+            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>) 
+                position++;            
+            else 
+                reinterpret_cast<any*>(&buf[0])[position++].~any();            
+        }(), ...));
+               
+        if constexpr (std::is_same_v<void, T>) 
+            ptr->call(reinterpret_cast<any*>(&buf[0]), nullptr);        
         else {
             thread_local any out;
             ptr->call(reinterpret_cast<any*>(&buf[0]), &out);
-            if constexpr (std::is_same_v<any, T>) {
-                return std::move(out);
-            }
+            if constexpr (std::is_same_v<any, T>) return std::move(out);            
             else {
                 T to_return = out.cast<T>();
-                if ((out.m_uuid & 0x1000'0000) == 0) {
-                    // if not temporary, then potentially call the destructor
+                if ((out.m_uuid & 0x1000'0000) == 0) // if not temporary, then potentially call the destructor                    
                     if ((out.m_uuid & uuid::INV_FLAGS) > 0) {
                         auto& ref = uuid::get_uuid(out.m_uuid);
-                        if (!ref.data->is_pod()) {
-                            out = nullptr;
-                        }
-                    }
-                }
+                        // if (!ref.data->is_pod()) 
+                            out = nullptr;                        
+                    }                
                 return to_return;
             }
         }
+    };
+    // Convenience function that will allow the user to easily call a proxy function with arguments asynchronously.
+    // Will automatically add default parameters if the number of arguments is less than required. 
+    // Does NOT handle type-conversions and assumes perfect type matches, INCLUDING WITH THE DEFAULT VALUES.
+    template<typename T = void, typename... Args> decltype(auto) async_call(Args&&... args) const {
+        unsigned char buf[sizeof(any) * 16];
+        int position = 0;
+        ([&] { // unwrap the parameter pack and copy the relevant data
+            if constexpr (std::is_same_v<decltype(args), any const&>) 
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);            
+            else if constexpr (std::is_same_v<decltype(args), any&>) 
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);            
+            else if constexpr (std::is_same_v<decltype(args), any&&>) 
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<any>(args));            
+            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>) 
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);            
+            else 
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(any::instance(std::forward<decltype(args)>(args)));            
+        }(), ...);
+        for (; position < num_arguments; ++position) 
+            new (&reinterpret_cast<any*>(&buf[0])[position]) any(defaults[position]);
+            
+        // copies the buffer directly, and copies the shared_ptr with its normal protections for the underlying function
+        return GL::parallel::async([buf, Ptr = (GL::shared_ptr<Function_Caller>)(this->ptr)]() {
+            defer(int position = 0; ([&] { // unwrap the parameter pack and unload the non-reference data
+                if constexpr (std::is_same_v<decltype(args), any const&>)  // this constexpr if statement forces the unroll to happen without impacting performance 
+                    const_cast<any&>(reinterpret_cast<const any*>(&buf[0])[position++]).~any();                
+                else 
+                    const_cast<any&>(reinterpret_cast<const any*>(&buf[0])[position++]).~any();                
+            }(), ...));
+            if (!Ptr) throw "Function went out-of-scope";
+
+            if constexpr (std::is_same_v<void, T>) 
+                Ptr->call(const_cast<any*>(reinterpret_cast<const any*>(&buf[0])), nullptr);            
+            else {
+                thread_local any out;
+                Ptr->call(const_cast<any*>(reinterpret_cast<const any*>(&buf[0])), &out);
+                if constexpr (std::is_same_v<any, T>) 
+                    return std::move(out);                
+                else {
+                    T to_return = out.cast<T>();
+                    if ((out.m_uuid & 0x1000'0000) == 0) 
+                        // if not temporary, then potentially call the destructor
+                        if ((out.m_uuid & uuid::INV_FLAGS) > 0) {
+                            auto& ref = uuid::get_uuid(out.m_uuid);
+                            // if (!ref.data->is_pod()) 
+                                out = nullptr;                            
+                        }                    
+                    return to_return;
+                }
+            }            
+        });
     };
 
 };
 
 int main() {
+    if (0) {
+        GL::atomic_shared_ptr<GL::any> ptr;
+        // CategoricalCache<GL::atomic_shared_ptr<any>, 4> cache;
+        GL::parallel::For(0, 1'000'000, [&](size_t i) {
+            switch (i % 4) {
+            case 0:
+                ptr /**cache.at<0>(i / 10000)*/ = GL::make_shared<GL::any>(GL::any::fast_any::instance(GL::printf("%zu", i)));
+                break;
+            case 1:
+                ptr /**cache.at<1>(i / 10000)*/ = GL::make_shared<GL::any>(GL::any::fast_any::instance(GL::printf("%zu", i)));
+                break;
+            case 2:
+                ptr /**cache.at<2>(i / 10000)*/ = GL::make_shared<GL::any>(GL::any::fast_any::instance(GL::printf("%zu", i)));
+                break;
+            case 3:
+                ptr /**cache.at<3>(i / 10000)*/ = GL::make_shared<GL::any>(GL::any::fast_any::instance(GL::printf("%zu", i)));
+                break;
+            }
+            });
+        //std::cout << cache.current<0>()->load_fast()->cast<GL::string&>() << std::endl;
+        //std::cout << cache.current<1>()->load_fast()->cast<GL::string&>() << std::endl;
+        //std::cout << cache.current<2>()->load_fast()->cast<GL::string&>() << std::endl;
+        //std::cout << cache.current<3>()->load_fast()->cast<GL::string&>() << std::endl;
+
+    }
+
+    if (auto timer = GL::stopwatch().debug_timer("1B calls: \t")) {
+        // GL::atomic_shared_ptr<any> ptr;
+        CategoricalCache<any, 4> cache;
+        GL::parallel::For(0, 1'000'000'000, [&](size_t i) {            
+            switch (i % 4) {
+            case 0: 
+                cache.insert<0>(i / 10000, GL::make_shared<any>(any::instance(GL::printf("%zu", i))));
+                // *cache.at<0>(i / 10000) = any::instance(GL::printf("%zu", i));
+                break;
+            case 1:
+                cache.insert<1>(i / 10000, GL::make_shared<any>(any::instance(GL::printf("%zu", i))));
+            //    *cache.at<1>(i / 10000) = any::instance(GL::printf("%zu", i));
+                break;
+            case 2:
+                cache.insert<2>(i / 10000, GL::make_shared<any>(any::instance(GL::printf("%zu", i))));
+            //    *cache.at<2>(i / 10000) = any::instance(GL::printf("%zu", i));
+                break;
+            case 3:
+                cache.insert<3>(i / 10000, GL::make_shared<any>(any::instance(GL::printf("%zu", i))));
+            //    *cache.at<3>(i / 10000) = any::instance(GL::printf("%zu", i));
+                break;
+            default:
+                break;
+            }
+        });
+        std::cout << cache.current<0>()->cast<GL::string&>() << std::endl;
+        std::cout << cache.current<1>()->cast<GL::string&>() << std::endl;
+        std::cout << cache.current<2>()->cast<GL::string&>() << std::endl;
+        std::cout << cache.current<3>()->cast<GL::string&>() << std::endl;
+    }
+
+
+
+
+
+
 #if 1
     using namespace GL::literals;
     if (1) {
@@ -1833,7 +1964,7 @@ int main() {
     }
 
     while (1) {
-        switch ((int)std::floor(GL::util::rand(0, 14.999))) {
+        switch ((int)std::floor(GL::util::rand(0, 15.999))) {
         case 0: {
             GL::string ref = "this";
             if (auto timer = GL::stopwatch().debug_timer("direct function call w/o converters (unboxed value)\t")) {
@@ -1990,7 +2121,6 @@ int main() {
             Function callable{ make_callable([](GL::string const& LHS, GL::string const& RHS) -> bool { return LHS.begins_with(RHS); }) };
             callable.name = "begins_with";
             callable.defaults[1] = any::instance(GL::string("this"));
-
             // std::cout << callable.to_string() << std::endl;
             std::array<any, 1> example{
                 any::instance(GL::string("this"))
@@ -2023,11 +2153,24 @@ int main() {
                 });
             }
         } break;
+        case 15: {
+            Function callable{ []() { 
+                Function out { make_callable([](GL::string const& LHS, GL::string const& RHS) -> bool { return LHS.begins_with(RHS); }) }; 
+                out.name = "begins_with";
+                out.defaults[1] = any::instance(GL::string("this"));
+                return out; 
+            }() };            
+            std::array<any, 1> example{
+                any::instance(GL::string("this"))
+            };
+            if (auto timer = GL::stopwatch().debug_timer("GL::string::begins_with() with async_call w/o return w/ default value")) {
+                std::vector<GL::parallel::promise> jobs(1'000'000ull, GL::parallel::promise{});
+                GL::parallel::For(0, 1'000'000, [&](size_t i) {
+                    jobs[i] = callable.async_call<void>(example[0]).as_promise();
+                });
+            }
+        } break;
         }
-
-
-
-
     }
 #endif
     using namespace GL::literals;

@@ -34,9 +34,10 @@ namespace GL {
     namespace impl {
         class cached_type {
         public:
-            constexpr static GL::type_hash_t MAGIC_MASK1 = 0xF800'0000;
+            constexpr static GL::type_hash_t OFFSET = (sizeof(GL::type_hash_t) * 8) - 5;
+            constexpr static GL::type_hash_t MAGIC_MASK1 = (GL::type_hash_t)0xF8 << (OFFSET - 3);
             constexpr static GL::type_hash_t MAGIC_MASK2 = ~MAGIC_MASK1;
-
+            
             GL::string // underlying name for this type
                 name{ "void" };
             std::set<GL::type_hash_t> // hashes to the underlying base classes to this type
@@ -132,9 +133,9 @@ namespace GL {
             static GL::type_hash_t out{ util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2 };
             return out;
         };
-        static constexpr GL::type_hash_t default_hash_code = (0ull & impl::cached_type::MAGIC_MASK2) | ((GL::type_hash_t)CppType << 27ull);
+        static constexpr GL::type_hash_t default_hash_code = (0ull & impl::cached_type::MAGIC_MASK2) | ((GL::type_hash_t)CppType << impl::cached_type::OFFSET);
         //static GL::type_hash_t const& default_hash_code() {
-        //    static GL::type_hash_t out{ (util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2) | ((GL::type_hash_t)CppType << 27ull) };
+        //    static GL::type_hash_t out{ (util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2) | ((GL::type_hash_t)CppType << impl::cached_type::OFFSET) };
         //    return out;
         //};
 
@@ -160,7 +161,7 @@ namespace GL {
         };
         // returns the qualifiers attached to this hash, shifted to easily compare with the Qualifiers enum directly. 
         GL::type_hash_t get_qualifiers() const {
-            return (hash & impl::cached_type::MAGIC_MASK1) >> 27ull;
+            return (hash & impl::cached_type::MAGIC_MASK1) >> impl::cached_type::OFFSET;
         };
         // atomicly swaps this type with a new hash and qualifier(s)
         void set_qualifiers(GL::type_hash_t qualifiers) {
@@ -168,24 +169,24 @@ namespace GL {
                 qualifiers &= ~Const;
                 qualifiers &= ~Reference;
             }
-            InterlockedExchangeNoFence(reinterpret_cast<volatile GL::type_hash_t*>(&hash), (hash & impl::cached_type::MAGIC_MASK2) | ((qualifiers << 27ull) & impl::cached_type::MAGIC_MASK1));
+            InterlockedExchangeNoFence(reinterpret_cast<volatile GL::type_hash_t*>(&hash), (hash & impl::cached_type::MAGIC_MASK2) | ((qualifiers << impl::cached_type::OFFSET) & impl::cached_type::MAGIC_MASK1));
         };
 
-        bool is_temp() const noexcept { return ((hash & ((GL::type_hash_t)Temporary << 27ull)) > 0); };
-        bool is_const() const noexcept { return /*is_temp() ? false : */((hash & ((GL::type_hash_t)Const << 27ull)) > 0); };
-        bool is_ref() const noexcept { return /*is_temp() ? false : */((hash & ((GL::type_hash_t)Reference << 27ull)) > 0); };
-        bool is_const_ref() const noexcept { return /*is_temp() ? false : */((hash & (((GL::type_hash_t)Const + (GL::type_hash_t)Reference) << 27ull)) == (((GL::type_hash_t)Const + (GL::type_hash_t)Reference) << 27ull)); };
+        bool is_temp() const noexcept { return ((hash & ((GL::type_hash_t)Temporary << impl::cached_type::OFFSET)) > 0); };
+        bool is_const() const noexcept { return /*is_temp() ? false : */((hash & ((GL::type_hash_t)Const << impl::cached_type::OFFSET)) > 0); };
+        bool is_ref() const noexcept { return /*is_temp() ? false : */((hash & ((GL::type_hash_t)Reference << impl::cached_type::OFFSET)) > 0); };
+        bool is_const_ref() const noexcept { return /*is_temp() ? false : */((hash & (((GL::type_hash_t)Const + (GL::type_hash_t)Reference) << impl::cached_type::OFFSET)) == (((GL::type_hash_t)Const + (GL::type_hash_t)Reference) << impl::cached_type::OFFSET)); };
         bool is_base() const noexcept { 
-            return 0 == ((hash & impl::cached_type::MAGIC_MASK1) & ~((GL::type_hash_t)CppType << 27ull));
+            return 0 == ((hash & impl::cached_type::MAGIC_MASK1) & ~((GL::type_hash_t)CppType << impl::cached_type::OFFSET));
         };
         bool is_void() const noexcept {
             // thread_local GL::type_hash_t const h{ void_hash_code() };
             return get_base_hash() == void_hash_code();
         };
         bool is_template() const noexcept {
-            return ((hash & ((GL::type_hash_t)TemplateType << 27ull)) > 0);
+            return ((hash & ((GL::type_hash_t)TemplateType << impl::cached_type::OFFSET)) > 0);
         };
-        bool is_cpp_type() const noexcept { return (hash & ((GL::type_hash_t)CppType << 27ull)) > 0; };
+        bool is_cpp_type() const noexcept { return (hash & ((GL::type_hash_t)CppType << impl::cached_type::OFFSET)) > 0; };
         bool is_any() const noexcept;
         bool is_var() const noexcept;
         bool is_dynamic_object() const noexcept;
@@ -314,7 +315,6 @@ namespace GL {
             return is_void() && to.is_void();
         };
         size_t size() const;
-
     };
     static constexpr bool is_p = std::is_pod_v<type>;
 
@@ -349,13 +349,13 @@ namespace GL {
         };
 
         if constexpr (std::is_rvalue_reference<T>::value) {
-            static GL::type Base((GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((GL::type_hash_t)((GL::type_hash_t)type::Qualifiers::Temporary | (GL::type_hash_t)type::Qualifiers::CppType | template_modifier) << 27ull) & impl::cached_type::MAGIC_MASK1));
+            static GL::type Base((GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((GL::type_hash_t)((GL::type_hash_t)type::Qualifiers::Temporary | (GL::type_hash_t)type::Qualifiers::CppType | template_modifier) << impl::cached_type::OFFSET) & impl::cached_type::MAGIC_MASK1));
             return Base;
         }
         else {
             static constexpr GL::type_hash_t const_modifier{ std::is_const<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>::value ? type::Qualifiers::Const : 0 };
             static constexpr GL::type_hash_t ref_modifier{ std::is_reference<typename std::remove_pointer<T>::type>::value ? type::Qualifiers::Reference : 0 };
-            static GL::type Base((GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((const_modifier | ref_modifier | (GL::type_hash_t)type::Qualifiers::CppType | template_modifier) << 27ull) & impl::cached_type::MAGIC_MASK1));
+            static GL::type Base((GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((const_modifier | ref_modifier | (GL::type_hash_t)type::Qualifiers::CppType | template_modifier) << impl::cached_type::OFFSET) & impl::cached_type::MAGIC_MASK1));
             return Base;
         }
     };
@@ -1612,14 +1612,14 @@ namespace GL {
     class is_template {
     public:
         template <GL::type_hash_t index> static GL::type type(GL::string const& name) {
-            return GL::type((((GL::type_hash_t)GL::type::TemplateType + (GL::type_hash_t)GL::type::CppType) << 27ull) | (name.hash() & GL::impl::cached_type::MAGIC_MASK2 & ~0x0000'000F) | index);
+            return GL::type((((GL::type_hash_t)GL::type::TemplateType + (GL::type_hash_t)GL::type::CppType) << impl::cached_type::OFFSET) | (name.hash() & GL::impl::cached_type::MAGIC_MASK2 & ~0xF) | index);
         };
         static GL::type type(GL::type_hash_t index, GL::string const& name) {
-            return GL::type((((GL::type_hash_t)GL::type::TemplateType + (GL::type_hash_t)GL::type::CppType) << 27ull) | (name.hash() & GL::impl::cached_type::MAGIC_MASK2 & ~0x0000'000F) | index);
+            return GL::type((((GL::type_hash_t)GL::type::TemplateType + (GL::type_hash_t)GL::type::CppType) << impl::cached_type::OFFSET) | (name.hash() & GL::impl::cached_type::MAGIC_MASK2 & ~0xF) | index);
         };
         static int index(GL::type const& what) {
             if (what & GL::type::TemplateType) {
-                return (int)(what.get_base_hash() & 0x0000'000F);
+                return (int)(what.get_base_hash() & 0xF);
             }
             else {
                 return -1;

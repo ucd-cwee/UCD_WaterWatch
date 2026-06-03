@@ -25,10 +25,12 @@ namespace GL {
     }();
 
     void* malloc(size_t bytes) {
-        return CppAD::thread_alloc::get_memory(bytes, bytes);
+        return ::_aligned_malloc(bytes, 16);
+        // return CppAD::thread_alloc::get_memory(bytes, bytes);
     };
     void mfree(void* ptr) {
-        CppAD::thread_alloc::return_memory(ptr);
+        ::_aligned_free(ptr);
+        // CppAD::thread_alloc::return_memory(ptr);
     };
 
     namespace util {

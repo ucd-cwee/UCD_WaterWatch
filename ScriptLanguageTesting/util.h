@@ -87,7 +87,7 @@ namespace GL {
 
         template<typename T>
         struct type_hash {
-            inline static GL::type_hash_t hash = std::is_same_v<void, T> ? 0ul : type_hash_impl::get_next_ticket(boost::typeindex::type_id<T>().type_info().hash_code());
+            inline static GL::type_hash_t hash = std::is_same_v<void, T> ? 0 : type_hash_impl::get_next_ticket(boost::typeindex::type_id<T>().type_info().hash_code());
             static GL::type_hash_t hash_code() {
                 return hash;
             };

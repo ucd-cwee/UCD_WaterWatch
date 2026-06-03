@@ -41,7 +41,7 @@ namespace GL {
     };
 
     namespace impl {       
-        static GL::atomic_vector< impl::cached_type > builtin_cpp_types;
+        static GL::atomic_vector< impl::cached_type > builtin_cpp_types; // atomic_vector because ticket system will prefer small values.         
         static GL::atomic_vector< impl::cached_type > scripted_types; // atomic_vector because ticket system will prefer small values.         
         static GL::ticket_dispensor scripted_types_ticket_dispensor; // ticket system helps ensure values remain small. 
 
@@ -161,6 +161,9 @@ namespace GL {
     };
 
     auto& get_base(type const& from) {
+        //if (from.get_hash() == 0) {
+        //    return impl::get_impl(GL::type_of<void>().get_base_hash());
+        //}
         if (from.is_cpp_type()) {
             return impl::get_impl(from.get_base_hash());
         }
