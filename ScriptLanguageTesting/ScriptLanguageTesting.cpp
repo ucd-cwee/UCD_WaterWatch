@@ -1664,7 +1664,8 @@ public:
     void clear() { _current_cache.clear(); };
 
     // Insert an item into the cache, only if it does not yet exist. If the insert succeeds, it will also remove the older cache. 
-    template<int category> __declspec(noinline) void insert(size_t cache_version, GL::shared_ptr<T> result) {
+    template<int category> __declspec(noinline) void insert(size_t cache_version, GL::shared_ptr<T>&& result) {
+        auto Protected{ _current_cache.ProtectCurrentEpoch() };
         if (_current_cache[cache_version][category].compare_exchange(nullptr, result.release_control_block())) {
             while (_current_cache.pop_front_if([cache_version](size_t const& Key, std::array<GL::shared_ptr<T>, numCategories> const& Value) {
                 return Key < cache_version;
@@ -1675,7 +1676,7 @@ public:
     // Try to find an item from the cache.
     template<int category> __declspec(noinline) GL::shared_ptr<T> try_at(size_t cache_version) {
         GL::shared_ptr<T> out{ nullptr };
-        // auto locker{ _current_cache.lock_shared() };
+        auto Protected{ _current_cache.ProtectCurrentEpoch() };
         _current_cache.do_at_end([cache_version, &out](size_t const& Key, std::array<GL::shared_ptr<T>, numCategories> const& Value) {
             if (Key >= cache_version) {
                 out = Value[category];
@@ -1686,6 +1687,7 @@ public:
 
     // get or make the new ptr
     template<int category> __declspec(noinline) GL::shared_ptr<T> at(size_t cache_version) {
+        auto Protected{ _current_cache.ProtectCurrentEpoch() };
         while (true) {
             if (GL::shared_ptr<T> out = try_at<category>(cache_version); out) {
                 return out;
@@ -1698,6 +1700,7 @@ public:
 
     // get or make the new ptr
     template<int category, typename F, typename... Args> __declspec(noinline) GL::shared_ptr<T> at(size_t cache_version, F&& constructor, Args&&... arguments) {
+        auto Protected{ _current_cache.ProtectCurrentEpoch() };
         while (true) {
             if (GL::shared_ptr<T> out = try_at<category>(cache_version); out) {
                 return out;
@@ -1711,7 +1714,7 @@ public:
     // get the most current value
     template<int category> __declspec(noinline) GL::shared_ptr<T> current() {
         GL::shared_ptr<T> out{ nullptr };
-        // auto locker{ _current_cache.lock_shared() };
+        auto Protected{ _current_cache.ProtectCurrentEpoch() };
         _current_cache.do_at_end([&out](size_t const& Key, std::array<GL::shared_ptr<T>, numCategories> const& Value) {
             out = Value[category];
         });
