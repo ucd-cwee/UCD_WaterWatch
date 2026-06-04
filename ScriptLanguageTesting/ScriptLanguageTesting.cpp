@@ -1648,9 +1648,9 @@ template <typename Function> GL::shared_ptr<Function_Caller> make_callable(Funct
 };
 
 // Thread-safe access to a cache of data. Multiple caches are provided that are all, simultanously 
-template <typename T, int numCategories = 4> class CategoricalCache {
+template <typename T> class CategoricalCache {
 private: // CacheVersion -> CacheCategory -> Inputs -> Result
-    GL::epoch_search_tree< std::array<GL::shared_ptr<T>, numCategories>, size_t>
+    GL::epoch_search_tree< GL::shared_ptr<T>, size_t>
         _current_cache;
 
 public:
@@ -1664,55 +1664,58 @@ public:
     void clear() { _current_cache.clear(); };
 
     // Insert an item into the cache, only if it does not yet exist. If the insert succeeds, it will also remove the older cache. 
-    template<int category> __declspec(noinline) void insert(size_t cache_version, GL::shared_ptr<T>&& result) {
-        auto Protected{ _current_cache.ProtectCurrentEpoch() };
-        if (_current_cache[cache_version][category].compare_exchange(nullptr, result.release_control_block())) {
-            while (_current_cache.pop_front_if([cache_version](size_t const& Key, std::array<GL::shared_ptr<T>, numCategories> const& Value) {
+    void insert(size_t cache_version, GL::shared_ptr<T>&& result) {
+        auto Protected = _current_cache.ProtectCurrentEpoch();
+        if (_current_cache[cache_version].compare_exchange(nullptr, result.release_control_block())) {
+            while (_current_cache.pop_front_if([&cache_version](size_t const& Key, GL::shared_ptr<T> const& Value) {
                 return Key < cache_version;
             })) {};
         }; // handles the deletion of the control block if the swap fails
     };
 
     // Try to find an item from the cache.
-    template<int category> __declspec(noinline) GL::shared_ptr<T> try_at(size_t cache_version) {
-        GL::shared_ptr<T> out{ nullptr };
-        auto Protected{ _current_cache.ProtectCurrentEpoch() };
-        _current_cache.do_at_end([&cache_version, &out](size_t const& Key, std::array<GL::shared_ptr<T>, numCategories> const& Value) {
+    GL::shared_ptr<T> try_at(size_t cache_version) {
+        auto Protected = _current_cache.ProtectCurrentEpoch();
+        GL::shared_ptr<T> out;        
+        //auto locked = _current_cache.lock_shared();
+        _current_cache.do_at_end([&cache_version, &out](size_t const& Key, GL::shared_ptr<T> const& Value) {
             if (Key >= cache_version) {
-                out = Value[category];
+                out = Value;
             }
         });
         return out;
     };
 
     // get or make the new ptr
-    template<int category> __declspec(noinline) GL::shared_ptr<T> at(size_t cache_version) {
-        auto Protected{ _current_cache.ProtectCurrentEpoch() };
+    GL::shared_ptr<T> at(size_t cache_version) {
+        //auto Protected = _current_cache.ProtectCurrentEpoch();
         while (true) {
-            if (GL::shared_ptr<T> out = try_at<category>(cache_version); out) 
+            if (GL::shared_ptr<T> out = try_at(cache_version); out) 
                 return out;            
             else 
-                insert<category>(cache_version, GL::make_shared<T>());            
+                insert(cache_version, GL::make_shared<T>());            
         }
     };
 
     // get or make the new ptr
-    template<int category, typename F, typename... Args> __declspec(noinline) GL::shared_ptr<T> at(size_t cache_version, F&& constructor, Args&&... arguments) {
-        auto Protected{ _current_cache.ProtectCurrentEpoch() };
+    template<typename F, typename... Args> GL::shared_ptr<T> at(size_t cache_version, F&& constructor, Args&&... arguments) {
+        auto Protected = _current_cache.ProtectCurrentEpoch();
+        //auto locked = _current_cache.lock_shared();
         while (true) {
-            if (GL::shared_ptr<T> out = try_at<category>(cache_version); out) 
+            if (GL::shared_ptr<T> out = try_at(cache_version); out) 
                 return out;            
             else 
-                insert<category>(cache_version, GL::make_shared<T>(constructor(std::forward<Args>(arguments)...)));            
+                insert(cache_version, GL::make_shared<T>(constructor(std::forward<Args>(arguments)...)));            
         }
     };
 
     // get the most current value
-    template<int category> __declspec(noinline) GL::shared_ptr<T> current() {
-        GL::shared_ptr<T> out{ nullptr };
-        auto Protected{ _current_cache.ProtectCurrentEpoch() };
-        _current_cache.do_at_end([&out](size_t const& Key, std::array<GL::shared_ptr<T>, numCategories> const& Value) {
-            out = Value[category];
+    GL::shared_ptr<T> current() {
+        auto Protected = _current_cache.ProtectCurrentEpoch();
+        GL::shared_ptr<T> out;
+        //auto locked = _current_cache.lock_shared();
+        _current_cache.do_at_end([&out](size_t const& Key, GL::shared_ptr<T> const& Value) {
+            out = Value;
         });
         return out;
     };
@@ -1912,29 +1915,29 @@ int main() {
 
     if (auto timer = GL::stopwatch().debug_timer("1B calls: \t")) {
         // GL::atomic_shared_ptr<any> ptr;
-        CategoricalCache<any, 4> cache;
+        CategoricalCache<any> cache;
         GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
             switch (i % 4) {
             case 0:
-                cache.at<0>(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu", i)); }, i);
+                cache.at(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu - 0", i)); }, i);
                 break;
             case 1:
-                cache.at<1>(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu", i)); }, i);
+                cache.at(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu - 1", i)); }, i);
                 break;
             case 2:
-                cache.at<2>(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu", i)); }, i);
+                cache.at(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu - 2", i)); }, i);
                 break;
             case 3:
-                cache.at<3>(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu", i)); }, i);
+                cache.at(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu - 3", i)); }, i);
                 break;
             default:
                 break;
             }
         });
-        std::cout << cache.current<0>()->cast<GL::string&>() << std::endl;
-        std::cout << cache.current<1>()->cast<GL::string&>() << std::endl;
-        std::cout << cache.current<2>()->cast<GL::string&>() << std::endl;
-        std::cout << cache.current<3>()->cast<GL::string&>() << std::endl;
+        std::cout << cache.current()->cast<GL::string&>() << std::endl;
+        //std::cout << cache.current<1>()->cast<GL::string&>() << std::endl;
+        //std::cout << cache.current<2>()->cast<GL::string&>() << std::endl;
+        //std::cout << cache.current<3>()->cast<GL::string&>() << std::endl;
     };
 
 
