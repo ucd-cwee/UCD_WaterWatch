@@ -1647,11 +1647,14 @@ template <typename Function> GL::shared_ptr<Function_Caller> make_callable(Funct
     }
 };
 
+#if 0
 // Thread-safe access to a cache of data. Multiple caches are provided that are all, simultanously 
 template <typename T> class CategoricalCache {
 private: // CacheVersion -> CacheCategory -> Inputs -> Result
-    GL::epoch_search_tree< GL::shared_ptr<T>, size_t>
-        _current_cache;
+    std::atomic<size_t> 
+        cache_position{ 0 };
+    GL::atomic_shared_ptr<T> 
+        current_cache{ nullptr };
 
 public:
     CategoricalCache() = default;
@@ -1661,70 +1664,67 @@ public:
     CategoricalCache& operator=(CategoricalCache&&) = delete;
     ~CategoricalCache() = default;
 
-    void clear() { _current_cache.clear(); };
+    void clear() { };
 
-    // Insert an item into the cache, only if it does not yet exist. If the insert succeeds, it will also remove the older cache. 
-    void insert(size_t cache_version, GL::shared_ptr<T>&& result) {
-        auto Protected = _current_cache.ProtectCurrentEpoch();
-        if (_current_cache[cache_version].compare_exchange(nullptr, result.release_control_block())) {
-            while (_current_cache.pop_front_if([&cache_version](size_t const& Key, GL::shared_ptr<T> const& Value) {
-                return Key < cache_version;
-            })) {};
-        }; // handles the deletion of the control block if the swap fails
-    };
+    // Insert an item into the cache, only if it does not yet exist. If the insert succeeds, it will also remove the older caches. 
+    __declspec(noinline) void insert(size_t cache_version, GL::shared_ptr<T> result) {
+        while (true) {
+            auto old_pos = cache_position.load();
+            if (old_pos <= result) return;
 
-    // Try to find an item from the cache.
-    GL::shared_ptr<T> try_at(size_t cache_version) {
-        auto Protected = _current_cache.ProtectCurrentEpoch();
-        GL::shared_ptr<T> out;        
-        //auto locked = _current_cache.lock_shared();
-        _current_cache.do_at_end([&cache_version, &out](size_t const& Key, GL::shared_ptr<T> const& Value) {
-            if (Key >= cache_version) {
-                out = Value;
+            if (cache_position.compare_exchange_strong(old_pos, cache_version)) {
+
             }
-        });
-        return out;
-    };
 
-    // get or make the new ptr
-    GL::shared_ptr<T> at(size_t cache_version) {
-        //auto Protected = _current_cache.ProtectCurrentEpoch();
-        while (true) {
-            if (GL::shared_ptr<T> out = try_at(cache_version); out) 
-                return out;            
-            else 
-                insert(cache_version, GL::make_shared<T>());            
+
         }
     };
 
-    // get or make the new ptr
-    template<typename F, typename... Args> GL::shared_ptr<T> at(size_t cache_version, F&& constructor, Args&&... arguments) {
-        auto Protected = _current_cache.ProtectCurrentEpoch();
-        //auto locked = _current_cache.lock_shared();
-        while (true) {
-            if (GL::shared_ptr<T> out = try_at(cache_version); out) 
-                return out;            
-            else 
-                insert(cache_version, GL::make_shared<T>(constructor(std::forward<Args>(arguments)...)));            
-        }
-    };
 
-    // get the most current value
-    GL::shared_ptr<T> current() {
-        auto Protected = _current_cache.ProtectCurrentEpoch();
-        GL::shared_ptr<T> out;
-        //auto locked = _current_cache.lock_shared();
-        _current_cache.do_at_end([&out](size_t const& Key, GL::shared_ptr<T> const& Value) {
-            out = Value;
-        });
-        return out;
-    };
+
+    //// Try to find an item from the cache.
+    //GL::shared_ptr<T> try_at(size_t cache_version) {
+    //    GL::shared_ptr<T> out;        
+    //    auto locked = _current_cache.lock_shared();
+    //    _current_cache.do_at_end([&cache_version, &out](size_t const& Key, GL::shared_ptr<T> const& Value) {
+    //        if (Key >= cache_version) {
+    //            out = Value;
+    //        }
+    //    });
+    //    return out;
+    //};
+
+    //// get or make the new ptr
+    //GL::shared_ptr<T> at(size_t cache_version) {
+    //    while (true) {
+    //        if (GL::shared_ptr<T> out = try_at(cache_version); out) 
+    //            return out;            
+    //        else 
+    //            insert(cache_version, GL::make_shared<T>());            
+    //    }
+    //};
+
+    //// get or make the new ptr
+    //template<typename F, typename... Args> GL::shared_ptr<T> at(size_t cache_version, F&& constructor, Args&&... arguments) {
+    //    while (true) {
+    //        if (GL::shared_ptr<T> out = try_at(cache_version); out) 
+    //            return out;            
+    //        else 
+    //            insert(cache_version, GL::make_shared<T>(constructor(std::forward<Args>(arguments)...)));            
+    //    }
+    //};
+
+    //// get the most current value
+    //GL::shared_ptr<T> current() {
+    //    GL::shared_ptr<T> out;
+    //    auto locked = _current_cache.lock_shared();
+    //    _current_cache.do_at_end([&out](size_t const& Key, GL::shared_ptr<T> const& Value) {
+    //        out = Value;
+    //    });
+    //    return out;
+    //};
 };
-
-
-
-
-
+#endif
 
 class Function {
 public:
@@ -1886,7 +1886,49 @@ public:
 
 };
 
+template <typename T>
+class LimboList {
+public:
+    std::priority_queue<std::pair<size_t, T*>, std::vector<std::pair<size_t, T*>>
+
+    std::deque<T*> list;
+};
+
+template<typename T>
+class ThreadState {
+public:
+    std::deque< size_t >
+        epoch_list;
+    std::array< LimboList<T>, 3>
+        limbo_lists;
+
+    bool enter_critical_section() {
+        epoch_list.push_back(GL::util::get_current_epoch());
+    };
+    bool exit_critical_section() {
+        epoch_list.pop_back();
+    };
+};
+
+template <typename T>
+class EpochManager {
+public:
+    GL::thread_object_no_default< ThreadState<T> >
+        states;
+    
+};
+
+
+
+
+
+
+
+
+
 int main() {
+
+#if 0
     if (0) {
         GL::atomic_shared_ptr<GL::any> ptr;
         // CategoricalCache<GL::atomic_shared_ptr<any>, 4> cache;
@@ -1913,33 +1955,45 @@ int main() {
 
     }
 
-    if (auto timer = GL::stopwatch().debug_timer("1B calls: \t")) {
-        // GL::atomic_shared_ptr<any> ptr;
+    while(1)
+        if (auto timer = GL::stopwatch().debug_timer("1B calls: \t")) {
         CategoricalCache<any> cache;
-        GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
-            switch (i % 4) {
-            case 0:
-                cache.at(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu - 0", i)); }, i);
-                break;
-            case 1:
-                cache.at(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu - 1", i)); }, i);
-                break;
-            case 2:
-                cache.at(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu - 2", i)); }, i);
-                break;
-            case 3:
-                cache.at(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu - 3", i)); }, i);
-                break;
-            default:
-                break;
-            }
+        
+        //for (size_t i = 0; i < 1'000'000; ++i){
+            // auto g = cache.ProtectCurrentEpoch();
+        GL::parallel::For(0, 1'000'000/*'000*/, [&](size_t i) {
+            cache.insert(i % 10000, GL::make_shared<any>(any::instance(GL::printf("%zu - 0", i))));
         });
-        std::cout << cache.current()->cast<GL::string&>() << std::endl;
-        //std::cout << cache.current<1>()->cast<GL::string&>() << std::endl;
-        //std::cout << cache.current<2>()->cast<GL::string&>() << std::endl;
-        //std::cout << cache.current<3>()->cast<GL::string&>() << std::endl;
-    };
 
+
+
+
+        //// GL::atomic_shared_ptr<any> ptr;
+        //CategoricalCache<any> cache;
+        //GL::parallel::For(0, 1'000'000/*'000*/, [&](size_t i) {
+        //    switch (i % 4) {
+        //    case 0:
+        //        cache.at(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu - 0", i)); }, i);
+        //        break;
+        //    case 1:
+        //        cache.at(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu - 1", i)); }, i);
+        //        break;
+        //    case 2:
+        //        cache.at(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu - 2", i)); }, i);
+        //        break;
+        //    case 3:
+        //        cache.at(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu - 3", i)); }, i);
+        //        break;
+        //    default:
+        //        break;
+        //    }
+        //});
+        //std::cout << cache.current()->cast<GL::string&>() << std::endl;
+        ////std::cout << cache.current<1>()->cast<GL::string&>() << std::endl;
+        ////std::cout << cache.current<2>()->cast<GL::string&>() << std::endl;
+        ////std::cout << cache.current<3>()->cast<GL::string&>() << std::endl;
+    };
+#endif
 
 
 
