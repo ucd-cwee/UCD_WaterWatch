@@ -176,6 +176,34 @@ namespace GL {
         };
 
     public:
+#if 1
+        T& GetTLS() const {
+            // 2. Get the thread's native context index and unique ID
+            thread_local size_t _tl_index = GL::util::get_thread_id();
+            thread_local size_t _tl_unique_id = actual_thread_id();
+
+            // 3. Grow vector if necessary
+            if (_tls_size <= _tl_index) {
+                (void)_tls.grow_to_at_least(_tl_index + 1);
+                InterlockedExchangeNoFence(reinterpret_cast<volatile size_t*>(&_tls_size), _tl_index + 1);
+            }
+
+            // 4. Slot
+            auto& tls_slot = _tls[_tl_index];
+
+            // 5. Thread ID migration or initialization check
+            if (tls_slot.first != _tl_unique_id) {
+                InterlockedExchangeNoFence(reinterpret_cast<volatile size_t*>(&tls_slot.first), _tl_unique_id);
+                T* newPtr = GL::alloc<T>();
+                if (T* old_ptr = reinterpret_cast<T*>(InterlockedExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&tls_slot.second), newPtr))) {
+                    GL::free(old_ptr);
+                }
+            }
+
+            // 6. Populate the fast-path cache before returning
+            return *tls_slot.second;
+        };
+#else
         // issue: only one thread could access this call at a time per-thread. However, other threads may (and do) loop over the _tls while it's being initialized.
         __forceinline T& GetTLS() const {
             // 1. Cache the pointer locally so we rarely touch the global vector
@@ -189,13 +217,8 @@ namespace GL {
             // FAST PATH: If we already cached it for this thread life cycle, return immediately
             if (!cached_ptr) {
                 // 2. Get the thread's native context index and unique ID
-                //thread_local size_t _tl_index = GL::util::get_thread_id();
-                //thread_local size_t _tl_unique_id = actual_thread_id();
-
-                thread_local size_t _tl_index = 0;
-                thread_local size_t _tl_unique_id = 0;
-                if (!_tl_index) _tl_index = GL::util::get_thread_id();
-                if (!_tl_unique_id) _tl_unique_id = actual_thread_id();
+                thread_local size_t _tl_index = GL::util::get_thread_id();
+                thread_local size_t _tl_unique_id = actual_thread_id();
 
                 // 3. Grow vector if necessary
                 if (_tls_size <= _tl_index) {
@@ -220,7 +243,7 @@ namespace GL {
             }
             return **reinterpret_cast<T**>(&cached_ptr);
         };
-
+#endif
         // valid call to get a _tls slot when it was properly initialized at some point previously. 
         T& GetTLS(size_t thread_index) const {
             //if (_tls.size() > thread_index) {

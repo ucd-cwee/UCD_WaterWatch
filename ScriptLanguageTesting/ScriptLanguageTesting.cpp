@@ -1883,60 +1883,173 @@ public:
 
 };
 
-template <typename T>
-class LimboList {
-public:
-    struct less {
-        bool operator()(const std::pair<size_t, T*>& lhs, const std::pair<size_t, T*>& rhs) const {
-            return lhs.first > rhs.first; // assumes that the implementation handles pointer total order
-        };
-    };
+//template <typename T>
+//class EpochManager {
+//public:
+//    class wrap {
+//        const void* p;
+//    public:
+//        wrap(const void* P) : p{ P } {};
+//        wrap(wrap const&) = delete;
+//        wrap(wrap&&) = delete;
+//        wrap& operator=(wrap const&) = delete;
+//        wrap& operator=(wrap&&) = delete;
+//        virtual ~wrap() = default;
+//    };
+//
+//    virtual wrap guard_critical_section() const = 0;
+//    virtual void free(T* p) const = 0;
+//    virtual T* alloc() const = 0;
+//};
 
-    std::priority_queue<std::pair<size_t, T*>, std::vector<std::pair<size_t, T*>>, less>
-        queue;
-};
-
-template<typename T>
-class ThreadState {
-public:
-    mutable std::deque< size_t >
-        epoch_list;
-    std::array< LimboList<T>, 3>
-        limbo_lists;
-
-    void enter_critical_section() const {
-        epoch_list.push_back(GL::util::get_current_epoch());
-    };
-    void exit_critical_section() const {
-        epoch_list.pop_back();
-    };
-    auto guard_critical_section() const {
-        class wrap {
-            const ThreadState* p;
-        public:
-            wrap(const ThreadState* P) : p{ P } {};
-            wrap(wrap const&) = delete;
-            wrap(wrap &&) = delete;
-            wrap& operator=(wrap const&) = delete;
-            wrap& operator=(wrap&&) = delete;
-            ~wrap() {
-                p->exit_critical_section();
-            };
-        };
-        enter_critical_section();
-        return wrap(this);
-    };
-
-
-};
-
-template <typename T>
+template <typename T, typename Alloc, typename Destroy>
 class EpochManager {
-public:
-    mutable GL::thread_object_no_default< ThreadState<T> >
+    class ThreadState {
+    public:
+        Destroy
+            destoryer;
+        mutable size_t
+            epoch_2,
+            epoch_1,
+            epoch;
+        mutable size_t
+            epoch_depth;
+        mutable size_t
+            queued_epoch;
+        mutable std::array< std::pair<std::vector<T*>, size_t>, 3>
+            limbo_lists;
+
+        void enter_critical_section() const {
+            if (++epoch_depth == 1)
+                queued_epoch = GL::util::get_current_epoch();
+        };
+        void exit_critical_section() const {
+            if (--epoch_depth == 0) {
+                // handle the oldest epoch
+                for (size_t pos = 0; pos < limbo_lists[epoch].second; ++pos)
+                    destoryer(limbo_lists[epoch].first[pos]);
+                limbo_lists[epoch].second = 0;
+
+                epoch = epoch_1;
+                epoch_1 = epoch_2;
+                epoch_2 = epoch;
+            }
+        };
+        auto guard_critical_section() const {
+            class wrap {
+                const ThreadState* p;
+            public:
+                wrap(const ThreadState* P) : p{ P } {};
+                wrap(wrap const&) = delete;
+                wrap(wrap&&) = delete;
+                wrap& operator=(wrap const&) = delete;
+                wrap& operator=(wrap&&) = delete;
+                ~wrap() {
+                    p->exit_critical_section();
+                };
+            };
+            enter_critical_section();
+            return wrap(this);
+        };
+        void enque(T* p) const {
+            if (epoch_depth > 0) {
+                if (++limbo_lists[epoch_2].second > limbo_lists[epoch_2].first.size()) {
+                    limbo_lists[epoch_2].first.resize(limbo_lists[epoch_2].first.size() * 2 + 16);
+                }
+                limbo_lists[epoch_2].first[limbo_lists[epoch_2].second - 1] = p;
+            }
+            else
+                destoryer(p);
+        };
+
+        ThreadState() noexcept :
+            destoryer{},
+            epoch_2{ 2 },
+            epoch_1{ 1 },
+            epoch{ 0 },
+            epoch_depth{ 0 },
+            queued_epoch{ 0 },
+            limbo_lists{}
+        {};
+        ThreadState(Destroy const& _destoryer) noexcept :
+            destoryer{ _destoryer },
+            epoch_2{ 2 },
+            epoch_1{ 1 },
+            epoch{ 0 },
+            epoch_depth{ 0 },
+            queued_epoch{ 0 },
+            limbo_lists{}
+        {};
+        ThreadState(ThreadState const&) = default;
+        ThreadState(ThreadState&&) noexcept = default;
+        ThreadState& operator=(ThreadState const&) = default;
+        ThreadState& operator=(ThreadState&&) noexcept = default;
+        ~ThreadState() {
+            for (auto& list : limbo_lists) {
+                for (size_t pos = 0; pos < list.second; ++pos)
+                    destoryer(list.first[pos]);
+                list.second = 0;
+            }
+
+        };
+    };
+    mutable GL::thread_object< ThreadState >
         states;
+    Alloc
+        allocator;
+public:
+    EpochManager(T, Alloc const& _allocator, Destroy const& destroyer) : allocator{ _allocator }, states(ThreadState(destroyer)) {};
+
+    auto guard_critical_section() const {
+        return states->guard_critical_section();
+    };
+    void free(T* p) const {
+        states->enque(p);
+    };    
+    T* alloc() const {
+        return allocator();
+    };
 };
 
+#if 0
+template <typename T>
+class EpochAllocator {
+public:
+    GL::atomic_parallel_allocator<T> 
+        allocator;
+
+
+    EpochAllocator() {
+        auto manager = EpochManager(T(), [&]() -> T* {
+            return allocator.Alloc();
+        }, [&](T* p) {
+            allocator.Free(p);
+        });
+
+
+
+    };
+
+    [[nodiscard]] auto ProtectCurrentEpoch() const {
+        
+    };
+
+    // Request a new memory pointer
+    T* Alloc() {
+        
+
+    };
+
+    // Frees the memory pointer
+    void Free(const T* element) {
+
+    };
+
+    size_t size() const {
+
+    };
+};
+#endif
 
 
 
@@ -2015,14 +2128,53 @@ int main() {
 #endif
 
     while (true) {
-        if (auto timer = GL::stopwatch().debug_timer("EpochManager")) {
-            EpochManager<int> manager;
+        if (auto timer = GL::stopwatch().debug_timer("Normal alloc/free, no guards"); true) {
+            auto manager = EpochManager(int(), []() -> int* { return GL::alloc<int>(); }, [](int* p) { GL::free(p); });
 
-            GL::parallel::For(0, 1'000'000'000, [&]() {
-                auto guard = manager.states->guard_critical_section();
+            GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
+                auto* temp_value = GL::alloc<int>();
+                *temp_value = (int)i;
+                GL::free(temp_value);                
             });
-
         }
+        if (auto timer = GL::stopwatch().debug_timer("EpochManager: with Guard"); true) {
+            auto manager = EpochManager(int(), []() -> int* { return GL::alloc<int>(); }, [](int* p) { GL::free(p); });
+            GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
+                auto guard = manager.guard_critical_section();
+                auto* temp_value = manager.alloc();
+                manager.free(temp_value); // the free is protected by the guard
+                *temp_value = (int)i;
+            });
+        }
+        if (auto timer = GL::stopwatch().debug_timer("EpochManager: without Guard"); true) {
+            auto manager = EpochManager(int(), []() -> int* { return GL::alloc<int>(); }, [](int* p) { GL::free(p); });
+            GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
+                auto* temp_value = manager.alloc();
+                *temp_value = (int)i;
+                manager.free(temp_value);        
+            });
+        }
+        if (auto timer = GL::stopwatch().debug_timer("EpochManager: Guard only"); true) {
+            auto manager = EpochManager(int(), []() -> int* { return GL::alloc<int>(); }, [](int* p) { GL::free(p); });
+            GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
+                auto guard = manager.guard_critical_section();                
+            });
+        }
+        if (auto timer = GL::stopwatch().debug_timer("EpochManager: with allocator, with Guard"); true) {
+            GL::atomic_parallel_allocator<int> allocator;
+            auto manager = EpochManager(int(), [&]() -> int* { 
+                return allocator.Alloc();
+            }, [&](int* p) { 
+                allocator.Free(p);
+            });
+            GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
+                auto guard = manager.guard_critical_section();
+                auto* temp_value = manager.alloc();
+                manager.free(temp_value); // the free is protected by the guard
+                *temp_value = (int)i;
+            });
+        }
+
     }
 
 
