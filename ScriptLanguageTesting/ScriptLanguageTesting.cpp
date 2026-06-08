@@ -62,12 +62,9 @@ public:
                 if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count)) == 0)
                     uuid::free_uuid(m_uuid);
 
-        std::memcpy(this, &rhs, sizeof(any));
-        m_uuid &= uuid::INV_FLAGS;
-
-        //m_uuid = rhs.m_uuid & uuid::INV_FLAGS;
-        //m_type = rhs.m_type; 
-        //m_ptr = rhs.m_ptr;
+        m_uuid = rhs.m_uuid & uuid::INV_FLAGS;
+        m_type = rhs.m_type; 
+        m_ptr = rhs.m_ptr;
         if (m_uuid > 0) InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count));
         return *this;
     };
@@ -76,10 +73,10 @@ public:
             if ((m_uuid & uuid::INV_FLAGS) > 0)
                 if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count)) == 0)
                     uuid::free_uuid(m_uuid);
-        std::memmove(this, &rhs, sizeof(any));
-        //m_uuid = std::move(rhs.m_uuid);
-        //m_type = std::move(rhs.m_type);
-        //m_ptr = rhs.m_ptr;
+
+        m_uuid = std::move(rhs.m_uuid);
+        m_type = std::move(rhs.m_type);
+        m_ptr = rhs.m_ptr;
         rhs.m_uuid = 0;
         return *this;
     };
@@ -1889,33 +1886,55 @@ public:
 template <typename T>
 class LimboList {
 public:
-    std::priority_queue<std::pair<size_t, T*>, std::vector<std::pair<size_t, T*>>
+    struct less {
+        bool operator()(const std::pair<size_t, T*>& lhs, const std::pair<size_t, T*>& rhs) const {
+            return lhs.first > rhs.first; // assumes that the implementation handles pointer total order
+        };
+    };
 
-    std::deque<T*> list;
+    std::priority_queue<std::pair<size_t, T*>, std::vector<std::pair<size_t, T*>>, less>
+        queue;
 };
 
 template<typename T>
 class ThreadState {
 public:
-    std::deque< size_t >
+    mutable std::deque< size_t >
         epoch_list;
     std::array< LimboList<T>, 3>
         limbo_lists;
 
-    bool enter_critical_section() {
+    void enter_critical_section() const {
         epoch_list.push_back(GL::util::get_current_epoch());
     };
-    bool exit_critical_section() {
+    void exit_critical_section() const {
         epoch_list.pop_back();
     };
+    auto guard_critical_section() const {
+        class wrap {
+            const ThreadState* p;
+        public:
+            wrap(const ThreadState* P) : p{ P } {};
+            wrap(wrap const&) = delete;
+            wrap(wrap &&) = delete;
+            wrap& operator=(wrap const&) = delete;
+            wrap& operator=(wrap&&) = delete;
+            ~wrap() {
+                p->exit_critical_section();
+            };
+        };
+        enter_critical_section();
+        return wrap(this);
+    };
+
+
 };
 
 template <typename T>
 class EpochManager {
 public:
-    GL::thread_object_no_default< ThreadState<T> >
+    mutable GL::thread_object_no_default< ThreadState<T> >
         states;
-    
 };
 
 
@@ -1994,6 +2013,17 @@ int main() {
         ////std::cout << cache.current<3>()->cast<GL::string&>() << std::endl;
     };
 #endif
+
+    while (true) {
+        if (auto timer = GL::stopwatch().debug_timer("EpochManager")) {
+            EpochManager<int> manager;
+
+            GL::parallel::For(0, 1'000'000'000, [&]() {
+                auto guard = manager.states->guard_critical_section();
+            });
+
+        }
+    }
 
 
 

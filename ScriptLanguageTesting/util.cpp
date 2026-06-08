@@ -53,9 +53,17 @@ namespace GL {
         };
 
 
+        //size_t get_thread_id() {
+        //    thread_local ticket_return ticket;
+        //    thread_local size_t out{ ticket.ticket };
+        //    return out;
+        //};
+        thread_local ticket_return ticket;
         size_t get_thread_id() {
-            thread_local ticket_return ticket;
-            return ticket.ticket;
+            thread_local size_t out = 0ull;
+            if (out == 0ull) 
+                out = ticket.ticket;
+            return out;
         };
 #if 1
         template <void (*Func)(void)> class Taskable {
@@ -104,19 +112,29 @@ namespace GL {
             };
         };
 #endif
-        long long get_current_epoch() {
-#if 1
-            static std::atomic<long long> _epoch{ clock::ms() };
-            struct Wrap {
-                __declspec(noinline) static void UpdateEpoch(void) {
-                    _epoch.store(clock::ms(), std::memory_order_relaxed);
-                };
+//        long long get_current_epoch() {
+//#if 1
+//            static std::atomic<long long> _epoch{ clock::ms() };
+//            struct Wrap {
+//                __declspec(noinline) static void UpdateEpoch(void) {
+//                    _epoch.store(clock::ms(), std::memory_order_relaxed);
+//                };
+//            };
+//            static Taskable<Wrap::UpdateEpoch> _update_thread{};
+//            return _epoch.load(std::memory_order_relaxed);
+//#else
+//            return clock::ms();
+//#endif
+//        };
+        static std::atomic<long long> _epoch = 0;
+        struct Wrap {
+            __declspec(noinline) static void UpdateEpoch(void) {
+                _epoch.store(clock::ms(), std::memory_order_relaxed);
             };
-            static Taskable<Wrap::UpdateEpoch> _update_thread{};
+        };
+        static Taskable<Wrap::UpdateEpoch> _update_thread;
+        long long get_current_epoch() {            
             return _epoch.load(std::memory_order_relaxed);
-#else
-            return clock::ms();
-#endif
         };
 
         /*

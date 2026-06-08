@@ -422,7 +422,7 @@ namespace GL {
 					p->parent_index = i;
 					// shift everything forward
 
-#if 0
+#if 1
 					for (j = numChildren; j > i; --j) ch[j] = ch[j - 1];
 					for (j = numChildren; j > i; --j) ch[j]->parent_index = j;
 					ch[i] = p;
@@ -482,7 +482,7 @@ namespace GL {
 					int
 						j = numChildren - 1;
 
-#if 0
+#if 1
 					for (; i < (numChildren - 1); ++i) {
 						ch[i] = ch[i + 1];
 						ch[i]->parent_index = i;
@@ -1238,7 +1238,7 @@ namespace GL {
 					p->parent_index = i;
 					// shift everything forward
 
-#if 0
+#if 1
 					for (j = numChildren; j > i; --j) {
 						ch[j] = ch[j - 1];
 						ch[j]->parent_index = j;
@@ -1300,7 +1300,7 @@ namespace GL {
 					int
 						j = numChildren - 1;
 
-#if 0
+#if 1
 					for (; i < (numChildren - 1); ++i) {
 						ch[i] = ch[i + 1];
 						ch[i]->parent_index = i;
@@ -2244,7 +2244,7 @@ namespace GL {
 					p->parent_index = i;
 					// shift everything forward
 
-#if 0
+#if 1
 					for (j = numChildren; j > i; --j) {
 						ch[j] = ch[j - 1];
 						ch[j]->parent_index = j;
@@ -2306,7 +2306,7 @@ namespace GL {
 					int
 						j = numChildren - 1;
 
-#if 0
+#if 1
 					for (; i < (numChildren - 1); ++i) {
 						ch[i] = ch[i + 1];
 						ch[i]->parent_index = i;
