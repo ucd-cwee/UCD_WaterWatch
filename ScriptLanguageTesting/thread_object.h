@@ -12,9 +12,10 @@ namespace GL {
     // Equivalent to thread_local, for member objects. New threads that attempt to re-use old indexes are caught, and the object is re-initialized accordingly. 
     template <typename T>
     class thread_object {
-    private:
-        mutable size_t _tls_size{ 0 };
+    public:
         T const _default; // for initializing new thread objects
+    private:
+        mutable size_t _tls_size{ 0 };        
         mutable atomic_vector<std::pair<size_t, T*>> _tls;
         static size_t actual_thread_id() {
             static thread_local size_t unique_hash{ GL::util::inline_hash(GL::util::get_current_epoch(), std::this_thread::get_id()) };

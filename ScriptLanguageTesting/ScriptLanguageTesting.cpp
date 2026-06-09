@@ -2051,6 +2051,314 @@ public:
 };
 #endif
 
+template <typename T, auto max_size_local_bag = 16l>
+class ObjectPool {
+public:
+    using Tp = T*;
+
+    GL::atomic_parallel_allocator<T>
+        allocator;
+    GL::thread_object_no_default< std::pair<std::array<T*, max_size_local_bag>, decltype(max_size_local_bag)> >
+        local_pool_bag;
+    GL::atomic_parallel_queue<Tp>
+        global_pool_bag;
+
+    template <typename... TArgs> Tp Alloc(TArgs &&... a) {
+        if constexpr (std::is_pod_v<T>) {
+            Tp out{ nullptr };
+            auto& bag = *local_pool_bag;
+            if (bag.second > 0) {
+                if constexpr (sizeof...(a) > 0) {
+                    new (out) T(std::forward<TArgs>(a)...);
+                }
+                else {
+                    return bag.first[--bag.second];
+                }                
+            }
+            else if (global_pool_bag.try_pop(out)) {
+                if constexpr (sizeof...(a) > 0) {
+                    new (out) T(std::forward<TArgs>(a)...);
+                }
+                else {
+                    return out;
+                }
+            }
+            else {
+                return allocator.Alloc(std::forward<TArgs>(a)...);
+            }
+        }
+        else {
+            Tp out{ nullptr };
+            auto& bag = *local_pool_bag;
+            if (bag.second > 0) {
+                out = bag.first[--bag.second];
+                new (out) T(std::forward<TArgs>(a)...);                
+                return out;
+            }
+            else if (global_pool_bag.try_pop(out)) {
+                new (out) T(std::forward<TArgs>(a)...);                
+                return out;
+            }
+            else {
+                return allocator.Alloc(std::forward<TArgs>(a)...);
+            }
+        }
+    };
+    void Free(Tp p) {
+        if constexpr (std::is_pod_v<T>) {
+            auto& bag = *local_pool_bag;
+            if (bag.second < max_size_local_bag) {
+                bag.first[bag.second++] = p;
+            }
+            else {
+                global_pool_bag.push(p);
+            }
+        }
+        else {
+            p->~T();
+            auto& bag = *local_pool_bag;
+            if (bag.second < max_size_local_bag) {
+                //p->~T();
+                bag.first[bag.second++] = p;
+            }
+            else {
+                //allocator.Free(p);
+                global_pool_bag.push(p);
+            }
+        }    
+    };
+    ~ObjectPool() {
+        if constexpr (!std::is_pod_v<T>) {
+            // objects that were stashed in the bags have been destroyed -- re-enable them before atomic_allocator does its clean-up.
+            local_pool_bag.for_each([](auto& local_bag) {
+                for (; local_bag.second > 0; --local_bag.second) {
+                    new (local_bag.first[local_bag.second - 1]) T();
+                }
+            });
+            Tp out;
+            while (global_pool_bag.try_pop(out)) {
+                new (out) T();
+            }
+        }
+    };
+};
+
+namespace ebr {
+    template <size_t SZ, size_t BlockSize> struct block;
+
+    template <size_t SZ, size_t BlockSize>
+    struct element {
+        unsigned char
+            data[(((SZ + sizeof(element*) + sizeof(block<SZ, BlockSize>*) + sizeof(long long)) + 15) & ~15) - sizeof(element*) - sizeof(block<SZ, BlockSize>*) - sizeof(long long)]; // wrapped to 16-byte blocks for the entire element_t
+        element*
+            m_pNext;
+        block<SZ, BlockSize>*
+            m_block;
+        long long
+            epoch;
+    };
+
+    template <size_t SZ, size_t BlockSize>
+    struct block {
+        element<SZ, BlockSize>
+            elements[BlockSize];
+        block<SZ, BlockSize>*
+            m_pNext;
+        unsigned long long
+            count_free;
+        long long
+            earliest_epoch;
+    };
+
+    template <typename T, size_t BlockSize = 256>
+    class block_bag {
+    private:
+        using element_t = element<sizeof(T), BlockSize>;
+        using block_t = block<sizeof(T), BlockSize>;
+
+        static block_t* PushBlock() {
+            block_t* p = reinterpret_cast<block_t*>(GL::malloc(sizeof(block_t)));
+            if (p) std::memset(p, 0, sizeof(block_t));
+            return p;
+        };
+        static void PopBlock(block_t* p) {
+            GL::mfree(p);
+        };
+
+        // Allocate one new block of contiguous elements onto the free list
+        __declspec(noinline) void AllocBlock() {
+            block_t* new_block_ptr = PushBlock();
+            GL::aba_problem::Stack_Push(blocks, new_block_ptr);
+            block_t& block = *new_block_ptr;
+
+            // add the new elements to the list
+            for (int i = 0; i < BlockSize - 1; ++i) {
+                block.elements[i].m_pNext = &block.elements[i + 1];
+                block.elements[i].m_block = new_block_ptr;
+            }
+            block.elements[BlockSize - 1].m_pNext = nullptr;
+            block.elements[BlockSize - 1].m_block = new_block_ptr;
+            block.count_free = BlockSize;
+
+            // push pNode onto head of list.
+            uint64_t old;
+            GL::aba_problem::THead<element_t> New;
+            while (true) { // race loop
+                // Get an atomic copy of head and call it old.
+                // Copy old and call it new.                    
+                old = New.m_n64 = m_free->m_n64;
+
+                // Wire the tail of this block to connect to the old head ptr
+                block.elements[BlockSize - 1].m_pNext = New.Node();
+
+                // change New's head ptr, which bumps internal aba
+                New.Node(&block.elements[0]); // head shall be the start of this block
+
+                // compare and swap New with Head if it still matches Old.
+                if (GL::aba_problem::CAS(&m_free->m_n64, old, New.m_n64))
+                    break; // success
+                // race, try again
+            }
+        };
+
+        // Allocate one old block of contiguous elements back onto the free list
+        __declspec(noinline) void ReallocBlock(block_t* existing_block_ptr) {
+            block_t& block = *existing_block_ptr;
+            block.earliest_epoch = 0;
+
+            // add the new elements to the list
+            for (int i = 0; i < BlockSize - 1; ++i) {
+                block.elements[i].epoch = 0;
+                block.elements[i].m_pNext = &block.elements[i + 1];
+                ((T*)&block.elements[i].data[0])->~T();
+            }
+            block.elements[BlockSize - 1].epoch = 0;
+            block.elements[BlockSize - 1].m_pNext = nullptr;
+            ((T*)&block.elements[BlockSize - 1].data[0])->~T();
+            block.count_free = BlockSize;
+
+            // push pNode onto head of list.
+            uint64_t old;
+            GL::aba_problem::THead<element_t> New;
+            while (true) { // race loop
+                // Get an atomic copy of head and call it old.
+                // Copy old and call it new.                    
+                old = New.m_n64 = m_free->m_n64;
+
+                // Wire the tail of this block to connect to the old head ptr
+                block.elements[BlockSize - 1].m_pNext = New.Node();
+
+                // change New's head ptr, which bumps internal aba
+                New.Node(&block.elements[0]); // head shall be the start of this block
+
+                // compare and swap New with Head if it still matches Old.
+                if (GL::aba_problem::CAS(&m_free->m_n64, old, New.m_n64))
+                    break; // success
+                // race, try again
+            }
+        };
+
+        // Release all memory held by all blocks
+        __declspec(noinline) void ReleaseBlocks() noexcept {
+            while (true) {
+                if (block_t* ptr = GL::aba_problem::Pop(blocks)) {
+                    if constexpr (!std::is_pod_v<T>) {
+                        for (int element_i = 0; element_i < BlockSize; ++element_i) {
+                            auto& element = ptr->elements[element_i];
+                            if (element.epoch > 0) {
+                                reinterpret_cast<T*>(&element.data[0])->~T();
+                                element.epoch = 0;
+                            }
+                        }
+                    }
+                    PopBlock(ptr);
+                }
+                else {
+                    break;
+                }
+            }
+        };
+
+    public:
+        block_bag() 
+            : blocks{}
+            , m_free() 
+        {
+            const_cast<GL::aba_problem::THead<element_t>&>(m_free._default).m_n64 = 0;
+        };
+        block_bag(block_bag const&) = delete;
+        block_bag(block_bag&&) = delete;
+        block_bag& operator=(block_bag const&) = delete;
+        block_bag& operator=(block_bag&&) = delete;
+        __declspec(noinline) ~block_bag() noexcept {
+            ReleaseBlocks();
+        };
+
+        // calling this unloads all the data and prevents use of the allocator. Should be used when the allocator is about to be deleted but (for whatever reason) needs to be unloaded at a specific schedule.
+        __declspec(noinline) void unsafe_unload() {
+            ReleaseBlocks();
+        };
+
+        // Acquire a new element from the Free list and construct it.
+        template <typename... TArgs> __declspec(noinline) T* Alloc(TArgs &&... a) {
+            element_t* element{ nullptr };
+            while (1) {
+                if (element = GL::aba_problem::Pop(*m_free)) {
+                    element->epoch = std::numeric_limits<long long>::max(); // indicates it's been initiated
+                    T* data{ (T*)&element->data[0] };
+                    if constexpr (std::is_pod<T>::value) {
+                        if constexpr (sizeof...(a) > 0) {
+                            new (data) T(std::forward<TArgs>(a)...);
+                        }
+                        else {
+                            std::memset(data, 0, sizeof(T));
+                        }
+                    }
+                    else {
+                        new (data) T(std::forward<TArgs>(a)...);
+                    }
+                    return data;
+                }
+                else {
+                    AllocBlock();
+                }
+            }
+        };
+
+        // Destroys the element and return its memory to the Free list
+        __declspec(noinline) void Free(T* element) {
+            element_t* t = (element_t*)(element);
+            t->epoch = GL::util::get_current_epoch();
+            if (InterlockedDecrement(reinterpret_cast<volatile unsigned long long*>(&t->m_block->count_free)) == 0) {
+                // this entire block has been queued for return and release. 
+                
+                // what is the earliest epoch in its elements?
+                t->m_block->earliest_epoch = std::numeric_limits<long long>::max();
+                for (size_t i = 0; i < BlockSize; ++i)
+                    t->m_block->earliest_epoch = std::min<long long>(t->m_block->elements[i].epoch, t->m_block->earliest_epoch);
+
+                ReallocBlock(t->m_block);
+            }
+        };
+        template <typename... TArgs> std::shared_ptr< T > AllocShared(TArgs&&... a) {
+            return std::shared_ptr<T>(Alloc(std::forward<TArgs>(a)...), [this](T* p) { Free(p); });
+        };
+
+    private:
+        GL::aba_problem::THead<block_t>
+            blocks;
+        GL::thread_object<GL::aba_problem::THead<element_t>>
+            m_free;
+        struct cmp {
+            constexpr bool operator()(block_t* const& lhs, block_t* const& rhs) const {
+                return lhs->earliest_epoch < rhs->earliest_epoch;
+            };
+        };
+        
+    };
+};
+
+
 
 
 
@@ -2126,6 +2434,109 @@ int main() {
         ////std::cout << cache.current<3>()->cast<GL::string&>() << std::endl;
     };
 #endif
+
+    // object pooling test. 3-4 times faster than normal allocation / deallocation. 
+    while (true) {        
+        if (auto timer = GL::stopwatch().debug_timer("Normal Allocation / Deletion (int)"); false) {
+            GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
+                auto* p = new int();
+                delete p;
+            });
+            GL::parallel::For(0, 1'000'000, [&](size_t i) {
+                std::array<int*, 36> arrs;
+                for (int j = 0; j < 36; ++j) {
+                    arrs[j] = new int();
+                }
+                for (int j = 0; j < 36; ++j) {
+                    delete arrs[j];
+                }
+            });
+        }
+        if (auto timer = GL::stopwatch().debug_timer("Normal Allocation / Deletion (GL::string)"); false) {
+            GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
+                auto* p = new GL::string();
+                delete p;
+            });
+            GL::parallel::For(0, 1'000'000, [&](size_t i) {
+                std::array<GL::string*, 36> arrs;
+                for (int j = 0; j < 36; ++j) {
+                    arrs[j] = new GL::string();
+                }
+                for (int j = 0; j < 36; ++j) {
+                    delete arrs[j];
+                }
+            });
+        }
+        if (auto timer = GL::stopwatch().debug_timer("block_bag<int>"); true) {
+            ebr::block_bag<int> pool;
+            GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
+                auto* p = pool.Alloc();
+                pool.Free(p);
+            });
+            GL::parallel::For(0, 1'000'000, [&](size_t i) {
+                std::array<int*, 36> arrs;
+                for (int j = 0; j < 36; ++j) {
+                    arrs[j] = pool.Alloc();
+                }
+                for (int j = 0; j < 36; ++j) {
+                    pool.Free(arrs[j]);
+                }
+            });
+        }
+        if (auto timer = GL::stopwatch().debug_timer("block_bag<GL::string>"); true) {
+            ebr::block_bag<GL::string> pool;
+            GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
+                auto* p = pool.Alloc();
+                pool.Free(p);
+            });
+            GL::parallel::For(0, 1'000'000, [&](size_t i) {
+                std::array<GL::string*, 36> arrs;
+                for (int j = 0; j < 36; ++j) {
+                    arrs[j] = pool.Alloc();
+                }
+                for (int j = 0; j < 36; ++j) {
+                    pool.Free(arrs[j]);
+                }
+            });
+        }
+        if (auto timer = GL::stopwatch().debug_timer("Object Pool<int>"); true) {
+            ObjectPool<int> pool;
+            GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
+                auto* p = pool.Alloc();
+                pool.Free(p);
+            });
+            GL::parallel::For(0, 1'000'000, [&](size_t i) {
+                std::array<int*, 36> arrs;
+                for (int j = 0; j < 36; ++j) {
+                    arrs[j] = pool.Alloc();
+                }
+                for (int j = 0; j < 36; ++j) {
+                    pool.Free(arrs[j]);
+                }
+            });
+        }
+        if (auto timer = GL::stopwatch().debug_timer("Object Pool<GL::string>"); true) {
+            ObjectPool<GL::string> pool;
+            GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
+                auto* p = pool.Alloc();
+                pool.Free(p);
+            });
+            GL::parallel::For(0, 1'000'000, [&](size_t i) {
+                std::array<GL::string*, 36> arrs;
+                for (int j = 0; j < 36; ++j) {
+                    arrs[j] = pool.Alloc();
+                }
+                for (int j = 0; j < 36; ++j) {
+                    pool.Free(arrs[j]);
+                }
+            });
+        }
+    }
+
+
+
+
+
 
     while (true) {
         if (auto timer = GL::stopwatch().debug_timer("Normal alloc/free, no guards"); true) {
