@@ -107,10 +107,10 @@ namespace GL {
             return false;
         };
         template <typename T> void for_each(T const& func) {
-            (void)for_each_cancellable([](auto& x) -> bool {
+            (void)for_each_cancellable([&func](auto& x) -> bool {
                 func(x);
                 return false;
-                });
+            });
         };
 
     };

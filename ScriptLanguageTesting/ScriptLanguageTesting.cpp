@@ -2337,33 +2337,32 @@ namespace ebr {
             }
         };
 
-        // attempt to collect the retired allocations
+        // attempt to collect the retired allocations.
         bool try_realloc_retired_blocks() {
             block_t* block{ nullptr };
             bool out{ false };
-            //if ((InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&deferrment)) & 7) == 0) {
-                //std::multimap< size_t, block_t* > blocks_to_queue;
+            if ((InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&deferrment)) & 7) == 0) {
+                std::multimap<size_t, block_t*> sort;
                 while (retired_blocks.try_pop(block)) {
                     if (block->latest_epoch < safe_retirement_epoch) {
                         ReallocBlock(block);
                         out = true;
-                    }else if (!states.for_each_cancellable([&block](auto& state) -> bool {
+                    }
+                    else if (!states.for_each_cancellable([&block](auto& state) -> bool {
                         if (state.epoch_protected == 0) return false;
-                        if (block->latest_epoch > state.delete_if_older_than) return true;                        
+                        if (block->latest_epoch > state.delete_if_older_than) return true;
                         return false;
                     })) {
                         ReallocBlock(block);
                         out = true;
                     }
                     else {
-                        retired_blocks.push(block);
-                        break;
-
-                        //blocks_to_queue.insert({ block->latest_epoch, block });
-                        //if (blocks_to_queue.size() > 1000) break;
+                        sort.insert({ block->latest_epoch, block });
+                        //retired_blocks.push(block);
+                        //break;
                     }
-                //}
-                //for (auto& x : blocks_to_queue) retired_blocks.push(x.second);
+                }
+                for (auto& x : sort) retired_blocks.push(x.second);
             }
             return out;
         };
@@ -2405,11 +2404,14 @@ namespace ebr {
                 delete_if_older_than;
             block_bag*
                 parent;
+            mutable short 
+                deferrment{ 0 };
 
             __declspec(noinline) void enter_critical_section() const {
                 if (++epoch_depth == 1) {
                     InterlockedExchangeNoFence(reinterpret_cast<volatile long*>(&epoch_protected), 1);
-                    queued_epoch = GL::util::get_current_epoch();                    
+                    if (deferrment == 0) deferrment = 100;
+                    queued_epoch = GL::util::get_current_epoch();
                 }
             };
             __declspec(noinline) void exit_critical_section() const {
@@ -2421,6 +2423,21 @@ namespace ebr {
                     epoch = epoch_1;
                     epoch_1 = epoch_2;
                     epoch_2 = queued_epoch;                    
+
+                    if (--deferrment == 0) {
+                        // check all of the threads. If this date is the smallest, then it holds.
+                        size_t current_youngest_epoch = parent->safe_retirement_epoch;
+                        if (delete_if_older_than > parent->safe_retirement_epoch) {
+                            size_t youngest_deletion_date = delete_if_older_than;
+                            parent->states.for_each([&](auto& state) {
+                                if (state.epoch_protected == 0) return;
+                                youngest_deletion_date = std::min<size_t>(youngest_deletion_date, state.delete_if_older_than);
+                            });
+                            if (youngest_deletion_date > parent->safe_retirement_epoch) {
+                                InterlockedCompareExchange(reinterpret_cast<volatile size_t*>(&parent->safe_retirement_epoch), youngest_deletion_date, current_youngest_epoch);
+                            }
+                        }
+                    }
                 }
             };
             auto guard_critical_section() const {
@@ -2521,7 +2538,7 @@ namespace ebr {
                     // cannot realloc yet.
                     block_t* block{ t->m_block };
                     retired_blocks.push(block);
-                    // try_realloc_retired_blocks();
+                    try_realloc_retired_blocks();
                 }
                 else {
                     ReallocBlock(t->m_block);
@@ -2549,8 +2566,8 @@ namespace ebr {
             m_free;
         GL::thread_object<ThreadState>
             states;
-        // concurrency::concurrent_queue<block_t*>
-        concurrency::concurrent_priority_queue<block_t*, cmp>        
+        concurrency::concurrent_queue<block_t*>
+        // concurrency::concurrent_priority_queue<block_t*, cmp>
             retired_blocks;
         size_t 
             deferrment{ 0 };
@@ -2741,7 +2758,7 @@ int main() {
             });
         }
 
-        if (auto timer = GL::stopwatch().debug_timer("block_bag<int> (no protections)"); false) {
+        if (auto timer = GL::stopwatch().debug_timer("block_bag<int> (no protections)"); true) {
             ebr::block_bag<int> pool;
             GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
                 auto* p = pool.Alloc();
@@ -2757,7 +2774,7 @@ int main() {
                 }
             });
         }
-        if (auto timer = GL::stopwatch().debug_timer("block_bag<GL::string> (no protections)"); false) {
+        if (auto timer = GL::stopwatch().debug_timer("block_bag<GL::string> (no protections)"); true) {
             ebr::block_bag<GL::string> pool;
             GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
                 auto* p = pool.Alloc();
