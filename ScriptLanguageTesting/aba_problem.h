@@ -2,6 +2,7 @@
 #include <xutility>
 #include <ShlDisp.h>
 #include <winnt.h>
+#include <thread>
 
 // Good Language namespace
 namespace GL {
@@ -66,6 +67,7 @@ namespace GL {
                 New.Node(Exchange);
                 if (CAS(&Head.m_n64, Old.m_n64, New.m_n64))
                     return true;
+                //std::this_thread::yield();
             } // race, try again
             return false; 
         };
@@ -78,7 +80,8 @@ namespace GL {
                 if (Old.is_null()) { break; }
                 New.Node(Old.Node()->m_pNext); // change New's Node, which bumps internal aba                
                 if (CAS(&Head.m_n64, Old.m_n64, New.m_n64)) // compare and swap New with Head if it still matches Old.       
-                    return THead<T>::Finalize(Old.Node()); // success                        
+                    return THead<T>::Finalize(Old.Node()); // success
+                //std::this_thread::yield();
             } // race, try again
             return nullptr; // Head.m_n64.m_pNode was nullptr ... e.g. nothing to pop
         };
@@ -92,6 +95,7 @@ namespace GL {
                 New.Node(pNode); // change New's head ptr, which bumps internal aba                
                 if (CAS(&Head.m_n64, Old.m_n64, New.m_n64)) // compare and swap New with Head if it still matches Old.
                     break; // success                
+                //std::this_thread::yield();
             } // race, try again
         }
 

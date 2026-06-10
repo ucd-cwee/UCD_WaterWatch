@@ -56,6 +56,11 @@ namespace GL {
         };
 
     public:
+        // approximate number of threads that have been activated
+        size_t size() const {
+            return _tls_size;
+        };
+
         thread_object() : _default{}, _tls{}, _tls_size{ 0 } {};
         thread_object(T const& original) : _default{ original }, _tls{}, _tls_size{ 0 }  {};
         thread_object(T&& original) : _default{ std::move(original) }, _tls{}, _tls_size{ 0 }  {};
