@@ -2054,6 +2054,7 @@ public:
 // epoch-based reclamation
 namespace ebr {
     template <size_t SZ, size_t BlockSize> struct block;
+    // actual element data is located at the start. The inner, hidden data is located at the footer. 
     template <size_t SZ, size_t BlockSize> struct element {
         unsigned char
             data[(((SZ + sizeof(element*) + sizeof(block<SZ, BlockSize>*) + sizeof(long long)) + 15) & ~15) - sizeof(element*) - sizeof(block<SZ, BlockSize>*) - sizeof(long long)]; // wrapped to 16-byte blocks for the entire element_t
@@ -2064,6 +2065,7 @@ namespace ebr {
         long long
             epoch;
     };
+    // collection of elements and footer info.
     template <size_t SZ, size_t BlockSize> struct block {
         element<SZ, BlockSize>
             elements[BlockSize];
@@ -2075,7 +2077,9 @@ namespace ebr {
             latest_epoch;
     };
 
-    // faster alternative to the atomic_parallel_allocator.
+    // Allocator that re-uses entire blocks of memory simultaneously. Each thread uses its own free list.
+    // In rare cases, if the entire block is not free'd, the memory cannot be re-used. 
+    // Handles the edge-case of the destruction of a thread without releasing it's free list - that list is released to a global list.
     template <typename T, size_t BlockSize = 256> class fast_atomic_allocator {
     private:
         using element_t = element<sizeof(T), BlockSize>;
@@ -2185,16 +2189,31 @@ namespace ebr {
 
     public:
         fast_atomic_allocator()
-            : blocks{}
+            : blocks{ 0ull }
             , m_free()
+            , global_free{ 0ull }
         {
+            blocks.m_n64 = 0;
             const_cast<GL::aba_problem::THead<element_t>&>(m_free._default).m_n64 = 0;
+            global_free.m_n64 = 0;
+            m_free._before_destruction = [this](GL::aba_problem::THead<element_t>& old_thread) {
+                element_t* element{ nullptr };
+                while (1) {
+                    if (element = GL::aba_problem::Pop(old_thread)) {
+                        GL::aba_problem::Stack_Push(global_free, element);
+                    }
+                    else {
+                        break;
+                    }
+                }
+            };
         };
         fast_atomic_allocator(fast_atomic_allocator const&) = delete;
         fast_atomic_allocator(fast_atomic_allocator&&) = delete;
         fast_atomic_allocator& operator=(fast_atomic_allocator const&) = delete;
         fast_atomic_allocator& operator=(fast_atomic_allocator&&) = delete;
         ~fast_atomic_allocator() noexcept {
+            m_free._before_destruction = nullptr;
             ReleaseBlocks();
         };
 
@@ -2207,7 +2226,10 @@ namespace ebr {
         template <typename... TArgs> T* Alloc(TArgs &&... a) {
             element_t* element{ nullptr };
             while (1) {
-                if (element = GL::aba_problem::Pop(*m_free)) {
+                element = GL::aba_problem::Pop(*m_free);
+                if (!element)
+                    element = GL::aba_problem::Pop(global_free);
+                if (element) {
                     element->epoch = std::numeric_limits<long long>::max(); // indicates it's been initiated
                     T* data{ (T*)&element->data[0] };
                     if constexpr (std::is_pod<T>::value) {
@@ -2222,7 +2244,7 @@ namespace ebr {
                         new (data) T(std::forward<TArgs>(a)...);
                     }
                     return data;
-                }
+                }                
                 else {
                     AllocBlock();
                 }
@@ -2247,7 +2269,11 @@ namespace ebr {
             blocks;
         GL::thread_object<GL::aba_problem::THead<element_t>>
             m_free;
+        GL::aba_problem::THead<element_t>
+            global_free;
     };
+
+
 
     // epoch-based atomic_parallel_allocator. Without the use of the epoch protection, is slightly slower than the fast_atomic_allocator. With the use of the epoch protection, is 2-3 times slower but increases memory demand significantly.
     template <typename T, size_t BlockSize = 256> class block_bag {
@@ -2344,7 +2370,7 @@ namespace ebr {
             if ((InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&deferrment)) & 7) == 0) {
                 std::multimap<size_t, block_t*> sort;
                 while (retired_blocks.try_pop(block)) {
-                    if (block->latest_epoch < safe_retirement_epoch) {
+                    if (block->latest_epoch < static_cast<long long>(safe_retirement_epoch)) {
                         ReallocBlock(block);
                         out = true;
                     }
@@ -2725,7 +2751,7 @@ int main() {
             });
         }
 
-        if (auto timer = GL::stopwatch().debug_timer("fast_atomic_allocator<int>"); false) {
+        if (auto timer = GL::stopwatch().debug_timer("fast_atomic_allocator<int>"); true) {
             ebr::fast_atomic_allocator<int> pool;
             GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
                 auto* p = pool.Alloc();
@@ -2741,7 +2767,7 @@ int main() {
                 }
             });
         }
-        if (auto timer = GL::stopwatch().debug_timer("fast_atomic_allocator<GL::string>"); false) {
+        if (auto timer = GL::stopwatch().debug_timer("fast_atomic_allocator<GL::string>"); true) {
             ebr::fast_atomic_allocator<GL::string> pool;
             GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
                 auto* p = pool.Alloc();
@@ -2757,8 +2783,35 @@ int main() {
                 }
             });
         }
+        if (1) {
+            ebr::fast_atomic_allocator<int> pool;
+            while (true) {
+                if (auto timer = GL::stopwatch().debug_timer("fast_atomic_allocator<int>"); true) {
+                    bool quit = false;
+                    std::thread thread([&]() {
+                        auto* p = pool.Alloc();
+                        pool.Free(p);
+                    });
+                    GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
+                        auto* p = pool.Alloc();
+                        pool.Free(p);
+                    });
+                    GL::parallel::For(0, 1'000'000, [&](size_t i) {
+                        std::array<int*, 36> arrs;
+                        for (int j = 0; j < 36; ++j) {
+                            arrs[j] = pool.Alloc();
+                        }
+                        for (int j = 0; j < 36; ++j) {
+                            pool.Free(arrs[j]);
+                        }
+                    });
+                    quit = true;
+                    thread.join();
+                }
+            }
+        }
 
-        if (auto timer = GL::stopwatch().debug_timer("block_bag<int> (no protections)"); true) {
+        if (auto timer = GL::stopwatch().debug_timer("block_bag<int> (no protections)"); false) {
             ebr::block_bag<int> pool;
             GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
                 auto* p = pool.Alloc();
@@ -2774,7 +2827,7 @@ int main() {
                 }
             });
         }
-        if (auto timer = GL::stopwatch().debug_timer("block_bag<GL::string> (no protections)"); true) {
+        if (auto timer = GL::stopwatch().debug_timer("block_bag<GL::string> (no protections)"); false) {
             ebr::block_bag<GL::string> pool;
             GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
                 auto* p = pool.Alloc();
@@ -2790,7 +2843,7 @@ int main() {
                 }
             });
         }
-        if (1) {
+        if (0) {
             ebr::block_bag<int, 256> pool;
             while (true) {
                 if (auto timer = GL::stopwatch().debug_timer("block_bag<int> (w/ protections)"); true) {

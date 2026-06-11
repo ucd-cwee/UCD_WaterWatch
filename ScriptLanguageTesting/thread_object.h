@@ -6,6 +6,7 @@
 #include "atomic_vector.h"
 #include "util.h"
 #include <iostream>
+#include <functional>
 
 // Atomic Thread-Local Objects
 namespace GL {
@@ -14,6 +15,8 @@ namespace GL {
     class thread_object {
     public:
         T const _default; // for initializing new thread objects
+        std::function<void(T&)> _before_destruction; // optionally called before thread objects are destroyed.
+
     private:
         mutable size_t _tls_size{ 0 };        
         mutable atomic_vector<std::pair<size_t, T*>> _tls;
@@ -40,6 +43,7 @@ namespace GL {
                 InterlockedExchangeNoFence(reinterpret_cast<volatile size_t*>(&_tls_slot.first), _tl_unique_id);
                 T* newPtr{ GL::alloc<T>(_default) };
                 if (T* old_ptr = reinterpret_cast<T*>(InterlockedExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&_tls_slot.second), newPtr))) {
+                    if (_before_destruction) _before_destruction(*old_ptr);
                     GL::free(old_ptr);
                 }
             }
@@ -79,7 +83,10 @@ namespace GL {
         thread_object& operator=(thread_object const&) = delete;
         thread_object& operator=(thread_object&&) = delete;
         ~thread_object() {
-            for (auto& x : _tls) if (x.second) GL::free(x.second);
+            for (auto& x : _tls) if (x.second) {
+                if (_before_destruction) _before_destruction(*x.second);
+                GL::free(x.second);
+            }
         };
 
         T* operator->() { return &GetTLS(); };
