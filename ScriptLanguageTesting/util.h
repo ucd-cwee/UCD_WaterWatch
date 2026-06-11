@@ -67,6 +67,8 @@ namespace GL {
         long long get_current_epoch();
         // return the number of threads on the current hardware. 
         size_t get_hardware_thread_count();
+        // returns a unique ID for this exact instance of a thread
+        size_t get_actual_unique_thread_id();
 
         // 0..1
         double rand();

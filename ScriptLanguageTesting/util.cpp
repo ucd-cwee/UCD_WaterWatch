@@ -137,6 +137,13 @@ namespace GL {
             return _epoch.load(std::memory_order_relaxed);
         };
 
+        size_t get_actual_unique_thread_id() {
+            thread_local size_t out = 0ull;
+            if (out == 0ull)
+                out = GL::util::inline_hash(GL::util::get_current_epoch(), std::this_thread::get_id());
+            return out;
+        };
+
         /*
          * GetOptimalCoreNumber() - Return the concurrency level on hardware
          *
