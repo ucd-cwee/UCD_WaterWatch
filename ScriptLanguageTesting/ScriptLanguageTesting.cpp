@@ -2329,9 +2329,6 @@ namespace ebr {
                     break; // success
                 // race, try again
             }
-
-            //if (GL::util::get_thread_id() == 4)
-                //std::cout << GL::printf("%s from Thread %zu at Epoch %zu\n", "AllocBlock", GL::util::get_thread_id(), (size_t)this->current_epoch);
         };
 
         // Allocate one old block of contiguous elements back onto the free list. This requires that it has been retired and is safe to reclaim. 
@@ -2368,9 +2365,6 @@ namespace ebr {
                     break; // success
                 // race, try again
             }
-
-            //if (GL::util::get_thread_id() == 4)
-                //std::cout << GL::printf("%s from Thread %zu at Epoch %zu\n", "ReallocBlock", GL::util::get_thread_id(), (size_t)this->current_epoch);
         };
 
         // Release memory held by this block
@@ -2384,19 +2378,18 @@ namespace ebr {
                             element.epoch = 0;
                         }
                     }
+                    this->blocks[ptr->block_position] = nullptr;
+                    this->blocks_tickets.return_ticket(ptr->block_position);
+                    PopBlock(ptr);
                 }
-                this->blocks[ptr->block_position] = nullptr;
-                this->blocks_tickets.return_ticket(ptr->block_position);
-                PopBlock(ptr);
             }
             else {
-                this->blocks[ptr->block_position] = nullptr;
-                this->blocks_tickets.return_ticket(ptr->block_position);
-                PopBlock(ptr);
+                if (ptr) {
+                    this->blocks[ptr->block_position] = nullptr;
+                    this->blocks_tickets.return_ticket(ptr->block_position);
+                    PopBlock(ptr);
+                }
             }
-
-            //if (GL::util::get_thread_id() == 4)
-                //std::cout << GL::printf("%s from Thread %zu at Epoch %zu\n", "ReleaseBlock", GL::util::get_thread_id(), (size_t)this->current_epoch);
         };
 
         enum class ReclamationResult {
@@ -2454,8 +2447,8 @@ namespace ebr {
         // Release all memory held by all blocks
         void ReleaseBlocks() noexcept {            
             for (block_t*& ptr : blocks) {
-                if constexpr (!std::is_pod_v<T>) {
-                    if (ptr) {
+                if (ptr) {
+                    if constexpr (!std::is_pod_v<T>) {
                         for (int element_i = 0; element_i < BlockSize; ++element_i) {
                             auto& element = ptr->elements[element_i];
                             if (element.epoch > 0) {
@@ -2464,9 +2457,10 @@ namespace ebr {
                             }
                         }
                     }
+                    this->blocks_tickets.return_ticket(ptr->block_position);
+                    PopBlock(ptr);
+                    ptr = nullptr;
                 }
-                this->blocks_tickets.return_ticket(ptr->block_position);
-                PopBlock(ptr);
             }              
         };
 
@@ -3208,9 +3202,9 @@ int main() {
             });
         }
         if (1) {
-            ebr::fast_atomic_epoch_allocator<int, 2 << 12> pool;
+            ebr::fast_atomic_epoch_allocator<GL::string, 256> pool;
             while (true) {
-                if (auto timer = GL::stopwatch().debug_timer("fast_atomic_epoch_allocator<int>"); true) {
+                if (auto timer = GL::stopwatch().debug_timer("fast_atomic_epoch_allocator<GL::string>"); true) {
                     //bool quit = false;
                     //std::thread thread([&]() {
                     //    auto* p = pool.Alloc();
@@ -3220,15 +3214,21 @@ int main() {
                         auto* p = pool.Alloc();
                         auto g = pool.guard_critical_section();
                         pool.Free(p);
+                        p->operator=("TEST");
+                        p->begins_with("TEST");
                     });
                     GL::parallel::For(0, 1'000'000, [&](size_t i) {
-                        std::array<int*, 36> arrs;
+                        std::array<GL::string*, 36> arrs;
                         for (int j = 0; j < 36; ++j) {
                             arrs[j] = pool.Alloc();
+                            arrs[j]->operator=("TEST");
                         }
                         auto g = pool.guard_critical_section();
                         for (int j = 0; j < 36; ++j) {
                             pool.Free(arrs[j]);
+                        }
+                        for (int j = 0; j < 36; ++j) {
+                            arrs[j]->begins_with("TEST");
                         }
                     });
                     //quit = true;
