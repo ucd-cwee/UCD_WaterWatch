@@ -1931,7 +1931,7 @@ namespace ebr {
         // Allocate one new block of contiguous elements onto the free list
         void AllocBlock() {
             block_t* new_block_ptr = PushBlock();
-            GL::aba_problem::Stack_Push(blocks, new_block_ptr);
+            blocks.get_or_make(new_block_ptr->block_position = blocks_tickets.get_ticket()) = new_block_ptr;
             block_t& block = *new_block_ptr;
 
             // add the new elements to the list
@@ -1944,24 +1944,8 @@ namespace ebr {
             block.count_free = BlockSize;
 
             // push pNode onto head of list.
-            uint64_t old;
-            GL::aba_problem::THead<element_t> New;
-            while (true) { // race loop
-                // Get an atomic copy of head and call it old.
-                // Copy old and call it new.                    
-                old = New.m_n64 = m_free->m_n64;
-
-                // Wire the tail of this block to connect to the old head ptr
-                block.elements[BlockSize - 1].m_pNext = New.Node();
-
-                // change New's head ptr, which bumps internal aba
-                New.Node(&block.elements[0]); // head shall be the start of this block
-
-                // compare and swap New with Head if it still matches Old.
-                if (GL::aba_problem::CAS(&m_free->m_n64, old, New.m_n64))
-                    break; // success
-                // race, try again
-            }
+            block.elements[BlockSize - 1].m_pNext = *m_free;
+            *m_free = &block.elements[0];
         };
 
         // Allocate one old block of contiguous elements back onto the free list
@@ -1980,30 +1964,38 @@ namespace ebr {
             block.count_free = BlockSize;
 
             // push pNode onto head of list.
-            uint64_t old;
-            GL::aba_problem::THead<element_t> New;
-            while (true) { // race loop
-                // Get an atomic copy of head and call it old.
-                // Copy old and call it new.                    
-                old = New.m_n64 = m_free->m_n64;
-
-                // Wire the tail of this block to connect to the old head ptr
-                block.elements[BlockSize - 1].m_pNext = New.Node();
-
-                // change New's head ptr, which bumps internal aba
-                New.Node(&block.elements[0]); // head shall be the start of this block
-
-                // compare and swap New with Head if it still matches Old.
-                if (GL::aba_problem::CAS(&m_free->m_n64, old, New.m_n64))
-                    break; // success
-                // race, try again
-            }
+            block.elements[BlockSize - 1].m_pNext = *m_free;
+            *m_free = &block.elements[0];
         };
 
+        // Release memory held by this block
+        void ReleaseBlock(block_t* ptr) noexcept {
+            if constexpr (!std::is_pod_v<T>) {
+                if (ptr) {
+                    for (int element_i = 0; element_i < BlockSize; ++element_i) {
+                        auto& element = ptr->elements[element_i];
+                        if (element.epoch > 0) {
+                            reinterpret_cast<T*>(&element.data[0])->~T();
+                            element.epoch = 0;
+                        }
+                    }
+                    this->blocks[ptr->block_position] = nullptr;
+                    this->blocks_tickets.return_ticket(ptr->block_position);
+                    PopBlock(ptr);
+                }
+            }
+            else {
+                if (ptr) {
+                    this->blocks[ptr->block_position] = nullptr;
+                    this->blocks_tickets.return_ticket(ptr->block_position);
+                    PopBlock(ptr);
+                }
+            }
+        };
         // Release all memory held by all blocks
         void ReleaseBlocks() noexcept {
-            while (true) {
-                if (block_t* ptr = GL::aba_problem::Pop(blocks)) {
+            for (block_t*& ptr : blocks) {
+                if (ptr) {
                     if constexpr (!std::is_pod_v<T>) {
                         for (int element_i = 0; element_i < BlockSize; ++element_i) {
                             auto& element = ptr->elements[element_i];
@@ -2013,33 +2005,30 @@ namespace ebr {
                             }
                         }
                     }
+                    this->blocks_tickets.return_ticket(ptr->block_position);
                     PopBlock(ptr);
-                }
-                else {
-                    break;
+                    ptr = nullptr;
                 }
             }
         };
 
     public:
         fast_atomic_allocator()
-            : blocks{ 0ull }
+            : blocks()
+            , blocks_tickets()
             , m_free()
-            , global_free{ 0ull }
         {
-            blocks.m_n64 = 0;
-            const_cast<GL::aba_problem::THead<element_t>&>(m_free._default).m_n64 = 0;
-            global_free.m_n64 = 0;
-            m_free._before_destruction = [this](GL::aba_problem::THead<element_t>& old_thread) {
+            const_cast<element_t*&>(m_free._default) = nullptr;
+            m_free._before_destruction = [this](element_t*& old_thread) {
+                std::set<block_t*> blockss;
                 element_t* element{ nullptr };
-                while (1) {
-                    if (element = GL::aba_problem::Pop(old_thread)) {
-                        GL::aba_problem::Stack_Push(global_free, element);
-                    }
-                    else {
-                        break;
-                    }
+                while (old_thread) {
+                    element = old_thread;
+                    old_thread = element->m_pNext;
+                    blockss.insert(element->m_block);
                 }
+                for (auto& x : blockss)
+                    ReleaseBlock(x);
             };
         };
         fast_atomic_allocator(fast_atomic_allocator const&) = delete;
@@ -2055,10 +2044,9 @@ namespace ebr {
         template <typename... TArgs> T* Alloc(TArgs &&... a) {
             element_t* element{ nullptr };
             while (1) {
-                element = GL::aba_problem::Pop(*m_free);
-                if (!element)
-                    element = GL::aba_problem::Pop(global_free);
+                element = *m_free;    
                 if (element) {
+                    *m_free = element->m_pNext;
                     element->epoch = std::numeric_limits<long long>::max(); // indicates it's been initiated
                     T* data{ (T*)&element->data[0] };
                     if constexpr (std::is_pod<T>::value) {
@@ -2084,7 +2072,7 @@ namespace ebr {
         void Free(T* element) {
             element_t* t = (element_t*)(element);
             t->epoch = GL::util::get_current_epoch();
-            if (InterlockedDecrementNoFence(reinterpret_cast<volatile unsigned long long*>(&t->m_block->count_free)) == 0) {
+            if (--t->m_block->count_free == 0) {
                 // this entire block has been queued for return and release. 
                 ReallocBlock(t->m_block);
             }
@@ -2094,12 +2082,12 @@ namespace ebr {
         };
 
     private:
-        GL::aba_problem::THead<block_t>
-            blocks;
-        GL::thread_object<GL::aba_problem::THead<element_t>>
+        GL::atomic_vector<block_t*>
+            blocks; // vector of all blocks currently allocated and alive
+        GL::ticket_dispensor<false>
+            blocks_tickets; // ticket dispensor to re-use blocks indexes and minimize the size of blocks
+        GL::thread_object<element_t*>
             m_free;
-        GL::aba_problem::THead<element_t>
-            global_free;
     };
 
     // Allocator that re-uses entire blocks of memory simultaneously. Each thread uses its own free list.
@@ -2670,7 +2658,33 @@ int main() {
                 }
             });
         }
-
+        while (true) {
+            ebr::fast_atomic_allocator<GL::string> pool;
+            if (auto timer = GL::stopwatch().debug_timer("fast_atomic_allocator<GL::string>"); true) {                
+                //bool quit = false;
+                //std::thread todo([&]() {
+                //    while (!quit) {
+                //        auto* p = pool.Alloc();
+                //        pool.Free(p);
+                //    }
+                //});
+                GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
+                    auto* p = pool.Alloc();
+                    pool.Free(p);
+                });
+                GL::parallel::For(0, 1'000'000, [&](size_t i) {
+                    std::array<GL::string*, 36> arrs;
+                    for (int j = 0; j < 36; ++j) {
+                        arrs[j] = pool.Alloc();
+                    }
+                    for (int j = 0; j < 36; ++j) {
+                        pool.Free(arrs[j]);
+                    }
+                });
+                //quit = true;
+                //todo.join();
+            }
+        }
         if (auto timer = GL::stopwatch().debug_timer("fast_atomic_epoch_allocator<int> (linear only)"); true) {
             ebr::fast_atomic_epoch_allocator<int> pool;
             
