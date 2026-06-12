@@ -23,8 +23,8 @@ namespace GL {
         mutable atomic_vector<std::pair<size_t, T*>> _tls;
 
         auto& GetTLS() const {
-            auto _tl_index = GL::util::get_thread_id(); // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
-            auto _tl_unique_id = GL::util::get_actual_unique_thread_id(); // actual unique hash id of our thread. Will not be re-used by any thread. Even if the same thread dies and is re-born, the epoch may catch that. 
+            thread_local auto _tl_index = GL::util::get_thread_id(); // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
+            thread_local auto _tl_unique_id = GL::util::get_actual_unique_thread_id(); // actual unique hash id of our thread. Will not be re-used by any thread. Even if the same thread dies and is re-born, the epoch may catch that. 
 
             // step 1, grow the _tls if necessary
             if (_tls_size <= _tl_index) { // lazy growth, taking advantage of grow_to_at_least being safe to call on repeat. 
@@ -138,8 +138,8 @@ namespace GL {
         template <typename... Args>
         // issue: only one thread could access this call at a time per-thread. However, other threads may (and do) loop over the _tls while it's being initialized.
         auto& InitTLS(Args&&... args) const {
-            auto _tl_index = GL::util::get_thread_id(); // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
-            auto _tl_unique_id = GL::util::get_actual_unique_thread_id(); // actual unique hash id of our thread. Will not be re-used by any thread. Even if the same thread dies and is re-born, the epoch may catch that. 
+            thread_local auto _tl_index = GL::util::get_thread_id(); // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
+            thread_local auto _tl_unique_id = GL::util::get_actual_unique_thread_id(); // actual unique hash id of our thread. Will not be re-used by any thread. Even if the same thread dies and is re-born, the epoch may catch that. 
             
             // step 1, grow the _tls if necessary
             if (_tls_size <= _tl_index) { // lazy growth, taking advantage of grow_to_at_least being safe to call on repeat. 
@@ -168,8 +168,8 @@ namespace GL {
         template <typename... Args>
         // issue: only one thread could access this call at a time per-thread. However, other threads may (and do) loop over the _tls while it's being initialized.
         auto& InitTLS(Args const&... args) const {
-            auto _tl_index{ GL::util::get_thread_id() }; // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
-            auto _tl_unique_id{ GL::util::get_actual_unique_thread_id() }; // actual unique hash id of our thread. Will not be re-used by any thread. Even if the same thread dies and is re-born, the epoch may catch that. 
+            thread_local auto _tl_index{ GL::util::get_thread_id() }; // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
+            thread_local auto _tl_unique_id{ GL::util::get_actual_unique_thread_id() }; // actual unique hash id of our thread. Will not be re-used by any thread. Even if the same thread dies and is re-born, the epoch may catch that. 
 
             // step 1, grow the _tls if necessary
             if (_tls_size <= _tl_index) { // lazy growth, taking advantage of grow_to_at_least being safe to call on repeat. 
@@ -198,8 +198,8 @@ namespace GL {
     public:
         T& GetTLS() const {
             // 2. Get the thread's native context index and unique ID
-            size_t _tl_index = GL::util::get_thread_id();
-            size_t _tl_unique_id = GL::util::get_actual_unique_thread_id();
+            thread_local auto _tl_index = GL::util::get_thread_id();
+            thread_local auto _tl_unique_id = GL::util::get_actual_unique_thread_id();
 
             // 3. Grow vector if necessary
             if (_tls_size <= _tl_index) {

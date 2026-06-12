@@ -1883,174 +1883,6 @@ public:
 
 };
 
-//template <typename T>
-//class EpochManager {
-//public:
-//    class wrap {
-//        const void* p;
-//    public:
-//        wrap(const void* P) : p{ P } {};
-//        wrap(wrap const&) = delete;
-//        wrap(wrap&&) = delete;
-//        wrap& operator=(wrap const&) = delete;
-//        wrap& operator=(wrap&&) = delete;
-//        virtual ~wrap() = default;
-//    };
-//
-//    virtual wrap guard_critical_section() const = 0;
-//    virtual void free(T* p) const = 0;
-//    virtual T* alloc() const = 0;
-//};
-
-template <typename T, typename Alloc, typename Destroy>
-class EpochManager {
-    class ThreadState {
-    public:
-        Destroy
-            destoryer;
-        mutable size_t
-            epoch_2,
-            epoch_1,
-            epoch;
-        mutable size_t
-            epoch_depth;
-        mutable size_t
-            queued_epoch;
-        mutable std::array< std::pair<std::vector<T*>, size_t>, 3>
-            limbo_lists;
-
-        void enter_critical_section() const {
-            if (++epoch_depth == 1)
-                queued_epoch = GL::util::get_current_epoch();
-        };
-        void exit_critical_section() const {
-            if (--epoch_depth == 0) {
-                // handle the oldest epoch
-                for (size_t pos = 0; pos < limbo_lists[epoch].second; ++pos)
-                    destoryer(limbo_lists[epoch].first[pos]);
-                limbo_lists[epoch].second = 0;
-
-                auto old_epoch = epoch;
-                epoch = epoch_1;
-                epoch_1 = epoch_2;
-                epoch_2 = old_epoch;
-            }
-        };
-        auto guard_critical_section() const {
-            class wrap {
-                const ThreadState* p;
-            public:
-                wrap(const ThreadState* P) : p{ P } {};
-                wrap(wrap const&) = delete;
-                wrap(wrap&&) = delete;
-                wrap& operator=(wrap const&) = delete;
-                wrap& operator=(wrap&&) = delete;
-                ~wrap() {
-                    p->exit_critical_section();
-                };
-            };
-            enter_critical_section();
-            return wrap(this);
-        };
-        void enque(T* p) const {
-            if (epoch_depth > 0) {
-                if (++limbo_lists[epoch_2].second > limbo_lists[epoch_2].first.size()) {
-                    limbo_lists[epoch_2].first.resize(limbo_lists[epoch_2].first.size() * 2 + 16);
-                }
-                limbo_lists[epoch_2].first[limbo_lists[epoch_2].second - 1] = p;
-            }
-            else
-                destoryer(p);
-        };
-
-        ThreadState() noexcept :
-            destoryer{},
-            epoch_2{ 2 },
-            epoch_1{ 1 },
-            epoch{ 0 },
-            epoch_depth{ 0 },
-            queued_epoch{ 0 },
-            limbo_lists{}
-        {};
-        ThreadState(Destroy const& _destoryer) noexcept :
-            destoryer{ _destoryer },
-            epoch_2{ 2 },
-            epoch_1{ 1 },
-            epoch{ 0 },
-            epoch_depth{ 0 },
-            queued_epoch{ 0 },
-            limbo_lists{}
-        {};
-        ThreadState(ThreadState const&) = default;
-        ThreadState(ThreadState&&) noexcept = default;
-        ThreadState& operator=(ThreadState const&) = default;
-        ThreadState& operator=(ThreadState&&) noexcept = default;
-        ~ThreadState() {
-            for (auto& list : limbo_lists) {
-                for (size_t pos = 0; pos < list.second; ++pos)
-                    destoryer(list.first[pos]);
-                list.second = 0;
-            }
-
-        };
-    };
-    mutable GL::thread_object< ThreadState >
-        states;
-    Alloc
-        allocator;
-public:
-    EpochManager(T, Alloc const& _allocator, Destroy const& destroyer) : allocator{ _allocator }, states(ThreadState(destroyer)) {};
-
-    auto guard_critical_section() const {
-        return states->guard_critical_section();
-    };
-    void free(T* p) const {
-        states->enque(p);
-    };    
-    T* alloc() const {
-        return allocator();
-    };
-};
-
-#if 0
-template <typename T>
-class EpochAllocator {
-public:
-    GL::atomic_parallel_allocator<T> 
-        allocator;
-
-
-    EpochAllocator() {
-        auto manager = EpochManager(T(), [&]() -> T* {
-            return allocator.Alloc();
-        }, [&](T* p) {
-            allocator.Free(p);
-        });
-
-
-
-    };
-
-    [[nodiscard]] auto ProtectCurrentEpoch() const {
-        
-    };
-
-    // Request a new memory pointer
-    T* Alloc() {
-        
-
-    };
-
-    // Frees the memory pointer
-    void Free(const T* element) {
-
-    };
-
-    size_t size() const {
-
-    };
-};
-#endif
 // epoch-based reclamation
 namespace ebr {
     template <size_t SZ, size_t BlockSize> struct block;
@@ -2076,10 +1908,7 @@ namespace ebr {
         size_t
             block_position;
         long long
-            youngest_epoch;
-        //long long
-        //   oldest_epoch;
-        
+            youngest_epoch;        
     };
 
     // Allocator that re-uses entire blocks of memory simultaneously. Each thread uses its own free list.
@@ -2222,11 +2051,6 @@ namespace ebr {
             ReleaseBlocks();
         };
 
-        // calling this unloads all the data and prevents use of the allocator. Should be used when the allocator is about to be deleted but (for whatever reason) needs to be unloaded at a specific schedule.
-        void unsafe_unload() {
-            ReleaseBlocks();
-        };
-
         // Acquire a new element from the Free list and construct it.
         template <typename... TArgs> T* Alloc(TArgs &&... a) {
             element_t* element{ nullptr };
@@ -2311,24 +2135,8 @@ namespace ebr {
             block.count_free = BlockSize;
 
             // push pNode onto head of list.
-            uint64_t old;
-            GL::aba_problem::THead<element_t> New;
-            while (true) { // race loop
-                // Get an atomic copy of head and call it old.
-                // Copy old and call it new.                    
-                old = New.m_n64 = m_free->m_n64;
-
-                // Wire the tail of this block to connect to the old head ptr
-                block.elements[BlockSize - 1].m_pNext = New.Node();
-
-                // change New's head ptr, which bumps internal aba
-                New.Node(&block.elements[0]); // head shall be the start of this block
-
-                // compare and swap New with Head if it still matches Old.
-                if (GL::aba_problem::CAS(&m_free->m_n64, old, New.m_n64))
-                    break; // success
-                // race, try again
-            }
+            block.elements[BlockSize - 1].m_pNext = *m_free;
+            *m_free = &block.elements[0];
         };
 
         // Allocate one old block of contiguous elements back onto the free list. This requires that it has been retired and is safe to reclaim. 
@@ -2347,24 +2155,8 @@ namespace ebr {
             block.count_free = BlockSize;
 
             // push pNode onto head of list.
-            uint64_t old;
-            GL::aba_problem::THead<element_t> New;
-            while (true) { // race loop
-                // Get an atomic copy of head and call it old.
-                // Copy old and call it new.                    
-                old = New.m_n64 = m_free->m_n64;
-
-                // Wire the tail of this block to connect to the old head ptr
-                block.elements[BlockSize - 1].m_pNext = New.Node();
-
-                // change New's head ptr, which bumps internal aba
-                New.Node(&block.elements[0]); // head shall be the start of this block
-
-                // compare and swap New with Head if it still matches Old.
-                if (GL::aba_problem::CAS(&m_free->m_n64, old, New.m_n64))
-                    break; // success
-                // race, try again
-            }
+            block.elements[BlockSize - 1].m_pNext = *m_free;
+            *m_free = &block.elements[0];
         };
 
         // Release memory held by this block
@@ -2487,7 +2279,7 @@ namespace ebr {
                 if (++epoch_depth == 1) {
                     InterlockedExchangeNoFence(reinterpret_cast<volatile long*>(&epoch_protected), 1);
                     queued_epoch = parent->current_epoch + 1;
-                    if (deferrment <= 0) deferrment = 100;
+                    if (deferrment <= 0) deferrment = 1'000;
                 }
             };
             __declspec(noinline) void exit_critical_section() const {
@@ -2535,12 +2327,12 @@ namespace ebr {
             };
 
             ThreadState() noexcept :
-                epoch_2{ GL::util::get_current_epoch() },
-                epoch_1{ GL::util::get_current_epoch() },
-                epoch{ GL::util::get_current_epoch() },
-                delete_if_older_than{ GL::util::get_current_epoch() },
+                epoch_2{ 0/*GL::util::get_current_epoch()*/ },
+                epoch_1{ 0/*GL::util::get_current_epoch()*/ },
+                epoch{ 0/*GL::util::get_current_epoch()*/ },
+                delete_if_older_than{ 0/*GL::util::get_current_epoch()*/ },
                 epoch_depth{ 0ull },
-                queued_epoch{ GL::util::get_current_epoch() },
+                queued_epoch{ 0/*GL::util::get_current_epoch()*/ },
                 parent{ nullptr }
             {};
             ThreadState(ThreadState const&) = default;
@@ -2560,17 +2352,15 @@ namespace ebr {
             , current_epoch{ 0 }
             , states()
         {
-            m_free._after_construction = [this](GL::aba_problem::THead<element_t>& new_thread) {
-                new_thread.m_n64 = 0;
+            m_free._after_construction = [this](element_t*& new_thread) {
+                new_thread = nullptr;
             };
-            m_free._before_destruction = [this](GL::aba_problem::THead<element_t>& old_thread) {
-                element_t* element{ nullptr };
-                while (1) {
-                    if (element = GL::aba_problem::Pop(old_thread)) {
+            m_free._before_destruction = [this](element_t* old_thread) {
+                while (old_thread) {
+                    element_t* element{ old_thread };
+                    if (element) {
+                        old_thread = element->m_pNext;
                         GL::aba_problem::Stack_Push(global_free, element);
-                    }
-                    else {
-                        break;
                     }
                 }
             };
@@ -2603,21 +2393,21 @@ namespace ebr {
             ReleaseBlocks();
         };
 
-        // calling this unloads all the data and prevents use of the allocator. Should be used when the allocator is about to be deleted but (for whatever reason) needs to be unloaded at a specific schedule.
-        void unsafe_unload() {
-            ReleaseBlocks();
-        };
-
         // Acquire a new element from the Free list and construct it.
         template <typename... TArgs> T* Alloc(TArgs &&... a) {
             element_t* element{ nullptr };
-            while (1) {
-                element = GL::aba_problem::Pop(*m_free);
-                if (!element)
-                    element = GL::aba_problem::Pop(global_free);
+            auto*& freeP = *m_free;
+            T* data;
+            ReclamationResult result;
+            while (1) {                
+                if (freeP) {
+                    element = freeP;
+                    freeP = element->m_pNext;
+                }
+                else element = GL::aba_problem::Pop(global_free);
                 if (element) {
                     element->epoch = std::numeric_limits<long long>::max(); // indicates it's been initiated
-                    T* data{ (T*)&element->data[0] };
+                    data = (T*)&element->data[0];
                     if constexpr (std::is_pod<T>::value) {
                         if constexpr (sizeof...(a) > 0) {
                             new (data) T(std::forward<TArgs>(a)...);
@@ -2632,7 +2422,7 @@ namespace ebr {
                     return data;
                 }
                 else {
-                    auto result = TryReclaimRetiredBlocks();
+                    result = TryReclaimRetiredBlocks();
                     if (result != ReclamationResult::ReclaimedRetiredBlocks) {
                         AllocBlock();
                     }                    
@@ -2678,7 +2468,7 @@ namespace ebr {
             blocks; // vector of all blocks currently allocated and alive
         GL::ticket_dispensor<false>
             blocks_tickets; // ticket dispensor to re-use blocks indexes and minimize the size of blocks
-        GL::thread_object_no_default<GL::aba_problem::THead<element_t>>
+        GL::thread_object_no_default<element_t*>
             m_free; // thread-local free list of elements
         GL::aba_problem::THead<element_t>
             global_free; // shared free list of elements
@@ -2692,344 +2482,7 @@ namespace ebr {
             current_epoch;
     };
 
-#if 0
-    // epoch-based atomic_parallel_allocator. Without the use of the epoch protection, is slightly slower than the fast_atomic_allocator. With the use of the epoch protection, is 2-3 times slower but increases memory demand significantly.
-    template <typename T, size_t BlockSize = 256> class block_bag {
-    public:
-        using element_t = element<sizeof(T), BlockSize>;
-        using block_t = block<sizeof(T), BlockSize>;
-    private:
-        static block_t* PushBlock() {
-            block_t* p = reinterpret_cast<block_t*>(GL::malloc(sizeof(block_t)));
-            if (p) std::memset(p, 0, sizeof(block_t));
-            return p;
-        };
-        static void PopBlock(block_t* p) {
-            GL::mfree(p);
-        };
-
-        // Allocate one new block of contiguous elements onto the free list
-        void AllocBlock() {
-            block_t* new_block_ptr = PushBlock();
-            GL::aba_problem::Stack_Push(blocks, new_block_ptr);
-            block_t& block = *new_block_ptr;
-
-            // add the new elements to the list
-            for (int i = 0; i < BlockSize - 1; ++i) {
-                block.elements[i].m_pNext = &block.elements[i + 1];
-                block.elements[i].m_block = new_block_ptr;
-            }
-            block.elements[BlockSize - 1].m_pNext = nullptr;
-            block.elements[BlockSize - 1].m_block = new_block_ptr;
-            block.count_free = BlockSize;
-
-            // push pNode onto head of list.
-            uint64_t old;
-            GL::aba_problem::THead<element_t> New;
-            while (true) { // race loop
-                // Get an atomic copy of head and call it old.
-                // Copy old and call it new.                    
-                old = New.m_n64 = m_free->m_n64;
-
-                // Wire the tail of this block to connect to the old head ptr
-                block.elements[BlockSize - 1].m_pNext = New.Node();
-
-                // change New's head ptr, which bumps internal aba
-                New.Node(&block.elements[0]); // head shall be the start of this block
-
-                // compare and swap New with Head if it still matches Old.
-                if (GL::aba_problem::CAS(&m_free->m_n64, old, New.m_n64))
-                    break; // success
-                // race, try again
-            }
-        };
-
-        // Allocate one old block of contiguous elements back onto the free list
-        void ReallocBlock(block_t* existing_block_ptr) {
-            block_t& block = *existing_block_ptr;
-            block.latest_epoch = 0;
-
-            // add the new elements to the list
-            for (int i = 0; i < BlockSize - 1; ++i) {
-                block.elements[i].epoch = 0;
-                block.elements[i].m_pNext = &block.elements[i + 1];
-                ((T*)&block.elements[i].data[0])->~T();
-            }
-            block.elements[BlockSize - 1].epoch = 0;
-            block.elements[BlockSize - 1].m_pNext = nullptr;
-            ((T*)&block.elements[BlockSize - 1].data[0])->~T();
-            block.count_free = BlockSize;
-
-            // push pNode onto head of list.
-            uint64_t old;
-            GL::aba_problem::THead<element_t> New;
-            while (true) { // race loop
-                // Get an atomic copy of head and call it old.
-                // Copy old and call it new.                    
-                old = New.m_n64 = m_free->m_n64;
-
-                // Wire the tail of this block to connect to the old head ptr
-                block.elements[BlockSize - 1].m_pNext = New.Node();
-
-                // change New's head ptr, which bumps internal aba
-                New.Node(&block.elements[0]); // head shall be the start of this block
-
-                // compare and swap New with Head if it still matches Old.
-                if (GL::aba_problem::CAS(&m_free->m_n64, old, New.m_n64))
-                    break; // success
-                // race, try again
-            }
-        };
-
-        // attempt to collect the retired allocations.
-        bool try_realloc_retired_blocks() {
-            block_t* block{ nullptr };
-            bool out{ false };
-            if ((InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&deferrment)) & 7) == 0) {
-                std::multimap<size_t, block_t*> sort;
-                while (retired_blocks.try_pop(block)) {
-                    if (block->latest_epoch < static_cast<long long>(safe_retirement_epoch)) {
-                        ReallocBlock(block);
-                        out = true;
-                    }
-                    else if (!states.for_each_cancellable([&block](auto& state) -> bool {
-                        if (state.epoch_protected == 0) return false;
-                        if (block->latest_epoch > state.delete_if_older_than) return true;
-                        return false;
-                    })) {
-                        ReallocBlock(block);
-                        out = true;
-                    }
-                    else {
-                        sort.insert({ block->latest_epoch, block });
-                        //retired_blocks.push(block);
-                        //break;
-                    }
-                }
-                for (auto& x : sort) retired_blocks.push(x.second);
-            }
-            return out;
-        };
-
-        // Release all memory held by all blocks
-        void ReleaseBlocks() noexcept {
-            while (true) {
-                if (block_t* ptr = GL::aba_problem::Pop(blocks)) {
-                    if constexpr (!std::is_pod_v<T>) {
-                        for (int element_i = 0; element_i < BlockSize; ++element_i) {
-                            auto& element = ptr->elements[element_i];
-                            if (element.epoch > 0) {
-                                reinterpret_cast<T*>(&element.data[0])->~T();
-                                element.epoch = 0;
-                            }
-                        }
-                    }
-                    PopBlock(ptr);
-                }
-                else {
-                    break;
-                }
-            }
-        };
-
-        class ThreadState {
-        public:
-            mutable long long
-                epoch_2,
-                epoch_1,
-                epoch;
-            mutable size_t
-                epoch_depth;
-            mutable long
-                epoch_protected{ 0 };
-            mutable long long
-                queued_epoch;
-            mutable size_t
-                delete_if_older_than;
-            block_bag*
-                parent;
-            mutable short 
-                deferrment{ 0 };
-
-            __declspec(noinline) void enter_critical_section() const {
-                if (++epoch_depth == 1) {
-                    InterlockedExchangeNoFence(reinterpret_cast<volatile long*>(&epoch_protected), 1);
-                    if (deferrment == 0) deferrment = 100;
-                    queued_epoch = GL::util::get_current_epoch();
-                }
-            };
-            __declspec(noinline) void exit_critical_section() const {
-                if (--epoch_depth == 0) {
-                    InterlockedExchangeNoFence(reinterpret_cast<volatile long*>(&epoch_protected), 0);
-
-                    // from the perspective of this thread, we are now OK to free pointers older than "epoch";
-                    InterlockedExchangeNoFence(reinterpret_cast<volatile size_t*>(&delete_if_older_than), epoch);
-                    epoch = epoch_1;
-                    epoch_1 = epoch_2;
-                    epoch_2 = queued_epoch;                    
-
-                    if (--deferrment == 0) {
-                        // check all of the threads. If this date is the smallest, then it holds.
-                        size_t current_youngest_epoch = parent->safe_retirement_epoch;
-                        if (delete_if_older_than > parent->safe_retirement_epoch) {
-                            size_t youngest_deletion_date = delete_if_older_than;
-                            parent->states.for_each([&](auto& state) {
-                                if (state.epoch_protected == 0) return;
-                                youngest_deletion_date = std::min<size_t>(youngest_deletion_date, state.delete_if_older_than);
-                            });
-                            if (youngest_deletion_date > parent->safe_retirement_epoch) {
-                                InterlockedCompareExchange(reinterpret_cast<volatile size_t*>(&parent->safe_retirement_epoch), youngest_deletion_date, current_youngest_epoch);
-                            }
-                        }
-                    }
-                }
-            };
-            auto guard_critical_section() const {
-                class wrap {
-                    const ThreadState* p;
-                public:
-                    wrap(const ThreadState* P) : p{ P } {};
-                    wrap(wrap const&) = delete;
-                    wrap(wrap&&) = delete;
-                    wrap& operator=(wrap const&) = delete;
-                    wrap& operator=(wrap&&) = delete;
-                    ~wrap() {
-                        p->exit_critical_section();
-                    };
-                };
-                enter_critical_section();
-                return wrap(this);
-            };
-
-            ThreadState() noexcept :
-                epoch_2{ GL::util::get_current_epoch() },
-                epoch_1{ GL::util::get_current_epoch() },
-                epoch{ GL::util::get_current_epoch() },
-                delete_if_older_than{ (size_t)GL::util::get_current_epoch() },
-                epoch_depth{ 0ull },
-                queued_epoch{ GL::util::get_current_epoch() },
-                parent{ nullptr }
-            {};
-            ThreadState(ThreadState const&) = default;
-            ThreadState(ThreadState&&) noexcept = default;
-            ThreadState& operator=(ThreadState const&) = default;
-            ThreadState& operator=(ThreadState&&) noexcept = default;
-            ~ThreadState() {};
-        };
-
-    public:
-        block_bag() 
-            : blocks{}
-            , m_free() 
-            , states()
-        {
-            const_cast<ThreadState&>(states._default).parent = this;
-            const_cast<GL::aba_problem::THead<element_t>&>(m_free._default).m_n64 = 0;
-        };
-        block_bag(block_bag const&) = delete;
-        block_bag(block_bag&&) = delete;
-        block_bag& operator=(block_bag const&) = delete;
-        block_bag& operator=(block_bag&&) = delete;
-        ~block_bag() noexcept {
-            ReleaseBlocks();
-        };
-
-        // Acquire a new element from the Free list and construct it.
-        template <typename... TArgs> T* Alloc(TArgs &&... a) {
-            element_t* element{ nullptr };
-            while (1) {
-                if (element = GL::aba_problem::Pop(*m_free)) {
-                    element->epoch = std::numeric_limits<long long>::max(); // indicates it's been initiated
-                    T* data{ (T*)&element->data[0] };
-                    if constexpr (std::is_pod<T>::value) {
-                        if constexpr (sizeof...(a) > 0) {
-                            new (data) T(std::forward<TArgs>(a)...);
-                        }
-                        else {
-                            std::memset(data, 0, sizeof(T));
-                        }
-                    }
-                    else {
-                        new (data) T(std::forward<TArgs>(a)...);
-                    }
-                    return data;
-                }
-                else if (!try_realloc_retired_blocks()) {
-                    AllocBlock();
-                }
-            }
-        };
-
-        // Destroys the element and return its memory to the Free list
-        void Free(T* element) {
-            element_t* t = (element_t*)(element);
-            t->epoch = GL::util::get_current_epoch();
-            if (InterlockedDecrementNoFence(reinterpret_cast<volatile unsigned long long*>(&t->m_block->count_free)) == 0) {
-                // this entire block has been queued for return and release. 
-                
-                // what is the earliest epoch in its elements?
-                t->m_block->latest_epoch = std::numeric_limits<long long>::max();
-                for (size_t i = 0; i < BlockSize; ++i)
-                    t->m_block->latest_epoch = std::min<long long>(t->m_block->elements[i].epoch, t->m_block->latest_epoch);
-
-                if (states.for_each_cancellable([t](auto& state) -> bool {
-                    if (state.epoch_protected == 0) return false;
-                    if (t->m_block->latest_epoch > state.delete_if_older_than) {
-                        return true;
-                    }
-                    return false;
-                })) {
-                    // cannot realloc yet.
-                    block_t* block{ t->m_block };
-                    retired_blocks.push(block);
-                    try_realloc_retired_blocks();
-                }
-                else {
-                    ReallocBlock(t->m_block);
-                    return;
-                }
-            }
-        };
-        template <typename... TArgs> std::shared_ptr< T > AllocShared(TArgs&&... a) {
-            return std::shared_ptr<T>(Alloc(std::forward<TArgs>(a)...), [this](T* p) { Free(p); });
-        };
-        auto guard_critical_section() const {
-            return states->guard_critical_section();
-        };
-
-    protected:
-        struct cmp {
-            constexpr bool operator()(block_t* const& lhs, block_t* const& rhs) const {
-                return lhs->latest_epoch > rhs->latest_epoch;
-            };
-        };
-
-        GL::aba_problem::THead<block_t>
-            blocks;
-        GL::thread_object<GL::aba_problem::THead<element_t>>
-            m_free;
-        GL::thread_object<ThreadState>
-            states;
-        concurrency::concurrent_queue<block_t*>
-        // concurrency::concurrent_priority_queue<block_t*, cmp>
-            retired_blocks;
-        size_t 
-            deferrment{ 0 };
-        long
-            num_protected_threads{ 0 };
-        size_t
-            safe_retirement_epoch{ 0 };
-    };
-#endif
-
-
-
 };
-
-
-
-
-
 
 
 
@@ -3136,7 +2589,7 @@ int main() {
             });
         }
 
-        if (auto timer = GL::stopwatch().debug_timer("atomic_parallel_allocator<int>"); false) {
+        if (auto timer = GL::stopwatch().debug_timer("atomic_parallel_allocator<int>"); true) {
             GL::atomic_parallel_allocator<int> pool;
             GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
                 auto* p = pool.Alloc();
@@ -3152,7 +2605,7 @@ int main() {
                 }
             });
         }
-        if (auto timer = GL::stopwatch().debug_timer("atomic_parallel_allocator<GL::string>"); false) {
+        if (auto timer = GL::stopwatch().debug_timer("atomic_parallel_allocator<GL::string>"); true) {
             GL::atomic_parallel_allocator<GL::string> pool;
             GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
                 auto* p = pool.Alloc();
@@ -3169,6 +2622,22 @@ int main() {
             });
         }
 
+        if (auto timer = GL::stopwatch().debug_timer("fast_atomic_allocator<int> (linear only)"); true) {
+            ebr::fast_atomic_allocator<int> pool;
+            for (long long i = 1'000'000'000ll / (long long)(GL::util::get_hardware_thread_count() * 10); i > 0; --i) {
+                auto* p = pool.Alloc();
+                pool.Free(p);
+            };
+            for (long long i = 1'000'000'000ll / (long long)(GL::util::get_hardware_thread_count() * 10); i > 0; --i) {
+                std::array<int*, 36> arrs;
+                for (int j = 0; j < 36; ++j) {
+                    arrs[j] = pool.Alloc();
+                }
+                for (int j = 0; j < 36; ++j) {
+                    pool.Free(arrs[j]);
+                }
+            };
+        }
         if (auto timer = GL::stopwatch().debug_timer("fast_atomic_allocator<int>"); true) {
             ebr::fast_atomic_allocator<int> pool;
             GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
@@ -3201,178 +2670,64 @@ int main() {
                 }
             });
         }
-        if (1) {
-            ebr::fast_atomic_epoch_allocator<GL::string, 256> pool;
-            while (true) {
-                if (auto timer = GL::stopwatch().debug_timer("fast_atomic_epoch_allocator<GL::string>"); true) {
-                    //bool quit = false;
-                    //std::thread thread([&]() {
-                    //    auto* p = pool.Alloc();
-                    //    pool.Free(p);
-                    //});
-                    GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
-                        auto* p = pool.Alloc();
-                        auto g = pool.guard_critical_section();
-                        pool.Free(p);
-                        p->operator=("TEST");
-                        p->begins_with("TEST");
-                    });
-                    GL::parallel::For(0, 1'000'000, [&](size_t i) {
-                        std::array<GL::string*, 36> arrs;
-                        for (int j = 0; j < 36; ++j) {
-                            arrs[j] = pool.Alloc();
-                            arrs[j]->operator=("TEST");
-                        }
-                        auto g = pool.guard_critical_section();
-                        for (int j = 0; j < 36; ++j) {
-                            pool.Free(arrs[j]);
-                        }
-                        for (int j = 0; j < 36; ++j) {
-                            arrs[j]->begins_with("TEST");
-                        }
-                    });
-                    //quit = true;
-                    //thread.join();
-                }
-            }
-        }
 
-#if 0
-        if (auto timer = GL::stopwatch().debug_timer("block_bag<int> (no protections)"); false) {
-            ebr::block_bag<int> pool;
+        if (auto timer = GL::stopwatch().debug_timer("fast_atomic_epoch_allocator<int> (linear only)"); true) {
+            ebr::fast_atomic_epoch_allocator<int> pool;
+            
+            for (long long i = 1'000'000'000ll / (long long)(GL::util::get_hardware_thread_count() * 10); i > 0; --i) {
+                auto* p = pool.Alloc();
+                auto g = pool.guard_critical_section();
+                pool.Free(p);
+            };
+            for (long long i = 1'000'000'000ll / (long long)(GL::util::get_hardware_thread_count() * 10); i > 0; --i) {
+                std::array<int*, 36> arrs;
+                auto g = pool.guard_critical_section();
+                for (int j = 0; j < 36; ++j) {
+                    arrs[j] = pool.Alloc();
+                }
+                for (int j = 0; j < 36; ++j) {
+                    pool.Free(arrs[j]);
+                }
+            };
+        }
+        if (auto timer = GL::stopwatch().debug_timer("fast_atomic_epoch_allocator<int>"); true) {
+            ebr::fast_atomic_epoch_allocator<int> pool;
             GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
                 auto* p = pool.Alloc();
+                auto g = pool.guard_critical_section();
                 pool.Free(p);
             });
             GL::parallel::For(0, 1'000'000, [&](size_t i) {
                 std::array<int*, 36> arrs;
+                auto g = pool.guard_critical_section(); 
                 for (int j = 0; j < 36; ++j) {
                     arrs[j] = pool.Alloc();
-                }
+                }                
                 for (int j = 0; j < 36; ++j) {
                     pool.Free(arrs[j]);
                 }
             });
         }
-        if (auto timer = GL::stopwatch().debug_timer("block_bag<GL::string> (no protections)"); false) {
-            ebr::block_bag<GL::string> pool;
+        if (auto timer = GL::stopwatch().debug_timer("fast_atomic_epoch_allocator<GL::string>"); true) {
+            ebr::fast_atomic_epoch_allocator<GL::string> pool;
             GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
                 auto* p = pool.Alloc();
+                auto g = pool.guard_critical_section();
                 pool.Free(p);
-            });
+                });
             GL::parallel::For(0, 1'000'000, [&](size_t i) {
                 std::array<GL::string*, 36> arrs;
+                auto g = pool.guard_critical_section();
                 for (int j = 0; j < 36; ++j) {
                     arrs[j] = pool.Alloc();
                 }
                 for (int j = 0; j < 36; ++j) {
                     pool.Free(arrs[j]);
                 }
-            });
-        }
-        if (0) {
-            ebr::block_bag<int, 256> pool;
-            while (true) {
-                if (auto timer = GL::stopwatch().debug_timer("block_bag<int> (w/ protections)"); true) {
-                    GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
-                        auto g = pool.guard_critical_section();
-                        auto* p = pool.Alloc();
-                        pool.Free(p);
-                    });
-                    GL::parallel::For(0, 1'000'000, [&](size_t i) {
-                        std::array<int*, 36> arrs;
-                        for (int j = 0; j < 36; ++j) {
-                            arrs[j] = pool.Alloc();
-                        }
-                        auto g = pool.guard_critical_section();
-                        for (int j = 0; j < 36; ++j) {
-                            pool.Free(arrs[j]);
-                        }
-                    });                
-                }
-            }
-        }
-        if (auto timer = GL::stopwatch().debug_timer("block_bag<GL::string> (w/ protections)"); false) {
-            ebr::block_bag<GL::string> pool;
-            GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
-                auto g = pool.guard_critical_section();
-                auto* p = pool.Alloc();
-                pool.Free(p);
-            });
-            GL::parallel::For(0, 1'000'000, [&](size_t i) {
-                std::array<GL::string*, 36> arrs;
-                for (int j = 0; j < 36; ++j) {
-                    arrs[j] = pool.Alloc();
-                }
-                auto g = pool.guard_critical_section();
-                for (int j = 0; j < 36; ++j) {
-                    pool.Free(arrs[j]);
-                }
-            });
-        }
-#endif
-    }
-
-
-
-
-
-
-    while (true) {
-        if (auto timer = GL::stopwatch().debug_timer("Normal alloc/free, no guards"); true) {
-            auto manager = EpochManager(int(), []() -> int* { return GL::alloc<int>(); }, [](int* p) { GL::free(p); });
-
-            GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
-                auto* temp_value = GL::alloc<int>();
-                *temp_value = (int)i;
-                GL::free(temp_value);                
-            });
-        }
-        if (auto timer = GL::stopwatch().debug_timer("EpochManager: with Guard"); true) {
-            auto manager = EpochManager(int(), []() -> int* { return GL::alloc<int>(); }, [](int* p) { GL::free(p); });
-            GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
-                auto guard = manager.guard_critical_section();
-                auto* temp_value = manager.alloc();
-                manager.free(temp_value); // the free is protected by the guard
-                *temp_value = (int)i;
-            });
-        }
-        if (auto timer = GL::stopwatch().debug_timer("EpochManager: without Guard"); true) {
-            auto manager = EpochManager(int(), []() -> int* { return GL::alloc<int>(); }, [](int* p) { GL::free(p); });
-            GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
-                auto* temp_value = manager.alloc();
-                *temp_value = (int)i;
-                manager.free(temp_value);        
-            });
-        }
-        if (auto timer = GL::stopwatch().debug_timer("EpochManager: Guard only"); true) {
-            auto manager = EpochManager(int(), []() -> int* { return GL::alloc<int>(); }, [](int* p) { GL::free(p); });
-            GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
-                auto guard = manager.guard_critical_section();                
-            });
-        }
-        if (auto timer = GL::stopwatch().debug_timer("EpochManager: with allocator, with Guard"); true) {
-            GL::atomic_parallel_allocator<int> allocator;
-            auto manager = EpochManager(int(), [&]() -> int* { 
-                return allocator.Alloc();
-            }, [&](int* p) { 
-                allocator.Free(p);
-            });
-            GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
-                auto guard = manager.guard_critical_section();
-                auto* temp_value = manager.alloc();
-                manager.free(temp_value); // the free is protected by the guard
-                *temp_value = (int)i;
             });
         }
 
     }
-
-
-
-
-
-
 
 #if 1
     using namespace GL::literals;
