@@ -22,9 +22,11 @@ namespace GL {
         mutable GL::atomic_allocator<T> _alloc;
         mutable atomic_vector<std::pair<size_t, T*>> _tls;
 
-        auto& GetTLS() const {
-            thread_local auto _tl_index = GL::util::get_thread_id(); // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
-            thread_local auto _tl_unique_id = GL::util::get_actual_unique_thread_id(); // actual unique hash id of our thread. Will not be re-used by any thread. Even if the same thread dies and is re-born, the epoch may catch that. 
+        __declspec(noinline) auto* GetTLS() const {
+            thread_local size_t _tl_index = 0; // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
+            if (!_tl_index) _tl_index = GL::util::get_thread_id();
+            thread_local size_t _tl_unique_id = 0; // actual unique hash id of our thread. Will not be re-used by any thread. Even if the same thread dies and is re-born, the epoch may catch that. 
+            if (!_tl_unique_id) _tl_unique_id = GL::util::get_actual_unique_thread_id();
 
             // step 1, grow the _tls if necessary
             if (_tls_size <= _tl_index) { // lazy growth, taking advantage of grow_to_at_least being safe to call on repeat. 
@@ -48,14 +50,14 @@ namespace GL {
             }
 
             // step 3, return the resultign pointer, which should be properly initialized.
-            return *_tls_slot.second;
+            return _tls_slot.second;
         };
-        auto& GetTLS(size_t thread_index) const {
+        auto* GetTLS(size_t thread_index) const {
             auto& _tls_slot = _tls[thread_index];
             if (!_tls_slot.second) {
                 throw std::runtime_error("The TLS should be previously initialized by the appropriate thread before access");
             }
-            return *_tls_slot.second;
+            return _tls_slot.second;
         };
 
     public:
@@ -90,12 +92,12 @@ namespace GL {
             //}
         };
 
-        T* operator->() { return &GetTLS(); };
-        const T* operator->() const { return &const_cast<thread_object*>(this)->GetTLS(); };
-        T& operator*() { return GetTLS(); };
-        const T& operator*() const { return const_cast<thread_object*>(this)->GetTLS(); };
+        T* operator->() { return GetTLS(); };
+        const T* operator->() const { return const_cast<thread_object*>(this)->GetTLS(); };
+        T& operator*() { return *GetTLS(); };
+        const T& operator*() const { return *const_cast<thread_object*>(this)->GetTLS(); };
 
-        T& operator[](size_t thread_index) { return GetTLS(thread_index); };
+        T& operator[](size_t thread_index) { return *GetTLS(thread_index); };
 
         template <typename T> bool for_each_cancellable(T const& func) {
             const auto index = GL::util::get_thread_id();
@@ -138,9 +140,11 @@ namespace GL {
         template <typename... Args>
         // issue: only one thread could access this call at a time per-thread. However, other threads may (and do) loop over the _tls while it's being initialized.
         auto& InitTLS(Args&&... args) const {
-            thread_local auto _tl_index = GL::util::get_thread_id(); // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
-            thread_local auto _tl_unique_id = GL::util::get_actual_unique_thread_id(); // actual unique hash id of our thread. Will not be re-used by any thread. Even if the same thread dies and is re-born, the epoch may catch that. 
-            
+            thread_local size_t _tl_index = 0; // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
+            if (!_tl_index) _tl_index = GL::util::get_thread_id();
+            thread_local size_t _tl_unique_id = 0; // actual unique hash id of our thread. Will not be re-used by any thread. Even if the same thread dies and is re-born, the epoch may catch that. 
+            if (!_tl_unique_id) _tl_unique_id = GL::util::get_actual_unique_thread_id();
+
             // step 1, grow the _tls if necessary
             if (_tls_size <= _tl_index) { // lazy growth, taking advantage of grow_to_at_least being safe to call on repeat. 
                 (void)_tls.grow_to_at_least(_tl_index + 1);
@@ -168,8 +172,10 @@ namespace GL {
         template <typename... Args>
         // issue: only one thread could access this call at a time per-thread. However, other threads may (and do) loop over the _tls while it's being initialized.
         auto& InitTLS(Args const&... args) const {
-            thread_local auto _tl_index{ GL::util::get_thread_id() }; // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
-            thread_local auto _tl_unique_id{ GL::util::get_actual_unique_thread_id() }; // actual unique hash id of our thread. Will not be re-used by any thread. Even if the same thread dies and is re-born, the epoch may catch that. 
+            thread_local size_t _tl_index = 0; // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
+            if (!_tl_index) _tl_index = GL::util::get_thread_id();
+            thread_local size_t _tl_unique_id = 0; // actual unique hash id of our thread. Will not be re-used by any thread. Even if the same thread dies and is re-born, the epoch may catch that. 
+            if (!_tl_unique_id) _tl_unique_id = GL::util::get_actual_unique_thread_id();
 
             // step 1, grow the _tls if necessary
             if (_tls_size <= _tl_index) { // lazy growth, taking advantage of grow_to_at_least being safe to call on repeat. 
@@ -196,10 +202,12 @@ namespace GL {
         };
 
     public:
-        T& GetTLS() const {
+        T* GetTLS() const {
             // 2. Get the thread's native context index and unique ID
-            thread_local auto _tl_index = GL::util::get_thread_id();
-            thread_local auto _tl_unique_id = GL::util::get_actual_unique_thread_id();
+            thread_local size_t _tl_index = 0; // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
+            if (!_tl_index) _tl_index = GL::util::get_thread_id();
+            thread_local size_t _tl_unique_id = 0; // actual unique hash id of our thread. Will not be re-used by any thread. Even if the same thread dies and is re-born, the epoch may catch that. 
+            if (!_tl_unique_id) _tl_unique_id = GL::util::get_actual_unique_thread_id();
 
             // 3. Grow vector if necessary
             if (_tls_size <= _tl_index) {
@@ -222,16 +230,16 @@ namespace GL {
             }
 
             // 6. Populate the fast-path cache before returning
-            return *tls_slot.second;
+            return tls_slot.second;
         };
         // valid call to get a _tls slot when it was properly initialized at some point previously. 
-        T& GetTLS(size_t thread_index) const {
+        T* GetTLS(size_t thread_index) const {
             //if (_tls.size() > thread_index) {
                 auto& _tls_slot = _tls[thread_index];
                 if (!_tls_slot.second) {
                     throw std::runtime_error("The TLS should be previously initialized by the appropriate thread before access");
                 }
-                return *_tls_slot.second;
+                return _tls_slot.second;
             //}
             //else {
             //    throw std::runtime_error("The TLS should be previously initialized by the appropriate thread before access");
@@ -273,15 +281,15 @@ namespace GL {
             //}
         };
 
-        __forceinline T* operator->() { return &GetTLS(); };
-        const T* operator->() const { return &const_cast<thread_object_no_default*>(this)->GetTLS(); };
-        __forceinline T& operator*() { return GetTLS(); };
-        const T& operator*() const { return const_cast<thread_object_no_default*>(this)->GetTLS(); };
+        __forceinline T* operator->() { return GetTLS(); };
+        const T* operator->() const { return const_cast<thread_object_no_default*>(this)->GetTLS(); };
+        __forceinline T& operator*() { return *GetTLS(); };
+        const T& operator*() const { return *const_cast<thread_object_no_default*>(this)->GetTLS(); };
         template <typename... Args> T& get_or_init(Args&&... args) { return InitTLS(std::move(args)...); };
         template <typename... Args> T& get_or_init(Args const&... args) { return InitTLS(args...); };
 
-        T& operator[](size_t thread_index) { return GetTLS(thread_index); };
-        const T& operator[](size_t thread_index) const { return GetTLS(thread_index); };
+        T& operator[](size_t thread_index) { return *GetTLS(thread_index); };
+        const T& operator[](size_t thread_index) const { return *GetTLS(thread_index); };
         // valid call to get a _tls slot when it was properly initialized at some point previously. 
         T* try_get(size_t thread_index) const {
             if (_tls.size() > thread_index) {

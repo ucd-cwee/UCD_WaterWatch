@@ -52,26 +52,26 @@ public:
     any(unsigned long&& uuid, void* data, GL::type const& type) noexcept : m_uuid{ std::forward<unsigned long>(uuid) }, m_type{ type }, m_ptr{ data } {};
     any() noexcept : m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
     any(std::nullptr_t) noexcept : m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
-    any(any const& rhs) : m_uuid{ rhs.m_uuid & uuid::INV_FLAGS }, m_type{ rhs.m_type }, m_ptr{ rhs.m_ptr } { if (m_uuid > 0) InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count)); };
+    any(any const& rhs) : m_uuid{ rhs.m_uuid & uuid::INV_FLAGS }, m_type{ rhs.m_type }, m_ptr{ rhs.m_ptr } { if (m_uuid > 0) GL::interlocked::increment(uuid::get_uuid(m_uuid).count); };
     // declares that the parent will NOT go out-of-scope before this child does. That guarrantee allows us to skip a increment and decrement call to the counter. 
     any(any const& rhs, bool) : m_uuid{ rhs.m_uuid | 0x1000'0000 }, m_type{ rhs.m_type }, m_ptr{ rhs.m_ptr } {};
     any(any && rhs) noexcept : m_uuid{ std::move(rhs.m_uuid) }, m_type{ std::move(rhs.m_type) }, m_ptr{ rhs.m_ptr } { rhs.m_uuid = 0; };
     any const& operator=(any const& rhs) {
         if ((m_uuid & 0x1000'0000) == 0)
             if ((m_uuid & uuid::INV_FLAGS) > 0)
-                if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count)) == 0)
+                if (GL::interlocked::decrement(uuid::get_uuid(m_uuid).count) == 0)
                     uuid::free_uuid(m_uuid);
 
         m_uuid = rhs.m_uuid & uuid::INV_FLAGS;
         m_type = rhs.m_type; 
         m_ptr = rhs.m_ptr;
-        if (m_uuid > 0) InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count));
+        if (m_uuid > 0) GL::interlocked::increment(uuid::get_uuid(m_uuid).count);
         return *this;
     };
     any const& operator=(any&& rhs) noexcept {
         if ((m_uuid & 0x1000'0000) == 0)
             if ((m_uuid & uuid::INV_FLAGS) > 0)
-                if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count)) == 0)
+                if (GL::interlocked::decrement(uuid::get_uuid(m_uuid).count) == 0)
                     uuid::free_uuid(m_uuid);
 
         m_uuid = std::move(rhs.m_uuid);
@@ -83,7 +83,7 @@ public:
     ~any() {
         if ((m_uuid & 0x1000'0000) == 0) 
             if ((m_uuid & uuid::INV_FLAGS) > 0) 
-                if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(m_uuid).count)) == 0)
+                if (GL::interlocked::decrement(uuid::get_uuid(m_uuid).count) == 0)
                     uuid::free_uuid(m_uuid);
     };
 
@@ -276,7 +276,7 @@ public:
         }
         else {
             unsigned long uuid = parent.m_uuid & uuid::INV_FLAGS;
-            if (uuid > 0) InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(uuid).count));
+            if (uuid > 0) GL::interlocked::increment(uuid::get_uuid(uuid).count);
             return any(std::move(uuid), &const_cast<T&>(ref), GL::type_of<T const&>());
         }
     };
@@ -287,7 +287,7 @@ public:
         }
         else {
             unsigned long uuid = parent.m_uuid & uuid::INV_FLAGS;
-            if (uuid > 0) InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&uuid::get_uuid(uuid).count));
+            if (uuid > 0) GL::interlocked::increment(uuid::get_uuid(uuid).count);
             return any(std::move(uuid), &ref, GL::type_of<T&>());
         }
     };
@@ -1166,7 +1166,7 @@ namespace {
                     if ((out->m_uuid & 0x1000'0000) == 0) {
                         if ((out->m_uuid & uuid::INV_FLAGS) > 0) {
                             auto& ref = uuid::get_uuid(out->m_uuid);
-                            if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&ref.count)) == 0) {
+                            if (GL::interlocked::decrement(ref.count) == 0) {
                                 ref.count = 1;
                                 ref.data = GL::type_erasure::wrap(call(begin));
                                 out->m_ptr = ref.data->get();
@@ -1260,7 +1260,7 @@ namespace {
                     if ((out->m_uuid & 0x1000'0000) == 0) {
                         if ((out->m_uuid & uuid::INV_FLAGS) > 0) {
                             auto& ref = uuid::get_uuid(out->m_uuid);
-                            if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&ref.count)) == 0) {
+                            if (GL::interlocked::decrement(ref.count) == 0) {
                                 ref.count = 1;
                                 ref.data = GL::type_erasure::wrap(call(begin));
                                 out->m_ptr = ref.data->get();
@@ -1439,7 +1439,7 @@ namespace {
                     if ((out->m_uuid & 0x1000'0000) == 0){
                         if ((out->m_uuid & uuid::INV_FLAGS) > 0) {
                             auto& ref = uuid::get_uuid(out->m_uuid);
-                            if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&ref.count)) == 0) {
+                            if (GL::interlocked::decrement(ref.count) == 0) {
                                 ref.count = 1;
                                 ref.data = GL::type_erasure::wrap(call(begin));
                                 out->m_ptr = ref.data->get();
@@ -1543,7 +1543,7 @@ namespace {
                     if ((out->m_uuid & 0x1000'0000) == 0) {
                         if ((out->m_uuid & uuid::INV_FLAGS) > 0) {
                             auto& ref = uuid::get_uuid(out->m_uuid);
-                            if (InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&ref.count)) == 0) {
+                            if (GL::interlocked::decrement(ref.count) == 0) {
                                 ref.count = 1;
                                 ref.data = GL::type_erasure::wrap(call(begin));
                                 out->m_ptr = ref.data->get();
@@ -1909,6 +1909,8 @@ namespace ebr {
             block_position;
         long long
             youngest_epoch;        
+        size_t // the thread this block is intended to be assigned to. 
+            parent_thread; 
     };
 
     // Allocator that re-uses entire blocks of memory simultaneously. Each thread uses its own free list.
@@ -1928,11 +1930,12 @@ namespace ebr {
             GL::mfree(p);
         };
 
-        // Allocate one new block of contiguous elements onto the free list
+        // Allocate one new block of contiguous elements. These elements will be unique to this thread and unaccessible elsewhere. 
         void AllocBlock() {
             block_t* new_block_ptr = PushBlock();
             blocks.get_or_make(new_block_ptr->block_position = blocks_tickets.get_ticket()) = new_block_ptr;
             block_t& block = *new_block_ptr;
+            new_block_ptr->parent_thread = GL::util::get_thread_id();
 
             // add the new elements to the list
             for (int i = 0; i < BlockSize - 1; ++i) {
@@ -1944,6 +1947,7 @@ namespace ebr {
             block.count_free = BlockSize;
 
             // push pNode onto head of list.
+            *count_allocated += BlockSize;
             block.elements[BlockSize - 1].m_pNext = *m_free;
             *m_free = &block.elements[0];
         };
@@ -1951,6 +1955,7 @@ namespace ebr {
         // Allocate one old block of contiguous elements back onto the free list
         void ReallocBlock(block_t* existing_block_ptr) {
             block_t& block = *existing_block_ptr;
+            block.parent_thread = GL::util::get_thread_id();
 
             // add the new elements to the list
             for (int i = 0; i < BlockSize - 1; ++i) {
@@ -1964,12 +1969,13 @@ namespace ebr {
             block.count_free = BlockSize;
 
             // push pNode onto head of list.
+            *count_allocated += BlockSize;
             block.elements[BlockSize - 1].m_pNext = *m_free;
             *m_free = &block.elements[0];
         };
 
         // Release memory held by this block
-        void ReleaseBlock(block_t* ptr) noexcept {
+        void ReleaseBlock(block_t* ptr) noexcept {            
             if constexpr (!std::is_pod_v<T>) {
                 if (ptr) {
                     for (int element_i = 0; element_i < BlockSize; ++element_i) {
@@ -1992,6 +1998,7 @@ namespace ebr {
                 }
             }
         };
+
         // Release all memory held by all blocks
         void ReleaseBlocks() noexcept {
             for (block_t*& ptr : blocks) {
@@ -2017,7 +2024,9 @@ namespace ebr {
             : blocks()
             , blocks_tickets()
             , m_free()
+            , count_allocated()
         {
+            const_cast<size_t&>(count_allocated._default) = 0;            
             const_cast<element_t*&>(m_free._default) = nullptr;
             m_free._before_destruction = [this](element_t*& old_thread) {
                 std::set<block_t*> blockss;
@@ -2041,13 +2050,13 @@ namespace ebr {
         };
 
         // Acquire a new element from the Free list and construct it.
-        template <typename... TArgs> T* Alloc(TArgs &&... a) {
+        template <typename... TArgs> __declspec(noinline) T* Alloc(TArgs &&... a) {
             element_t* element{ nullptr };
+            element_t*& free{ *m_free };
             while (1) {
-                element = *m_free;    
-                if (element) {
-                    *m_free = element->m_pNext;
-                    element->epoch = std::numeric_limits<long long>::max(); // indicates it's been initiated
+                if (element = free) {
+                    free = element->m_pNext;
+                    element->epoch = 1ll; // std::numeric_limits<long long>::max(); // indicates it's been initiated
                     T* data{ (T*)&element->data[0] };
                     if constexpr (std::is_pod<T>::value) {
                         if constexpr (sizeof...(a) > 0) {
@@ -2070,11 +2079,25 @@ namespace ebr {
 
         // Destroys the element and return its memory to the Free list
         void Free(T* element) {
-            element_t* t = (element_t*)(element);
-            t->epoch = GL::util::get_current_epoch();
-            if (--t->m_block->count_free == 0) {
-                // this entire block has been queued for return and release. 
-                ReallocBlock(t->m_block);
+            element_t* t = (element_t*)(element);      
+            // GL::interlocked::compare_exchange(t->epoch, 1ll, GL::util::get_current_epoch());
+            t->epoch = GL::util::get_current_epoch();    
+                        
+            if (GL::interlocked::decrement(t->m_block->count_free) == 0) {
+                auto* Where = &count_allocated[t->m_block->parent_thread];
+                while (Where) {
+                    auto old = *Where;
+                    if (GL::interlocked::compare_exchange(*Where, old, old - BlockSize)) {
+                        old = *count_allocated;
+                        if ((old / BlockSize) > 10) {
+                            ReleaseBlock(t->m_block);
+                        }
+                        else {
+                            ReallocBlock(t->m_block);
+                        }
+                        break;
+                    }
+                }
             }
         };
         template <typename... TArgs> std::shared_ptr< T > AllocShared(TArgs&&... a) {
@@ -2083,11 +2106,13 @@ namespace ebr {
 
     private:
         GL::atomic_vector<block_t*>
-            blocks; // vector of all blocks currently allocated and alive
+            blocks; // vector of all blocks. May or may not be nullptr. 
         GL::ticket_dispensor<false>
             blocks_tickets; // ticket dispensor to re-use blocks indexes and minimize the size of blocks
         GL::thread_object<element_t*>
-            m_free;
+            m_free; // since each thread is guarranteed to access their free-list without conflict, it does not need to be managed by an aba-protector.
+        GL::thread_object<size_t>
+            count_allocated; // this exists as part of a fix for thread_local allocations being free-d on other threads (e.g. consumer-producer pattern). 
     };
 
     // Allocator that re-uses entire blocks of memory simultaneously. Each thread uses its own free list.
@@ -2112,6 +2137,7 @@ namespace ebr {
             block_t* new_block_ptr = PushBlock();
             blocks.get_or_make(new_block_ptr->block_position = blocks_tickets.get_ticket()) = new_block_ptr;
             block_t& block = *new_block_ptr;
+            new_block_ptr->parent_thread = GL::util::get_thread_id();
 
             // add the new elements to the list
             for (int i = 0; i < BlockSize - 1; ++i) {
@@ -2123,6 +2149,7 @@ namespace ebr {
             block.count_free = BlockSize;
 
             // push pNode onto head of list.
+            *count_allocated += BlockSize;
             block.elements[BlockSize - 1].m_pNext = *m_free;
             *m_free = &block.elements[0];
         };
@@ -2130,6 +2157,7 @@ namespace ebr {
         // Allocate one old block of contiguous elements back onto the free list. This requires that it has been retired and is safe to reclaim. 
         void ReallocBlock(block_t* existing_block_ptr) {
             block_t& block = *existing_block_ptr;
+            block.parent_thread = GL::util::get_thread_id();
 
             // add the new elements to the list
             for (int i = 0; i < BlockSize - 1; ++i) {
@@ -2143,6 +2171,7 @@ namespace ebr {
             block.count_free = BlockSize;
 
             // push pNode onto head of list.
+            *count_allocated += BlockSize;
             block.elements[BlockSize - 1].m_pNext = *m_free;
             *m_free = &block.elements[0];
         };
@@ -2190,11 +2219,32 @@ namespace ebr {
                     if ((block->youngest_epoch + 3) < this->current_epoch) {
                         local_q.pop();
                         if (out != ReclamationResult::ReclaimedRetiredBlocks || (--allowed_repeatitions > 0)) {
-                            ReallocBlock(block);
-                            out = ReclamationResult::ReclaimedRetiredBlocks;
+                            auto* Where = &count_allocated[block->parent_thread];
+                            while (Where) {
+                                auto old = *Where;
+                                if (GL::interlocked::compare_exchange(*Where, old, old - BlockSize)) {
+                                    old = *count_allocated;
+                                    if ((old / BlockSize) > 10) {
+                                        ReleaseBlock(block);
+                                    }
+                                    else {
+                                        ReallocBlock(block);
+                                        out = ReclamationResult::ReclaimedRetiredBlocks;
+                                    }
+                                    break;
+                                }
+                            }                            
                         }
                         else {
-                            ReleaseBlock(block);
+                            auto* Where = &count_allocated[block->parent_thread];
+                            while (Where) {
+                                auto old = *Where;
+                                if (GL::interlocked::compare_exchange(*Where, old, old - BlockSize)) {
+                                    old = *count_allocated;
+                                    ReleaseBlock(block);
+                                    break;
+                                }
+                            }                            
                         }                        
                     }
                     else {
@@ -2205,11 +2255,32 @@ namespace ebr {
                 else if (!failed_global && global_retired_blocks.try_pop(block)) {                    
                     if ((block->youngest_epoch + 3) < this->current_epoch) {
                         if (out != ReclamationResult::ReclaimedRetiredBlocks || (--allowed_repeatitions > 0)) {
-                            ReallocBlock(block);
-                            out = ReclamationResult::ReclaimedRetiredBlocks;
+                            auto* Where = &count_allocated[block->parent_thread];
+                            while (Where) {
+                                auto old = *Where;
+                                if (GL::interlocked::compare_exchange(*Where, old, old - BlockSize)) {
+                                    old = *count_allocated;
+                                    if ((old / BlockSize) > 10) {
+                                        ReleaseBlock(block);
+                                    }
+                                    else {
+                                        ReallocBlock(block);
+                                        out = ReclamationResult::ReclaimedRetiredBlocks;
+                                    }
+                                    break;
+                                }
+                            }                                                        
                         }
                         else {
-                            ReleaseBlock(block);
+                            auto* Where = &count_allocated[block->parent_thread];
+                            while (Where) {
+                                auto old = *Where;
+                                if (GL::interlocked::compare_exchange(*Where, old, old - BlockSize)) {
+                                    old = *count_allocated;
+                                    ReleaseBlock(block);
+                                    break;
+                                }
+                            }
                         }
                     }
                     else {
@@ -2265,17 +2336,17 @@ namespace ebr {
 
             __declspec(noinline) void enter_critical_section() const {
                 if (++epoch_depth == 1) {
-                    InterlockedExchangeNoFence(reinterpret_cast<volatile long*>(&epoch_protected), 1);
+                    GL::interlocked::exchange(epoch_protected, 1l);
                     queued_epoch = parent->current_epoch + 1;
                     if (deferrment <= 0) deferrment = 1'000;
                 }
             };
             __declspec(noinline) void exit_critical_section() const {
                 if (--epoch_depth == 0) {
-                    InterlockedExchangeNoFence(reinterpret_cast<volatile long*>(&epoch_protected), 0);
+                    GL::interlocked::exchange(epoch_protected, 0l);
 
                     // from the perspective of this thread, we are now OK to free pointers older than "epoch";
-                    InterlockedExchangeNoFence64(reinterpret_cast<volatile long long*>(&delete_if_older_than), epoch);
+                    GL::interlocked::exchange(delete_if_older_than, epoch);
                     epoch = epoch_1;
                     epoch_1 = epoch_2;
                     epoch_2 = queued_epoch;
@@ -2290,7 +2361,7 @@ namespace ebr {
                             }
                         });
                         if (old_epoch != currentEpoch) {                            
-                            if (InterlockedCompareExchangeNoFence64(reinterpret_cast<volatile long long*>(&parent->current_epoch), currentEpoch, old_epoch) == old_epoch) {
+                            if (GL::interlocked::compare_exchange(parent->current_epoch, old_epoch, currentEpoch)) {
                                 // std::cout << GL::printf("Updating the Current Epoch to %zu\n", (size_t)currentEpoch);
                             }
                         }
@@ -2394,7 +2465,7 @@ namespace ebr {
                 }
                 else element = GL::aba_problem::Pop(global_free);
                 if (element) {
-                    element->epoch = std::numeric_limits<long long>::max(); // indicates it's been initiated
+                    element->epoch = 1ll; // std::numeric_limits<long long>::max(); // indicates it's been initiated
                     data = (T*)&element->data[0];
                     if constexpr (std::is_pod<T>::value) {
                         if constexpr (sizeof...(a) > 0) {
@@ -2417,21 +2488,13 @@ namespace ebr {
                 }
             }
         };
-
         // Destroys the element and return its memory to the Free list
         void Free(T* element) {
             element_t* t = (element_t*)(element);
             t->epoch = current_epoch; // GL::util::get_current_epoch();
-            
-            // size_t free_count = InterlockedDecrementNoFence(reinterpret_cast<volatile unsigned long long*>(&t->m_block->count_free));
-            // if this is the first item to be returned...
-            //if (free_count == (BlockSize - 1)) {
-            //    // by definition, the first (oldest) epoch will be the one we just did that successfully started us on the path towards retirement...
-            //    t->m_block->oldest_epoch = t->epoch;
-            //}
-            //// if this entire block has been queued for return and release...
-            //else 
-            if (InterlockedDecrementNoFence(reinterpret_cast<volatile unsigned long long*>(&t->m_block->count_free)) == 0) {
+            // GL::interlocked::compare_exchange(t->epoch, 1ll, current_epoch);
+
+            if (GL::interlocked::decrement(t->m_block->count_free) == 0) {
                 // by definition, the most recent (youngest) epoch will be the one we just did that successfully retired the block...
                 t->m_block->youngest_epoch = t->epoch; 
 
@@ -2443,9 +2506,11 @@ namespace ebr {
             return std::shared_ptr<T>(Alloc(std::forward<TArgs>(a)...), [this](T* p) { Free(p); });
         };
 
-        [[nodiscard]] auto guard_critical_section() {
+        typedef typename decltype(GL::details::detail::function_signature(&ThreadState::guard_critical_section))::Return_Type GuardType;
+        [[nodiscard]] GuardType guard_critical_section() {
             return states->guard_critical_section();
-        };
+        };        
+
     private:
         struct cmp {
             constexpr bool operator()(block_t* const& lhs, block_t* const& rhs) {
@@ -2465,18 +2530,632 @@ namespace ebr {
         concurrency::concurrent_priority_queue<block_t*, cmp>
             global_retired_blocks; // retired (but alive) blocks, sorted by their youngest element's epoch. This is the shared queue.
         GL::thread_object_no_default< ThreadState >
-            states; // thread states. Used to manage the 
+            states; // thread states. Used to manage the scope guard and lifetime of objects. 
         long long
-            current_epoch;
+            current_epoch; // the current epoch that has been reached by the allocator. 
+        GL::thread_object<size_t>
+            count_allocated; // this exists as part of a fix for thread_local allocations being free-d on other threads (e.g. consumer-producer pattern). 
     };
+
+    class epoch_btree {
+    public:
+        constexpr static int maxChildrenPerNode = 10;
+        using obj_type = int;
+        using key_type = int;
+    public: 
+        class search_node;
+        class non_leaf_data {
+        public:
+            search_node* first_child;
+            search_node* last_child;
+            int num_children;
+        };
+
+        class search_node {
+        public:
+            search_node* 
+                prev = nullptr;
+            search_node* 
+                next = nullptr;
+            search_node* 
+                parent = nullptr;
+            union node_data {
+                non_leaf_data
+                    children;
+                unsigned char
+                    object[sizeof(obj_type)];
+            } data;
+            key_type
+                key = {};
+            bool
+                is_leaf = false;
+            GL::fast_shared_mutex
+            // int
+                locked/* = 0*/;
+
+            obj_type* object() {
+                if (is_leaf)
+                    return reinterpret_cast<obj_type*>(&data.object[0]);
+                else throw "Could not de-reference object from non-leaf node";
+            };
+            non_leaf_data& children() {
+                if (!is_leaf)
+                    return data.children;
+                else throw "Could not de-reference children nodes from leaf node";
+            };
+
+            class wrap {
+                friend class epoch_btree;
+            protected:
+                search_node* P;
+            public:
+                wrap(search_node* p) : P{ p } {
+                    if (P) {
+                        if (!P->try_lock()) {
+                            P = nullptr;
+                        }
+                    }
+                };
+                wrap(wrap const&) = delete;
+                wrap(wrap&& rhs) noexcept : P{ rhs.P } {
+                    rhs.P = nullptr;
+                };
+                wrap& operator=(wrap const&) = delete;
+                wrap& operator=(wrap&& rhs) noexcept {
+                    if (P) {
+                        P->unlock();
+                    }
+                    P = rhs.P;
+                    rhs.P = nullptr;
+                    return *this;
+                };
+                ~wrap() {
+                    if (P) {
+                        P->unlock();
+                    }
+                };
+                operator bool() {
+                    return P;
+                };
+            };
+            auto try_scoped_lock() {
+                return wrap(this);
+            };
+            class wrap2 {
+                friend class epoch_btree;
+            protected:
+                search_node* P;
+            public:
+                wrap2(search_node* p, bool is_locked = false) : P{ p } {
+                    if (P && !is_locked) {
+                        if (!P->try_lock_shared()) {
+                            P = nullptr;
+                        }
+                    }
+                };
+                wrap2(wrap2 const&) = delete;
+                wrap2(wrap2&& rhs) noexcept : P{ rhs.P } {
+                    rhs.P = nullptr;
+                };
+                wrap2& operator=(wrap2 const&) = delete;
+                wrap2& operator=(wrap2&& rhs) noexcept {
+                    if (P) {
+                        P->unlock_shared();
+                    }
+                    P = rhs.P;
+                    rhs.P = nullptr;
+                    return *this;
+                };
+                ~wrap2() {
+                    if (P) {
+                        P->unlock_shared();
+                    }
+                };
+                operator bool() {
+                    return P;
+                };
+                void unsafe_clear() { P = nullptr; }
+            };
+            auto try_scoped_lock_shared(bool is_locked = false) {
+                return wrap2(this, is_locked);
+            };
+            bool try_lock() {
+                return locked.try_lock();
+                // return GL::interlocked::compare_exchange(locked, 0, 1);
+            };
+            bool try_lock_shared() {
+                return locked.try_lock_shared();
+            };
+            void unlock() {
+                if (!is_leaf) {
+                    if (auto* lastChild = this->children().last_child) {
+                        auto local_lock = lastChild->try_scoped_lock(); // may have failed -- that's OK. 
+                        if (lastChild->key > key) {
+                            key = lastChild->key;
+                        }
+                    }
+                }
+                locked.unlock();
+                // GL::interlocked::decrement(locked);
+            };
+            void unlock_shared() {
+                locked.unlock_shared();
+            };
+
+            search_node() = default;
+            search_node(search_node const&) = delete;
+            search_node(search_node &&) = delete;
+            search_node& operator=(search_node const&) = delete;
+            search_node& operator=(search_node&&) = delete;
+            ~search_node() {
+                if (is_leaf) {
+                    object()->~obj_type();
+                }
+            };
+        };
+
+        search_node*
+            root;
+        search_node*
+            first;
+        search_node*
+            last;
+        fast_atomic_epoch_allocator< search_node, 256>
+            allocator;
+
+        auto // protect the b-tree from deleting nodes while in-use.
+            guard_critical_section() {
+            return allocator.guard_critical_section();
+        };
+        search_node* // add an object to the tree
+            Add(obj_type&& object, key_type const& key) {
+            auto g = allocator.guard_critical_section();
+
+            search_node
+                *node, 
+                *child, 
+                *newNode;
+
+            search_node
+                *assumed_root = root;
+
+            newNode = AllocNode();
+            auto Scoped_lock = newNode->try_scoped_lock();
+            newNode->is_leaf = true;
+            newNode->key = key;
+            new (newNode->object()) obj_type(std::forward<obj_type>(object));
+            
+            bool need_try_again;
+            std::deque< search_node::wrap > guards; // from the root to the final node that the insert will happen at, we will lock all of the necessary nodes
+            while (true) {
+                need_try_again = false;
+                guards.clear();
+
+                // Ensure the root exists.
+                while (assumed_root == nullptr) {
+                    node = AllocNode();
+                    if (!GL::interlocked::compare_exchange<search_node*>(root, nullptr, node)) {
+                        FreeNode(node);
+                    }
+                    else {
+                        node = nullptr;
+                    }
+                    assumed_root = root;
+                }
+
+                // Ensure the root, if needed, has been split.
+                guards.push_back(assumed_root->try_scoped_lock());
+                if (guards.back()) {
+                    if (assumed_root->children().num_children >= maxChildrenPerNode) {
+                        node = AllocNode(); 
+                        if (!node->try_lock()) throw "Could not lock a locally-made node";
+                        assumed_root->parent = node;
+                        node->is_leaf = false;
+                        node->key = assumed_root->key;
+                        node->children().first_child = assumed_root;
+                        node->children().last_child = assumed_root;
+                        node->children().num_children = 1;                        
+                        if (!SplitNode(assumed_root)) { // itself and its parent are locked.
+                            assumed_root->parent = nullptr;
+                            node->unlock();
+                            FreeNode(node);
+                            node = nullptr;
+                            continue;
+                        } 
+                        if (!GL::interlocked::compare_exchange<search_node*>(root, assumed_root, node)) {
+                            assumed_root->parent = nullptr;
+                            node->unlock();
+                            FreeNode(node);
+                            node = nullptr;
+                            continue;
+                        }
+                        else {
+                            assumed_root = node;
+                            node->unlock();
+                            node = nullptr;
+                            continue;
+                        }
+                    }
+                }
+                else {
+                    continue;
+                }
+
+                for (node = assumed_root; (!node->is_leaf) && (node->children().first_child); node = child) {                    
+                    if (!guards.back()) { 
+                        need_try_again = true; 
+                        break; 
+                    }
+
+                    if (guards.size() > 2) {
+                        if (guards.front().P->key >= key) {
+                            guards.pop_front();
+                        }
+                    }
+
+                    // find the first child with a key larger equal to the key of the new node                    
+                    child = node->children().first_child;
+                    guards.push_back(child->try_scoped_lock());    
+                    
+                    for (; ; ) {
+                        if (!guards.back()) { 
+                            need_try_again = true; 
+                            break; 
+                        }
+                        child->parent = node;
+
+                        if (key <= child->key) {
+                            break;
+                        }
+                        else if (child->next) {
+                            child = child->next;
+
+                            guards.back() = child->try_scoped_lock();
+                        }
+                        else {
+                            break;
+                        }
+                    }           
+
+                    if (need_try_again) break;
+
+                    // child is locked
+                    if (child->is_leaf) {
+                        newNode->parent = node;
+                        
+                        if (key <= child->key) {
+                            // insert new node before child
+                            newNode->prev = child->prev;
+                            newNode->next = child;                           
+                            if (child->prev) {
+                                if (auto locked = child->prev->try_scoped_lock()) {
+                                    child->prev->next = newNode;
+                                    node->children().num_children++;
+                                }
+                                else {
+                                    need_try_again = true; break;
+                                }
+                            }
+                            else {
+                                node->children().num_children++;
+                                node->children().first_child = newNode;
+                            }
+                            child->prev = newNode;
+                        }
+                        else {
+                            // insert new node after child
+                            newNode->prev = child;
+                            newNode->next = child->next;
+                            if (child->next) {
+                                if (auto locked = child->next->try_scoped_lock()) {
+                                    child->next->prev = newNode;
+                                    node->children().num_children++;
+                                }
+                                else {
+                                    need_try_again = true; 
+                                    break;
+                                }
+                            }
+                            else {
+                                node->children().num_children++;
+                                node->children().last_child = newNode;
+                            }
+                            child->next = newNode;
+                        }
+                        return newNode;
+                    }
+                    else if (child->children().num_children >= maxChildrenPerNode) {
+                        if (!SplitNode(child)) { // itself and parent are locked
+                            need_try_again = true; 
+                            break;
+                        }
+                        else {
+                            need_try_again = true;
+                            break;
+                        }
+
+                        //if (child->prev) {
+                        //    if (auto locked = child->prev->try_scoped_lock()) {
+                        //        if (key <= child->prev->key) {
+                        //            child = child->prev;
+                        //            guards.back() = std::move(locked);
+                        //        }
+                        //    }
+                        //    else {
+                        //        need_try_again = true; 
+                        //        break;
+                        //    }
+                        //}
+                    }
+                }
+
+                if (need_try_again) continue;
+
+                // we only end up here if the root node is empty
+                newNode->parent = assumed_root;
+                assumed_root->key = key;
+                assumed_root->children().first_child = newNode;
+                assumed_root->children().last_child = newNode;
+                assumed_root->children().num_children++;
+
+                return newNode;
+            }
+        };						
+        void // remove an object node from the tree			
+            Remove(search_node* node) {
+        
+        };				
+						
+        static search_node*  // assumes the node is NOT locked. Keeps the node locked 
+            GetNextLeaf(search_node* node, bool comes_shared_locked = false, bool return_shared_locked = true) {
+            bool try_again;
+            while (node) {
+                try_again = false;
+                if (auto local_locked = node->try_scoped_lock_shared(comes_shared_locked)) {
+                    comes_shared_locked = false;
+                    if ((!node->is_leaf) && node->children().first_child) {
+                        while ((!node->is_leaf) && node->children().first_child) {
+                            auto this_child = node->children().first_child;
+                            if (local_locked = this_child->try_scoped_lock_shared()) {
+                                node = this_child;
+                            }
+                            else {
+                                try_again = true;
+                                break;
+                            }
+                        }
+                        if (try_again) continue;
+
+                        if (node && return_shared_locked) {
+                            local_locked.unsafe_clear();
+                        }
+                        return node;
+                    }
+
+                    while (node && (node->next == nullptr)) {
+                        auto this_parent = node->parent;
+                        if (this_parent) {
+                            if (local_locked = this_parent->try_scoped_lock_shared()) {
+                                node = this_parent;
+                            }
+                            else {
+                                try_again = true;
+                                break;
+                            }
+                        }
+                        else {
+                            return nullptr;
+                        }
+                    }
+                    if (try_again) continue;
+
+                    if (node) {
+                        auto this_next = node->next;
+                        if (local_locked = this_next->try_scoped_lock_shared()) {
+                            node = this_next;
+
+                            while ((!node->is_leaf) && node->children().first_child) {
+                                auto this_child = node->children().first_child;
+                                if (local_locked = this_child->try_scoped_lock_shared()) {
+                                    node = this_child;
+                                }
+                                else {
+                                    try_again = true;
+                                    break;
+                                }
+                            }
+                            if (try_again) continue;
+                            if (node && return_shared_locked) {
+                                local_locked.unsafe_clear();
+                            }
+                            return node;
+                        }
+                        else {
+                            continue;
+                        }
+                    }
+                    else {
+                        return nullptr;
+                    }
+                }
+            }
+            return nullptr;
+        };
+
+        static search_node*
+            NodeFindSmallestLargerEqual(key_type const& key, search_node* root, bool comes_shared_locked = false, bool return_shared_locked = true) {            
+            search_node* node;
+
+            if (root == nullptr) return nullptr;
+            if (root->is_leaf) return nullptr;
+            
+            bool retry;
+            while (true) {
+                retry = false;
+                if (auto local_lock = root->try_scoped_lock_shared(comes_shared_locked)) {
+                    comes_shared_locked = false;
+
+                    auto first_child = root->children().first_child;
+                    if (local_lock = first_child->try_scoped_lock_shared()) {
+                        node = first_child;
+                        for (;;) {
+                            while (node->next) {
+                                if (node->key >= key) break;
+                                first_child = node->next;
+                                if (local_lock = first_child->try_scoped_lock_shared()) node = first_child;
+                                else {
+                                    retry = true;
+                                    break;
+                                }
+                            }
+                            if (retry) break;
+                            if (node) {
+                                if (node->is_leaf) {
+                                    if (node->key >= key) {
+                                        if (return_shared_locked) local_lock.unsafe_clear();
+                                        return node;
+                                    }
+                                    else break;
+                                }
+                                else {
+                                    first_child = node->children().first_child;
+                                    if (local_lock = first_child->try_scoped_lock_shared()) node = first_child;
+                                    else {
+                                        retry = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            else {
+                                break;
+                            }                       
+                        }
+                        if (retry) continue;
+                        return nullptr;
+                    }
+                }
+            }
+        };
+
+    private:
+        search_node* 
+            AllocNode() {
+            search_node* node = allocator.Alloc();
+            node->children().first_child = nullptr;
+            node->children().last_child = nullptr;
+            node->children().num_children = 0;
+            node->parent = nullptr;
+            node->next = nullptr;
+            node->prev = nullptr;
+            //node->locked = 0;
+            return node;
+        };
+        void // assumes the node is NOT locked.
+            FreeNode(search_node* node) {
+            if (!node) return;
+            //if (node->locked != 0) throw "Cannot free a locked node";
+            
+            allocator.Free(node);
+        };
+        bool // assumes the node is locked. Returns true if successful.
+            SplitNode(search_node* node) {
+            if (!node) return false;
+            //if (node->locked == 0) throw "Cannot split an unlocked node";
+            if (!node->parent) throw "Cannot split a node without a parent";            
+            //if (node->parent->locked == 0) throw "Cannot split a node with unlocked parent ";
+
+            int 
+                i;
+            search_node
+                *child, 
+                *newNode;
+            std::deque< search_node::wrap > 
+                guards;
+
+            // allocate a new node
+            newNode = AllocNode();           
+            auto new_node_scoped_lock = newNode->try_scoped_lock(); // no way for it to fail, so no need to check. 
+            newNode->is_leaf = false;
+            newNode->parent = node->parent;
+
+            // divide the children over the two nodes
+            child = node->children().first_child;
+            guards.push_back(child->try_scoped_lock());
+            if (!guards.back()) return false;
+            for (i = 3; i < node->children().num_children; i += 2) {
+                child = child->next;
+                guards.push_back(child->try_scoped_lock());
+                if (!guards.back()) return false;
+            }
+
+            auto child_next_locked = child->next->try_scoped_lock();            
+            if (!child_next_locked) return false;
+
+            decltype(child_next_locked) node_prev_locked(nullptr);
+            if (node->prev) {
+                node_prev_locked = node->prev->try_scoped_lock();
+                if (!node_prev_locked) return false;
+            }
+
+            newNode->key = child->key;
+            newNode->children().num_children = node->children().num_children / 2;
+            newNode->children().first_child = node->children().first_child;
+            newNode->children().last_child = child;
+
+            for (auto& x : guards) x.P->parent = newNode;
+            node->children().num_children -= newNode->children().num_children;
+            node->children().first_child = child->next;
+            child->next->prev = nullptr;
+            child->next = nullptr;
+
+            // add the new child to the parent before the split node
+            if (node->prev) {
+                node->prev->next = newNode;
+            }
+            else {                
+                node->parent->children().first_child = newNode;
+            }
+            newNode->prev = node->prev;
+            newNode->next = node;
+            node->prev = newNode;
+            node->parent->children().num_children++;
+
+            //if (node->children().last_child->parent == nullptr) {      
+                auto* p = node->children().first_child;
+                while (p) {
+                    p->parent = node;
+                    p = p->next;
+                }
+                p = newNode->children().first_child;
+                while (p) {
+                    p->parent = newNode;
+                    p = p->next;
+                }
+                //std::cout << "SOMETHING WENT WRONG\n";
+            //}
+
+            return true;
+        };
+        search_node*
+            MergeNodes(search_node* node1, search_node* node2) {
+            return nullptr;
+        };
+
+
+    };
+
+
+
+
 
 };
 
 
 
 
-int main() {
 
+
+int main() {
 #if 0
     if (0) {
         GL::atomic_shared_ptr<GL::any> ptr;
@@ -2544,6 +3223,73 @@ int main() {
     };
 #endif
 
+    while (true) {
+        ebr::epoch_btree 
+            tree;
+
+        //for (int i = 0; i < 100; ++i) {
+        //    tree.Add((int)i, i);
+        //}
+        if (auto timer = GL::stopwatch().debug_timer("epoch_btree"); true) {
+            GL::parallel::For(0, 1'000'000, [&](int i) {
+                auto node = tree.Add((int)i, i);
+
+                if (*node->object() != i) {
+                    std::cout << GL::printf("Intended 1: %i, Found 1: %i\n", i, *node->object());
+                }
+                //auto node = tree.GetNextLeaf(tree.root, false, true);
+                //while (node) {
+                //    node = tree.GetNextLeaf(node, true, true);
+                //}
+
+                ////if ((i % 10'000) == 0) {
+                //    auto g = tree.guard_critical_section();
+                //    if (auto node2 = tree.NodeFindSmallestLargerEqual(i, tree.root, false, true)) {
+                //        if (*node2->object() != i) {
+                //            if (node != node2) {
+                //                std::cout << GL::printf("Intended 2: %i, Found 2: %i\n", i, *node2->object());
+                //                node2 = tree.NodeFindSmallestLargerEqual(i, tree.root, true, true);
+                //                if (*node2->object() != i) {
+                //                    std::cout << GL::printf("Intended 3: %i, Found 3: %i\n", i, *node2->object());
+                //                }
+                //            }
+                //        }
+                //        node2->unlock_shared();
+                //        
+                //        
+                //        //while (node) {
+                //        //    std::cout << *node->object() << std::endl;
+                //        //    node = tree.GetNextLeaf(node, true, true);
+                //        //}
+                //    }
+                ////}
+
+
+            });
+
+            GL::parallel::For(0, 1'000'000, [&](int i) {
+                auto g = tree.guard_critical_section();
+                if (auto node2 = tree.NodeFindSmallestLargerEqual(i, tree.root, false, true)) {
+                    if (*node2->object() != i) {
+                        std::cout << GL::printf("Intended 4: %i, Found 4: %i\n", i, *node2->object());
+                    }
+                }
+            });
+        }
+
+        auto g = tree.guard_critical_section();
+        auto node = tree.GetNextLeaf(tree.root, false, true);
+        while (node) {
+            if (node->is_leaf) {
+                std::cout << *node->object() << std::endl;
+            }
+            node = tree.GetNextLeaf(node, true, true);
+        }
+    }
+
+
+
+
     // object pooling test. 3-4 times faster than normal allocation / deallocation. 
     while (true) {        
         if (auto timer = GL::stopwatch().debug_timer("Normal Allocation / Deletion (int)"); false) {
@@ -2610,6 +3356,39 @@ int main() {
             });
         }
 
+        //if (auto timer = GL::stopwatch().debug_timer("GL::epoch_search_tree<GL::string, long long, 10>"); false) {
+        //    GL::epoch_search_tree<GL::value, size_t, 10> tree;
+        //    GL::parallel::For(0, 1'000'000, [&](size_t i) {
+        //        auto g = tree.ProtectCurrentEpoch();
+        //        if (i % 100 == 0) {
+        //            auto ptr = tree.get_or_make(i % 100, [&]() -> GL::value { return i; }, nullptr);
+        //            tree.Remove(ptr);
+        //            ptr->object()->operator=(i);
+        //        }
+        //        else {
+        //            auto ptr = tree.get_or_make(i % 100, [&]() -> GL::value { return i; }, nullptr);
+        //            ptr->object()->operator=(i);
+        //        }           
+        //    });
+        //}
+        //if (auto timer = GL::stopwatch().debug_timer("ebr::epoch_search_tree<GL::string, long long, 10>"); true) {
+        //    ebr::epoch_search_tree<GL::value, size_t, 10> tree;
+        //    GL::parallel::For(0, 1'000'000, [&](size_t i) {
+        //        auto g = tree.guard_critical_section();
+        //        if (i % 100 == 0) {
+        //            auto ptr = tree.get_or_make(i % 100, [&]() -> GL::value { return i; }, nullptr);
+        //            tree.Remove(ptr);
+        //            ptr->object()->operator=(i);
+        //        }
+        //        else {
+        //            auto ptr = tree.get_or_make(i % 100, [&]() -> GL::value { return i; }, nullptr);                   
+        //            ptr->object()->operator=(i);
+        //        }
+        //    });
+        //}
+
+
+
         if (auto timer = GL::stopwatch().debug_timer("fast_atomic_allocator<int> (linear only)"); true) {
             ebr::fast_atomic_allocator<int> pool;
             for (long long i = 1'000'000'000ll / (long long)(GL::util::get_hardware_thread_count() * 10); i > 0; --i) {
@@ -2658,33 +3437,53 @@ int main() {
                 }
             });
         }
-        while (true) {
+        if (false) {
             ebr::fast_atomic_allocator<GL::string> pool;
-            if (auto timer = GL::stopwatch().debug_timer("fast_atomic_allocator<GL::string>"); true) {                
-                //bool quit = false;
-                //std::thread todo([&]() {
-                //    while (!quit) {
-                //        auto* p = pool.Alloc();
-                //        pool.Free(p);
-                //    }
-                //});
-                GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
-                    auto* p = pool.Alloc();
-                    pool.Free(p);
-                });
-                GL::parallel::For(0, 1'000'000, [&](size_t i) {
-                    std::array<GL::string*, 36> arrs;
-                    for (int j = 0; j < 36; ++j) {
-                        arrs[j] = pool.Alloc();
+            while (true) {
+                if (auto timer = GL::stopwatch().debug_timer("fast_atomic_allocator<GL::string>"); true) {
+                    //bool quit = false;
+                    //std::thread todo([&]() {
+                    //    while (!quit) {
+                    //        auto* p = pool.Alloc();
+                    //        pool.Free(p);
+                    //    }
+                    //});
+                    GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
+                        auto* p = pool.Alloc();
+                        pool.Free(p);
+                        });
+                    GL::parallel::For(0, 1'000'000, [&](size_t i) {
+                        std::array<GL::string*, 36> arrs;
+                        for (int j = 0; j < 36; ++j) {
+                            arrs[j] = pool.Alloc();
+                        }
+                        for (int j = 0; j < 36; ++j) {
+                            pool.Free(arrs[j]);
+                        }
+                        });
+                    //quit = true;
+                    //todo.join();
+                }
+                if (auto timer = GL::stopwatch().debug_timer("fast_atomic_allocator<GL::string> consumer-producer system"); true) {
+                    concurrency::concurrent_queue< GL::string* > ptrs;
+                    GL::parallel::For(0, 10'000'000, [&](size_t i) {
+                        if (i % 2 == 0)
+                            ptrs.push(pool.Alloc());
+                        else {
+                            GL::string* p;
+                            if (ptrs.try_pop(p)) {
+                                pool.Free(p);
+                            }
+                        }
+                    });
+                    GL::string* p;
+                    while (ptrs.try_pop(p)) {
+                        pool.Free(p);
                     }
-                    for (int j = 0; j < 36; ++j) {
-                        pool.Free(arrs[j]);
-                    }
-                });
-                //quit = true;
-                //todo.join();
+                }
             }
         }
+
         if (auto timer = GL::stopwatch().debug_timer("fast_atomic_epoch_allocator<int> (linear only)"); true) {
             ebr::fast_atomic_epoch_allocator<int> pool;
             
@@ -2740,7 +3539,49 @@ int main() {
                 }
             });
         }
-
+        if (true) {
+            ebr::fast_atomic_epoch_allocator<GL::string> pool;
+            while (true) {
+                if (auto timer = GL::stopwatch().debug_timer("fast_atomic_epoch_allocator<GL::string>"); true) {
+                    GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
+                        auto* p = pool.Alloc();
+                        auto g = pool.guard_critical_section();
+                        pool.Free(p);
+                    });
+                    GL::parallel::For(0, 1'000'000, [&](size_t i) {
+                        std::array<GL::string*, 36> arrs;
+                        for (int j = 0; j < 36; ++j) {
+                            arrs[j] = pool.Alloc();
+                        }
+                        auto g = pool.guard_critical_section();
+                        for (int j = 0; j < 36; ++j) {
+                            pool.Free(arrs[j]);
+                        }
+                    });
+                }
+                if (auto timer = GL::stopwatch().debug_timer("fast_atomic_epoch_allocator<GL::string> consumer-producer system"); true) {
+                    concurrency::concurrent_queue< GL::string* > ptrs;
+                    GL::parallel::For(0, 10'000'000, [&](size_t i) {
+                        if (i % 2 == 0) {
+                            auto g = pool.guard_critical_section();
+                            ptrs.push(pool.Alloc());
+                        }
+                        else {
+                            auto g = pool.guard_critical_section();
+                            GL::string* p;
+                            if (ptrs.try_pop(p)) {
+                                pool.Free(p);
+                            }
+                        }
+                    });
+                    GL::string* p;
+                    auto g = pool.guard_critical_section();
+                    while (ptrs.try_pop(p)) {
+                        pool.Free(p);
+                    }
+                }
+            }
+        }
     }
 
 #if 1

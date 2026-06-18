@@ -34,24 +34,17 @@ namespace GL {
     };
 
     namespace util {
+        static GL::ticket_dispensor<false> parent_ticket_dispensor;
         class ticket_return {
         private:
-            static GL::ticket_dispensor<false>& parent() {
-                static GL::ticket_dispensor<false> out;
-                return out;
-            };
         public:
             const size_t ticket;
         public:
-            static size_t get_ticket() {
-                return parent().get_ticket();
-            };
-            ticket_return() : ticket{ get_ticket() }  {}
+            ticket_return() : ticket{ parent_ticket_dispensor.get_ticket() }  {}
             ~ticket_return() {
-                parent().return_ticket(ticket);
+                parent_ticket_dispensor.return_ticket(ticket);
             };
         };
-
 
         //size_t get_thread_id() {
         //    thread_local ticket_return ticket;
@@ -61,8 +54,8 @@ namespace GL {
         thread_local ticket_return ticket;
         size_t get_thread_id() {
             thread_local size_t out = 0ull;
-            if (out == 0ull) 
-                out = ticket.ticket;
+            // out += (out == 0ull) * ticket.ticket;
+            if (!out) out = ticket.ticket;
             return out;
         };
 #if 1
@@ -126,21 +119,20 @@ namespace GL {
 //            return clock::ms();
 //#endif
 //        };
-        static std::atomic<long long> _epoch = 0;
+        static long long _epoch = 0;
         struct Wrap {
-            __declspec(noinline) static void UpdateEpoch(void) {
-                _epoch.store(clock::ms(), std::memory_order_relaxed);
+            static void UpdateEpoch(void) {
+                InterlockedExchangeNoFence64(reinterpret_cast<volatile long long*>(&_epoch), clock::ms());
+                // InterlockedExchange64(reinterpret_cast<volatile long long*>(&_epoch), clock::ms());
             };
         };
         static Taskable<Wrap::UpdateEpoch> _update_thread;
         long long get_current_epoch() {            
-            return _epoch.load(std::memory_order_relaxed);
+            return _epoch;
         };
 
         size_t get_actual_unique_thread_id() {
-            thread_local size_t out = 0ull;
-            if (out == 0ull)
-                out = GL::util::inline_hash(GL::util::get_current_epoch(), std::this_thread::get_id());
+            thread_local size_t out{ GL::util::inline_hash(GL::util::get_current_epoch(), std::this_thread::get_id()) };
             return out;
         };
 

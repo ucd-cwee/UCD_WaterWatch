@@ -39,6 +39,99 @@ namespace GL {
 namespace GL {
     using type_hash_t = unsigned long;
 
+    namespace interlocked {
+        template <typename T> __forceinline bool compare_exchange(T& rhs, T compare, T exchange) {
+            if constexpr (std::is_pointer_v<T>) {
+                return InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&rhs), exchange, compare) == compare;
+            }
+            else if constexpr (std::is_same_v<size_t, T>) {
+                return InterlockedCompareExchangeNoFence(reinterpret_cast<volatile size_t*>(&rhs), exchange, compare) == compare;
+            }
+            else if constexpr (std::is_same_v<long long, T>) {
+                return InterlockedCompareExchangeNoFence64(reinterpret_cast<volatile long long*>(&rhs), exchange, compare) == compare;
+            }
+            else if constexpr (std::is_same_v<unsigned long, T> || std::is_same_v<unsigned int, T>) {
+                return InterlockedCompareExchangeNoFence(reinterpret_cast<volatile unsigned long*>(&rhs), exchange, compare) == compare;
+            }
+            else if constexpr (std::is_same_v<long, T> || std::is_same_v<int, T>) {
+                return InterlockedCompareExchangeNoFence(reinterpret_cast<volatile long*>(&rhs), exchange, compare) == compare;
+            }
+            else {
+                return InterlockedCompareExchangeNoFence(reinterpret_cast<volatile T*>(&rhs), exchange, compare) == compare;
+            }
+        };
+        template <typename T> __forceinline T exchange(T& rhs, T exchange) {
+            if constexpr (std::is_pointer_v<T>) {
+                return InterlockedExchangePointerNoFence(reinterpret_cast<volatile size_t*>(&rhs), exchange);
+            }
+            else if constexpr (std::is_same_v<size_t, T>) {
+                return InterlockedExchangeNoFence(reinterpret_cast<volatile size_t*>(&rhs), exchange);
+            }
+            else if constexpr (std::is_same_v<long long, T>) {
+                return InterlockedExchangeNoFence64(reinterpret_cast<volatile long long*>(&rhs), exchange);
+            }
+            else if constexpr (std::is_same_v<unsigned long, T> || std::is_same_v<unsigned int, T>) {
+                return InterlockedExchangeNoFence(reinterpret_cast<volatile unsigned long*>(&rhs), exchange);
+            }
+            else if constexpr (std::is_same_v<long, T> || std::is_same_v<int, T>) {
+                return InterlockedExchangeNoFence(reinterpret_cast<volatile long*>(&rhs), exchange);
+            }
+            else {
+                return InterlockedExchangeNoFence(reinterpret_cast<volatile T*>(&rhs), exchange);
+            }
+        };
+        template <typename T> __forceinline T increment(T& rhs) {
+            //while (true) {
+            //    T old = rhs;
+            //    if (compare_exchange(rhs, old, old + 1)) {
+            //        return old + 1;
+            //    }
+            //}
+
+            if constexpr (std::is_same_v<size_t, T>) {
+                return InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&rhs));
+            }
+            else if constexpr (std::is_same_v<long long, T>) {
+                return InterlockedIncrementNoFence64(reinterpret_cast<volatile long long*>(&rhs));
+            }            
+            else if constexpr (std::is_same_v<unsigned long, T> || std::is_same_v<unsigned int, T>) {
+                return InterlockedIncrementNoFence(reinterpret_cast<volatile unsigned long*>(&rhs));
+            }
+            else if constexpr (std::is_same_v<long, T> || std::is_same_v<int, T>) {
+                return InterlockedIncrementNoFence(reinterpret_cast<volatile long*>(&rhs));
+            }
+            else {
+                return InterlockedIncrementNoFence(reinterpret_cast<volatile T*>(&rhs));
+            }
+        };
+        template <typename T> __forceinline T decrement(T& rhs) {
+            //while (true) {
+            //    T old = rhs;
+            //    if (compare_exchange(rhs, old, old - 1)) {
+            //        return old - 1;
+            //    }
+            //}
+
+            
+            if constexpr (std::is_same_v<size_t, T>) {
+                return InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&rhs));
+            }
+            else if constexpr (std::is_same_v<long long, T>) {
+                return InterlockedDecrementNoFence64(reinterpret_cast<volatile long long*>(&rhs));
+            }
+            else if constexpr (std::is_same_v<unsigned long, T> || std::is_same_v<unsigned int, T>) {
+                return InterlockedDecrementNoFence(reinterpret_cast<volatile unsigned long*>(&rhs));
+            }
+            else if constexpr (std::is_same_v<long, T> || std::is_same_v<int, T>) {
+                return InterlockedDecrementNoFence(reinterpret_cast<volatile long*>(&rhs));
+            }
+            else {
+                return InterlockedDecrementNoFence(reinterpret_cast<volatile T*>(&rhs));
+            }
+        };
+
+    };
+
     // utilities
     namespace util {
         __forceinline static void hash(size_t& seed) { };
