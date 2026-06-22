@@ -2554,11 +2554,11 @@ namespace ebr {
         class search_node {
         public:
             search_node* 
-                prev = nullptr;
+                prev;
             search_node* 
-                next = nullptr;
+                next;
             search_node* 
-                parent = nullptr;
+                parent;
             union node_data {
                 non_leaf_data
                     children;
@@ -2566,12 +2566,11 @@ namespace ebr {
                     object[sizeof(obj_type)];
             } data;
             key_type
-                key = {};
+                key;
             bool
-                is_leaf = false;
+                is_leaf;
             GL::fast_shared_mutex
-            // int
-                locked/* = 0*/;
+                locked;
 
             obj_type* object() {
                 if (is_leaf)
@@ -2669,7 +2668,7 @@ namespace ebr {
             void unlock() {
                 if (!is_leaf) {
                     if (auto* lastChild = this->children().last_child) {
-                        auto local_lock = lastChild->try_scoped_lock(); // may have failed -- that's OK. 
+                        // auto local_lock = lastChild->try_scoped_lock(); // may have failed -- that's OK. 
                         if (lastChild->key > key) {
                             key = lastChild->key;
                         }
@@ -2682,18 +2681,97 @@ namespace ebr {
                 locked.unlock_shared();
             };
 
-            search_node() = default;
+            search_node() 
+                : prev{ nullptr }
+                , next{ nullptr }
+                , parent{ nullptr }
+                , data{}
+                , key{}
+                , is_leaf{ false }
+                , locked{}
+            {}
             search_node(search_node const&) = delete;
-            search_node(search_node &&) = delete;
+            search_node(search_node &&) noexcept = delete;
             search_node& operator=(search_node const&) = delete;
-            search_node& operator=(search_node&&) = delete;
+            search_node& operator=(search_node&&) noexcept = delete;
             ~search_node() {
+                if constexpr (!std::is_pod_v<obj_type>) {
+                    if (is_leaf) {
+                        object()->~obj_type();
+                    }
+                }
+            };
+            
+            // assumes node is locked. 
+            __declspec(noinline) bool validate_node_structure(search_node*& error_location) {
                 if (is_leaf) {
-                    object()->~obj_type();
+                    return true;
+                }
+                else {
+                    if (!data.children.first_child) {
+                        if ((data.children.last_child == nullptr) && (data.children.num_children == 0)) {
+                            return true;
+                        }
+                        else {
+                            error_location = this;
+                            return false;
+                        }
+                    }
+                    
+                    if (this->next) {
+                        if (data.children.last_child->key >= this->next->key) {
+                            // ERROR
+                            error_location = this;
+                            return false;
+                        }
+                    }
+                    auto node = data.children.first_child;
+                    bool found_last = false;
+                    while (node) {
+                        if (node == data.children.last_child) {
+                            found_last = true;
+                            if (node->next) {
+                                error_location = node;
+                                return false;
+                            }
+                        }
+
+                        if (node->key > data.children.last_child->key) {
+                            // ERROR
+                            error_location = this;
+                            return false;
+                        }
+
+                        if (node->key > this->key) {
+                            // ERROR
+                            error_location = this;
+                            return false;
+                        }
+
+                        if (this->prev) {
+                            if (node->key <= this->prev->key) {
+                                // ERROR
+                                error_location = this;
+                                return false;
+                            }
+                        }
+
+                        if (!node->validate_node_structure(error_location)) {
+                            return false;
+                        }
+
+                        if (!node->next) {
+                            if (!found_last) {
+                                error_location = node;
+                                return false;
+                            }
+                        }
+                        node = node->next;                        
+                    }
+                    return true;
                 }
             };
         };
-
         search_node*
             root;
         search_node*
@@ -2708,7 +2786,7 @@ namespace ebr {
             return allocator.guard_critical_section();
         };
         search_node* // add an object to the tree
-            Add(obj_type&& object, key_type const& key) {
+            Add(obj_type&& object, key_type const& key, bool recieve_locked = false) {
             auto g = allocator.guard_critical_section();
 
             search_node
@@ -2717,7 +2795,7 @@ namespace ebr {
                 *newNode;
 
             search_node
-                *assumed_root = root;
+                *assumed_root;
 
             newNode = AllocNode();
             auto Scoped_lock = newNode->try_scoped_lock();
@@ -2728,6 +2806,7 @@ namespace ebr {
             bool need_try_again;
             std::deque< search_node::wrap > guards; // from the root to the final node that the insert will happen at, we will lock all of the necessary nodes
             while (true) {
+                assumed_root = root;
                 need_try_again = false;
                 guards.clear();
 
@@ -2802,7 +2881,19 @@ namespace ebr {
                             need_try_again = true; 
                             break; 
                         }
-                        child->parent = node;
+                        if (child->parent != node) {
+                            need_try_again = true;
+                            break;
+
+                            //std::cout << "ERROR @ 2884\n";
+                            //child->parent = node;
+                        }
+
+                        if (child->prev && (key <= child->prev->key)) {
+                            std::cout << "ERROR 1" << std::endl;
+                            need_try_again = true;
+                            break;
+                        }
 
                         if (key <= child->key) {
                             break;
@@ -2824,16 +2915,22 @@ namespace ebr {
                         newNode->parent = node;
                         
                         if (key <= child->key) {
+                            if (node->prev && (key <= node->prev->key)) {
+                                std::cout << "ERROR 2" << std::endl;
+                                need_try_again = true;
+                                break;
+                            }
+
                             // insert new node before child
-                            newNode->prev = child->prev;
                             newNode->next = child;                           
-                            if (child->prev) {
+                            if (newNode->prev = child->prev) {
                                 if (auto locked = child->prev->try_scoped_lock()) {
                                     child->prev->next = newNode;
                                     node->children().num_children++;
                                 }
                                 else {
-                                    need_try_again = true; break;
+                                    need_try_again = true; 
+                                    break;
                                 }
                             }
                             else {
@@ -2843,6 +2940,12 @@ namespace ebr {
                             child->prev = newNode;
                         }
                         else {
+                            if (node->prev && (key <= node->prev->key)) {
+                                std::cout << "ERROR 3" << std::endl;
+                                need_try_again = true;
+                                break;
+                            }
+
                             // insert new node after child
                             newNode->prev = child;
                             newNode->next = child->next;
@@ -2862,6 +2965,9 @@ namespace ebr {
                             }
                             child->next = newNode;
                         }
+                        if (recieve_locked) {
+                            Scoped_lock.P = nullptr;
+                        }
                         return newNode;
                     }
                     else if (child->children().num_children >= maxChildrenPerNode) {
@@ -2870,22 +2976,24 @@ namespace ebr {
                             break;
                         }
                         else {
+#if 0
+                            if (child->prev) {
+                                if (auto locked = child->prev->try_scoped_lock()) {
+                                    if (key <= child->prev->key) {
+                                        child = child->prev;
+                                        guards.back() = std::move(locked);
+                                    }
+                                }
+                                else {
+                                    need_try_again = true;
+                                    break;
+                                }
+                            }
+#else
                             need_try_again = true;
                             break;
-                        }
-
-                        //if (child->prev) {
-                        //    if (auto locked = child->prev->try_scoped_lock()) {
-                        //        if (key <= child->prev->key) {
-                        //            child = child->prev;
-                        //            guards.back() = std::move(locked);
-                        //        }
-                        //    }
-                        //    else {
-                        //        need_try_again = true; 
-                        //        break;
-                        //    }
-                        //}
+#endif
+                        }                       
                     }
                 }
 
@@ -2897,7 +3005,9 @@ namespace ebr {
                 assumed_root->children().first_child = newNode;
                 assumed_root->children().last_child = newNode;
                 assumed_root->children().num_children++;
-
+                if (recieve_locked) {
+                    Scoped_lock.P = nullptr;
+                }
                 return newNode;
             }
         };						
@@ -3047,7 +3157,6 @@ namespace ebr {
             node->parent = nullptr;
             node->next = nullptr;
             node->prev = nullptr;
-            //node->locked = 0;
             return node;
         };
         void // assumes the node is NOT locked.
@@ -3069,14 +3178,10 @@ namespace ebr {
             search_node
                 *child, 
                 *newNode;
-            std::deque< search_node::wrap > 
-                guards;
 
-            // allocate a new node
-            newNode = AllocNode();           
-            auto new_node_scoped_lock = newNode->try_scoped_lock(); // no way for it to fail, so no need to check. 
-            newNode->is_leaf = false;
-            newNode->parent = node->parent;
+            search_node::wrap child_next_locked(nullptr);
+            search_node::wrap node_prev_locked(nullptr);
+            std::deque< search_node::wrap > guards;
 
             // divide the children over the two nodes
             child = node->children().first_child;
@@ -3088,19 +3193,22 @@ namespace ebr {
                 if (!guards.back()) return false;
             }
 
-            auto child_next_locked = child->next->try_scoped_lock();            
+            child_next_locked = child->next->try_scoped_lock();            
             if (!child_next_locked) return false;
-
-            decltype(child_next_locked) node_prev_locked(nullptr);
             if (node->prev) {
                 node_prev_locked = node->prev->try_scoped_lock();
                 if (!node_prev_locked) return false;
             }
 
+            // allocate a new node
+            newNode = AllocNode();
+            auto new_node_scoped_lock = newNode->try_scoped_lock(); // no way for it to fail, so no need to check. 
+            newNode->is_leaf = false;
+            newNode->parent = node->parent;
             newNode->key = child->key;
             newNode->children().num_children = node->children().num_children / 2;
             newNode->children().first_child = node->children().first_child;
-            newNode->children().last_child = child;
+            newNode->children().last_child = child;            
 
             for (auto& x : guards) x.P->parent = newNode;
             node->children().num_children -= newNode->children().num_children;
@@ -3109,30 +3217,19 @@ namespace ebr {
             child->next = nullptr;
 
             // add the new child to the parent before the split node
-            if (node->prev) {
-                node->prev->next = newNode;
-            }
-            else {                
-                node->parent->children().first_child = newNode;
-            }
+            if (node->prev) node->prev->next = newNode;            
+            else node->parent->children().first_child = newNode;
+            
             newNode->prev = node->prev;
             newNode->next = node;
             node->prev = newNode;
             node->parent->children().num_children++;
 
-            //if (node->children().last_child->parent == nullptr) {      
-                auto* p = node->children().first_child;
-                while (p) {
-                    p->parent = node;
-                    p = p->next;
-                }
-                p = newNode->children().first_child;
-                while (p) {
-                    p->parent = newNode;
-                    p = p->next;
-                }
-                //std::cout << "SOMETHING WENT WRONG\n";
-            //}
+            if (node->children().first_child->key <= newNode->key) {
+                // something went wrong!
+                std::cout << "ERROR!" << std::endl;
+            }
+
 
             return true;
         };
@@ -3226,17 +3323,34 @@ int main() {
     while (true) {
         ebr::epoch_btree 
             tree;
+        std::vector<typename decltype(tree)::search_node*> arr;
+        arr.resize(1'000'000);
 
         //for (int i = 0; i < 100; ++i) {
         //    tree.Add((int)i, i);
         //}
         if (auto timer = GL::stopwatch().debug_timer("epoch_btree"); true) {
             GL::parallel::For(0, 1'000'000, [&](int i) {
-                auto node = tree.Add((int)i, i);
+                auto node = tree.Add((int)i, i, false);
+                arr[i] = node;
 
-                if (*node->object() != i) {
-                    std::cout << GL::printf("Intended 1: %i, Found 1: %i\n", i, *node->object());
+                if (node->is_leaf) {
+                    if (*node->object() != i) {
+                        std::cout << GL::printf("Intended 1: %i, Found 1: %i\n", i, *node->object());
+                    }
                 }
+
+                //node->unlock();
+                //if (!tree.root->validate_node_structure(node)) {                                        
+                    //node->validate_node_structure(node);
+                    //std::cout << GL::printf("Not validated! %i @ %i\n", i, node->key);
+                //}
+
+               
+
+
+
+
                 //auto node = tree.GetNextLeaf(tree.root, false, true);
                 //while (node) {
                 //    node = tree.GetNextLeaf(node, true, true);
@@ -3272,13 +3386,25 @@ int main() {
                 if (auto node2 = tree.NodeFindSmallestLargerEqual(i, tree.root, false, true)) {
                     if (*node2->object() != i) {
                         std::cout << GL::printf("Intended 4: %i, Found 4: %i\n", i, *node2->object());
+                        if (node2 = arr[i]) {
+                            if (*node2->object() != i) {
+                                std::cout << GL::printf("Intended 4.1: %i, Found 4.1: %i\n", i, *node2->object());
+                            }
+                        }
+
                     }
                 }
             });
         }
 
+        
+
         auto g = tree.guard_critical_section();
         auto node = tree.GetNextLeaf(tree.root, false, true);
+        if (!tree.root->validate_node_structure(node)) {
+            node->validate_node_structure(node);
+        }
+        node = tree.GetNextLeaf(tree.root, false, true);
         while (node) {
             if (node->is_leaf) {
                 std::cout << *node->object() << std::endl;
