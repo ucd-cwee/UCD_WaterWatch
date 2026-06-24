@@ -4685,6 +4685,38 @@ int main() {
                 });
             }
         }
+
+        if (1) {
+            ebr::epoch_map<int, int>
+                tree;
+            if (auto timer = GL::stopwatch().debug_timer("epoch_map 1 linear"); true) {
+                for (auto i = 0; i < 1'000'000; ++i) {
+                    auto g{ tree.guard_critical_section() };
+                    tree[i] = i;
+                };
+            }
+        }
+        if (1) {
+            ebr::epoch_map<GL::value, int>
+                tree;
+            if (auto timer = GL::stopwatch().debug_timer("epoch_map 2 linear"); true) {
+                for (auto i = 0; i < 1'000'000; ++i) {
+                    auto g{ tree.guard_critical_section() };
+                    tree[i % 10'000] = i;
+                    tree.erase(i % 10'000);
+                };
+            }
+        }
+        if (1) {
+            ebr::epoch_map<GL::value, int>
+                tree;
+            if (auto timer = GL::stopwatch().debug_timer("epoch_map 3 linear"); true) {
+                for (auto i = 0; i < 1'000'000; ++i) {
+                    tree.erase(i % 100);
+                    tree[i % 100] = i; // protected (temporarily!) by the epoch-based protections.                     
+                };
+            }
+        }
     }
 
 
