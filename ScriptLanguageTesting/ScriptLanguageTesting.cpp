@@ -2244,7 +2244,7 @@ namespace ebr {
                                     ReleaseBlock(block);
                                     break;
                                 }
-                            }                            
+                            }
                         }                        
                     }
                     else {
@@ -2537,711 +2537,6 @@ namespace ebr {
             count_allocated; // this exists as part of a fix for thread_local allocations being free-d on other threads (e.g. consumer-producer pattern). 
     };
 
-#if 0
-    class epoch_btree {
-    public:
-        constexpr static int maxChildrenPerNode = 10;
-        using obj_type = int;
-        using key_type = int;
-    public: 
-        class search_node;
-        class non_leaf_data {
-        public:
-            search_node* first_child;
-            search_node* last_child;
-            int num_children;
-        };
-
-        class search_node {
-        public:
-            search_node* 
-                prev;
-            search_node* 
-                next;
-            search_node* 
-                parent;
-            union node_data {
-                non_leaf_data
-                    children;
-                unsigned char
-                    object[sizeof(obj_type)];
-            } data;
-            key_type
-                key;
-            bool
-                is_leaf;
-            GL::fast_shared_mutex
-                locked;
-
-            obj_type* object() {
-                if (is_leaf)
-                    return reinterpret_cast<obj_type*>(&data.object[0]);
-                else throw "Could not de-reference object from non-leaf node";
-            };
-            non_leaf_data& children() {
-                if (!is_leaf)
-                    return data.children;
-                else throw "Could not de-reference children nodes from leaf node";
-            };
-
-            class wrap {
-                friend class epoch_btree;
-            protected:
-                search_node* P;
-            public:
-                wrap(search_node* p) : P{ p } {
-                    if (P) {
-                        if (!P->try_lock()) {
-                            P = nullptr;
-                        }
-                    }
-                };
-                wrap(wrap const&) = delete;
-                wrap(wrap&& rhs) noexcept : P{ rhs.P } {
-                    rhs.P = nullptr;
-                };
-                wrap& operator=(wrap const&) = delete;
-                wrap& operator=(wrap&& rhs) noexcept {
-                    if (P) {
-                        P->unlock();
-                    }
-                    P = rhs.P;
-                    rhs.P = nullptr;
-                    return *this;
-                };
-                ~wrap() {
-                    if (P) {
-                        P->unlock();
-                    }
-                };
-                operator bool() {
-                    return P;
-                };
-            };
-            auto try_scoped_lock() {
-                return wrap(this);
-            };
-            class wrap2 {
-                friend class epoch_btree;
-            protected:
-                search_node* P;
-            public:
-                wrap2(search_node* p, bool is_locked = false) : P{ p } {
-                    if (P && !is_locked) {
-                        if (!P->try_lock_shared()) {
-                            P = nullptr;
-                        }
-                    }
-                };
-                wrap2(wrap2 const&) = delete;
-                wrap2(wrap2&& rhs) noexcept : P{ rhs.P } {
-                    rhs.P = nullptr;
-                };
-                wrap2& operator=(wrap2 const&) = delete;
-                wrap2& operator=(wrap2&& rhs) noexcept {
-                    if (P) {
-                        P->unlock_shared();
-                    }
-                    P = rhs.P;
-                    rhs.P = nullptr;
-                    return *this;
-                };
-                ~wrap2() {
-                    if (P) {
-                        P->unlock_shared();
-                    }
-                };
-                operator bool() {
-                    return P;
-                };
-                void unsafe_clear() { P = nullptr; }
-            };
-            auto try_scoped_lock_shared(bool is_locked = false) {
-                return wrap2(this, is_locked);
-            };
-            bool try_lock() {
-                return locked.try_lock();
-                // return GL::interlocked::compare_exchange(locked, 0, 1);
-            };
-            bool try_lock_shared() {
-                return locked.try_lock_shared();
-            };
-            void unlock() {
-                if (!is_leaf) {
-                    if (auto* lastChild = this->children().last_child) {
-                        // auto local_lock = lastChild->try_scoped_lock(); // may have failed -- that's OK. 
-                        if (lastChild->key > key) {
-                            key = lastChild->key;
-                        }
-                    }
-                }
-                locked.unlock();
-                // GL::interlocked::decrement(locked);
-            };
-            void unlock_shared() {
-                locked.unlock_shared();
-            };
-
-            search_node() 
-                : prev{ nullptr }
-                , next{ nullptr }
-                , parent{ nullptr }
-                , data{}
-                , key{}
-                , is_leaf{ false }
-                , locked{}
-            {}
-            search_node(search_node const&) = delete;
-            search_node(search_node &&) noexcept = delete;
-            search_node& operator=(search_node const&) = delete;
-            search_node& operator=(search_node&&) noexcept = delete;
-            ~search_node() {
-                if constexpr (!std::is_pod_v<obj_type>) {
-                    if (is_leaf) {
-                        object()->~obj_type();
-                    }
-                }
-            };
-            
-            // assumes node is locked. 
-            __declspec(noinline) bool validate_node_structure(search_node*& error_location) {
-                if (is_leaf) {
-                    return true;
-                }
-                else {
-                    if (!data.children.first_child) {
-                        if ((data.children.last_child == nullptr) && (data.children.num_children == 0)) {
-                            return true;
-                        }
-                        else {
-                            error_location = this;
-                            return false;
-                        }
-                    }
-                    
-                    if (this->next) {
-                        if (data.children.last_child->key >= this->next->key) {
-                            // ERROR
-                            error_location = this;
-                            return false;
-                        }
-                    }
-                    auto node = data.children.first_child;
-                    bool found_last = false;
-                    while (node) {
-                        if (node == data.children.last_child) {
-                            found_last = true;
-                            if (node->next) {
-                                error_location = node;
-                                return false;
-                            }
-                        }
-
-                        if (node->key > data.children.last_child->key) {
-                            // ERROR
-                            error_location = this;
-                            return false;
-                        }
-
-                        if (node->key > this->key) {
-                            // ERROR
-                            error_location = this;
-                            return false;
-                        }
-
-                        if (this->prev) {
-                            if (node->key <= this->prev->key) {
-                                // ERROR
-                                error_location = this;
-                                return false;
-                            }
-                        }
-
-                        if (!node->validate_node_structure(error_location)) {
-                            return false;
-                        }
-
-                        if (!node->next) {
-                            if (!found_last) {
-                                error_location = node;
-                                return false;
-                            }
-                        }
-                        node = node->next;                        
-                    }
-                    return true;
-                }
-            };
-        };
-        search_node*
-            root;
-        search_node*
-            first;
-        search_node*
-            last;
-        fast_atomic_epoch_allocator< search_node, 256>
-            allocator;
-
-        auto // protect the b-tree from deleting nodes while in-use.
-            guard_critical_section() {
-            return allocator.guard_critical_section();
-        };
-        search_node* // add an object to the tree
-            Add(obj_type&& object, key_type const& key, bool recieve_locked = false) {
-            auto g = allocator.guard_critical_section();
-
-            search_node
-                *node, 
-                *child, 
-                *newNode;
-
-            search_node
-                *assumed_root;
-
-            newNode = AllocNode();
-            auto Scoped_lock = newNode->try_scoped_lock();
-            newNode->is_leaf = true;
-            newNode->key = key;
-            new (newNode->object()) obj_type(std::forward<obj_type>(object));
-            
-            bool need_try_again;
-            std::deque< search_node::wrap > guards; // from the root to the final node that the insert will happen at, we will lock all of the necessary nodes
-            while (true) {
-                assumed_root = root;
-                need_try_again = false;
-                guards.clear();
-
-                // Ensure the root exists.
-                while (assumed_root == nullptr) {
-                    node = AllocNode();
-                    if (!GL::interlocked::compare_exchange<search_node*>(root, nullptr, node)) {
-                        FreeNode(node);
-                    }
-                    else {
-                        node = nullptr;
-                    }
-                    assumed_root = root;
-                }
-
-                // Ensure the root, if needed, has been split.
-                guards.push_back(assumed_root->try_scoped_lock());
-                if (guards.back()) {
-                    if (assumed_root->children().num_children >= maxChildrenPerNode) {
-                        node = AllocNode(); 
-                        if (!node->try_lock()) throw "Could not lock a locally-made node";
-                        assumed_root->parent = node;
-                        node->is_leaf = false;
-                        node->key = assumed_root->key;
-                        node->children().first_child = assumed_root;
-                        node->children().last_child = assumed_root;
-                        node->children().num_children = 1;                        
-                        if (!SplitNode(assumed_root)) { // itself and its parent are locked.
-                            assumed_root->parent = nullptr;
-                            node->unlock();
-                            FreeNode(node);
-                            node = nullptr;
-                            continue;
-                        } 
-                        if (!GL::interlocked::compare_exchange<search_node*>(root, assumed_root, node)) {
-                            assumed_root->parent = nullptr;
-                            node->unlock();
-                            FreeNode(node);
-                            node = nullptr;
-                            continue;
-                        }
-                        else {
-                            assumed_root = node;
-                            node->unlock();
-                            node = nullptr;
-                            continue;
-                        }
-                    }
-                }
-                else {
-                    continue;
-                }
-
-                for (node = assumed_root; (!node->is_leaf) && (node->children().first_child); node = child) {                    
-                    if (!guards.back()) { 
-                        need_try_again = true; 
-                        break; 
-                    }
-
-                    if (guards.size() > 2) {
-                        if (guards.front().P->key >= key) {
-                            guards.pop_front();
-                        }
-                    }
-
-                    // find the first child with a key larger equal to the key of the new node                    
-                    child = node->children().first_child;
-                    guards.push_back(child->try_scoped_lock());    
-                    
-                    for (; ; ) {
-                        if (!guards.back()) { 
-                            need_try_again = true; 
-                            break; 
-                        }
-                        if (child->parent != node) {
-                            need_try_again = true;
-                            break;
-
-                            //std::cout << "ERROR @ 2884\n";
-                            //child->parent = node;
-                        }
-
-                        if (child->prev && (key <= child->prev->key)) {
-                            std::cout << "ERROR 1" << std::endl;
-                            need_try_again = true;
-                            break;
-                        }
-
-                        if (key <= child->key) {
-                            break;
-                        }
-                        else if (child->next) {
-                            child = child->next;
-
-                            guards.back() = child->try_scoped_lock();
-                        }
-                        else {
-                            break;
-                        }
-                    }           
-
-                    if (need_try_again) break;
-
-                    // child is locked
-                    if (child->is_leaf) {
-                        newNode->parent = node;
-                        
-                        if (key <= child->key) {
-                            if (node->prev && (key <= node->prev->key)) {
-                                std::cout << "ERROR 2" << std::endl;
-                                need_try_again = true;
-                                break;
-                            }
-
-                            // insert new node before child
-                            newNode->next = child;                           
-                            if (newNode->prev = child->prev) {
-                                if (auto locked = child->prev->try_scoped_lock()) {
-                                    child->prev->next = newNode;
-                                    node->children().num_children++;
-                                }
-                                else {
-                                    need_try_again = true; 
-                                    break;
-                                }
-                            }
-                            else {
-                                node->children().num_children++;
-                                node->children().first_child = newNode;
-                            }
-                            child->prev = newNode;
-                        }
-                        else {
-                            if (node->prev && (key <= node->prev->key)) {
-                                std::cout << "ERROR 3" << std::endl;
-                                need_try_again = true;
-                                break;
-                            }
-
-                            // insert new node after child
-                            newNode->prev = child;
-                            newNode->next = child->next;
-                            if (child->next) {
-                                if (auto locked = child->next->try_scoped_lock()) {
-                                    child->next->prev = newNode;
-                                    node->children().num_children++;
-                                }
-                                else {
-                                    need_try_again = true; 
-                                    break;
-                                }
-                            }
-                            else {
-                                node->children().num_children++;
-                                node->children().last_child = newNode;
-                            }
-                            child->next = newNode;
-                        }
-                        if (recieve_locked) {
-                            Scoped_lock.P = nullptr;
-                        }
-                        return newNode;
-                    }
-                    else if (child->children().num_children >= maxChildrenPerNode) {
-                        if (!SplitNode(child)) { // itself and parent are locked
-                            need_try_again = true; 
-                            break;
-                        }
-                        else {
-#if 0
-                            if (child->prev) {
-                                if (auto locked = child->prev->try_scoped_lock()) {
-                                    if (key <= child->prev->key) {
-                                        child = child->prev;
-                                        guards.back() = std::move(locked);
-                                    }
-                                }
-                                else {
-                                    need_try_again = true;
-                                    break;
-                                }
-                            }
-#else
-                            need_try_again = true;
-                            break;
-#endif
-                        }                       
-                    }
-                }
-
-                if (need_try_again) continue;
-
-                // we only end up here if the root node is empty
-                newNode->parent = assumed_root;
-                assumed_root->key = key;
-                assumed_root->children().first_child = newNode;
-                assumed_root->children().last_child = newNode;
-                assumed_root->children().num_children++;
-                if (recieve_locked) {
-                    Scoped_lock.P = nullptr;
-                }
-                return newNode;
-            }
-        };						
-        void // remove an object node from the tree			
-            Remove(search_node* node) {
-        
-        };				
-						
-        static search_node*  // assumes the node is NOT locked. Keeps the node locked 
-            GetNextLeaf(search_node* node, bool comes_shared_locked = false, bool return_shared_locked = true) {
-            bool try_again;
-            while (node) {
-                try_again = false;
-                if (auto local_locked = node->try_scoped_lock_shared(comes_shared_locked)) {
-                    comes_shared_locked = false;
-                    if ((!node->is_leaf) && node->children().first_child) {
-                        while ((!node->is_leaf) && node->children().first_child) {
-                            auto this_child = node->children().first_child;
-                            if (local_locked = this_child->try_scoped_lock_shared()) {
-                                node = this_child;
-                            }
-                            else {
-                                try_again = true;
-                                break;
-                            }
-                        }
-                        if (try_again) continue;
-
-                        if (node && return_shared_locked) {
-                            local_locked.unsafe_clear();
-                        }
-                        return node;
-                    }
-
-                    while (node && (node->next == nullptr)) {
-                        auto this_parent = node->parent;
-                        if (this_parent) {
-                            if (local_locked = this_parent->try_scoped_lock_shared()) {
-                                node = this_parent;
-                            }
-                            else {
-                                try_again = true;
-                                break;
-                            }
-                        }
-                        else {
-                            return nullptr;
-                        }
-                    }
-                    if (try_again) continue;
-
-                    if (node) {
-                        auto this_next = node->next;
-                        if (local_locked = this_next->try_scoped_lock_shared()) {
-                            node = this_next;
-
-                            while ((!node->is_leaf) && node->children().first_child) {
-                                auto this_child = node->children().first_child;
-                                if (local_locked = this_child->try_scoped_lock_shared()) {
-                                    node = this_child;
-                                }
-                                else {
-                                    try_again = true;
-                                    break;
-                                }
-                            }
-                            if (try_again) continue;
-                            if (node && return_shared_locked) {
-                                local_locked.unsafe_clear();
-                            }
-                            return node;
-                        }
-                        else {
-                            continue;
-                        }
-                    }
-                    else {
-                        return nullptr;
-                    }
-                }
-            }
-            return nullptr;
-        };
-
-        static search_node*
-            NodeFindSmallestLargerEqual(key_type const& key, search_node* root, bool comes_shared_locked = false, bool return_shared_locked = true) {            
-            search_node* node;
-
-            if (root == nullptr) return nullptr;
-            if (root->is_leaf) return nullptr;
-            
-            bool retry;
-            while (true) {
-                retry = false;
-                if (auto local_lock = root->try_scoped_lock_shared(comes_shared_locked)) {
-                    comes_shared_locked = false;
-
-                    auto first_child = root->children().first_child;
-                    if (local_lock = first_child->try_scoped_lock_shared()) {
-                        node = first_child;
-                        for (;;) {
-                            while (node->next) {
-                                if (node->key >= key) break;
-                                first_child = node->next;
-                                if (local_lock = first_child->try_scoped_lock_shared()) node = first_child;
-                                else {
-                                    retry = true;
-                                    break;
-                                }
-                            }
-                            if (retry) break;
-                            if (node) {
-                                if (node->is_leaf) {
-                                    if (node->key >= key) {
-                                        if (return_shared_locked) local_lock.unsafe_clear();
-                                        return node;
-                                    }
-                                    else break;
-                                }
-                                else {
-                                    first_child = node->children().first_child;
-                                    if (local_lock = first_child->try_scoped_lock_shared()) node = first_child;
-                                    else {
-                                        retry = true;
-                                        break;
-                                    }
-                                }
-                            }
-                            else {
-                                break;
-                            }                       
-                        }
-                        if (retry) continue;
-                        return nullptr;
-                    }
-                }
-            }
-        };
-
-    private:
-        search_node* 
-            AllocNode() {
-            search_node* node = allocator.Alloc();
-            node->children().first_child = nullptr;
-            node->children().last_child = nullptr;
-            node->children().num_children = 0;
-            node->parent = nullptr;
-            node->next = nullptr;
-            node->prev = nullptr;
-            return node;
-        };
-        void // assumes the node is NOT locked.
-            FreeNode(search_node* node) {
-            if (!node) return;
-            //if (node->locked != 0) throw "Cannot free a locked node";
-            
-            allocator.Free(node);
-        };
-        bool // assumes the node is locked. Returns true if successful.
-            SplitNode(search_node* node) {
-            if (!node) return false;
-            //if (node->locked == 0) throw "Cannot split an unlocked node";
-            if (!node->parent) throw "Cannot split a node without a parent";            
-            //if (node->parent->locked == 0) throw "Cannot split a node with unlocked parent ";
-
-            int 
-                i;
-            search_node
-                *child, 
-                *newNode;
-
-            search_node::wrap child_next_locked(nullptr);
-            search_node::wrap node_prev_locked(nullptr);
-            std::deque< search_node::wrap > guards;
-
-            // divide the children over the two nodes
-            child = node->children().first_child;
-            guards.push_back(child->try_scoped_lock());
-            if (!guards.back()) return false;
-            for (i = 3; i < node->children().num_children; i += 2) {
-                child = child->next;
-                guards.push_back(child->try_scoped_lock());
-                if (!guards.back()) return false;
-            }
-
-            child_next_locked = child->next->try_scoped_lock();            
-            if (!child_next_locked) return false;
-            if (node->prev) {
-                node_prev_locked = node->prev->try_scoped_lock();
-                if (!node_prev_locked) return false;
-            }
-
-            // allocate a new node
-            newNode = AllocNode();
-            auto new_node_scoped_lock = newNode->try_scoped_lock(); // no way for it to fail, so no need to check. 
-            newNode->is_leaf = false;
-            newNode->parent = node->parent;
-            newNode->key = child->key;
-            newNode->children().num_children = node->children().num_children / 2;
-            newNode->children().first_child = node->children().first_child;
-            newNode->children().last_child = child;            
-
-            for (auto& x : guards) x.P->parent = newNode;
-            node->children().num_children -= newNode->children().num_children;
-            node->children().first_child = child->next;
-            child->next->prev = nullptr;
-            child->next = nullptr;
-
-            // add the new child to the parent before the split node
-            if (node->prev) node->prev->next = newNode;            
-            else node->parent->children().first_child = newNode;
-            
-            newNode->prev = node->prev;
-            newNode->next = node;
-            node->prev = newNode;
-            node->parent->children().num_children++;
-
-            if (node->children().first_child->key <= newNode->key) {
-                // something went wrong!
-                std::cout << "ERROR!" << std::endl;
-            }
-
-
-            return true;
-        };
-        search_node*
-            MergeNodes(search_node* node1, search_node* node2) {
-            return nullptr;
-        };
-
-
-    };
-#else
     // Multi-threaded version of a B-Tree that uses a course-grained lock with parallel allocator to make it thread-safe. Nodes are at-risk of disposal once the lock is returned.
     // Attempts to speed-up searching using a binomial search within BTree nodes. In theory should benefit from larger maxChildrenPerNode values. 
     template< class objType, class keyType, int maxChildrenPerNode = 10>
@@ -4346,7 +3641,6 @@ namespace ebr {
         };
 
     };
-#endif
 
     template< class objType, class keyType>
     class epoch_map {
@@ -4580,7 +3874,69 @@ namespace ebr {
 
 };
 
+namespace GL {
+    class stopwatch_group {
+    protected:
+        GL::thread_object_no_default<GL::stopwatch> 
+            stopwatches;
+        GL::thread_object_no_default<std::vector<long double>>
+            time_results;
+    public:
+        ~stopwatch_group() {   
+            std::vector<long double> quantile;
+            time_results.for_each([&quantile](std::vector<long double> const& times) {                
+                quantile.insert(quantile.end(), times.begin(), times.end());
+            });
+            std::sort(quantile.begin(), quantile.end());
+            
+            if (quantile.size() > 3) {
 
+                int size = quantile.size();
+                int mid = size / 2;
+                double median;
+                median = size % 2 == 0 ? (quantile[mid] + quantile[mid - 1]) / 2 : quantile[mid];
+
+                std::vector<double> first;
+                std::vector<double> third;
+                first.resize(mid + 1);
+                third.resize(mid + 1);
+
+                for (int i = 0; i != mid; ++i)                
+                    first[i] = quantile[i];
+                
+                for (int i = mid; i != size; ++i)                
+                    third[i-mid] = quantile[i];
+                
+                double fst;
+                double trd;
+
+                int side_length = 0;
+
+                if (size % 2 == 0)
+                {
+                    side_length = size / 2;
+                }
+                else {
+                    side_length = (size - 1) / 2;
+                }
+
+                fst = (size / 2) % 2 == 0 ? (first[side_length / 2] / 2 + first[(side_length - 1) / 2]) / 2 : first[side_length / 2];
+                trd = (size / 2) % 2 == 0 ? (third[side_length / 2] / 2 + third[(side_length - 1) / 2]) / 2 : third[side_length / 2];
+
+                std::cout << GL::printf("Quartiles (25% / 50% / 75%): \t%f / %f / %f\n", (float)fst, (float)median, (float)trd);
+            }
+        };
+    public:
+        std::shared_ptr<void> debug_timer() {
+            return std::static_pointer_cast<void>(std::shared_ptr<int>(reinterpret_cast<int*>(1ull << 63ull), [startTime = clock::ns(), this](int*) -> void {
+                auto stopTime_s = static_cast<long double>(clock::ns() - startTime) / 1000000000.0;
+                this->time_results->push_back(stopTime_s);
+            }));
+        };
+
+    };
+
+};
 
 
 
@@ -4657,8 +4013,10 @@ int main() {
         if (1) {
             ebr::epoch_map<int, int>
                 tree;
-            if (auto timer = GL::stopwatch().debug_timer("epoch_map 1"); true) {
+            GL::stopwatch_group grp;
+            if (auto timer = GL::stopwatch::debug_timer("epoch_map 1"); true) {
                 GL::parallel::For(0, 1'000'000, [&](int i) {
+                    auto time = grp.debug_timer();
                     auto g{ tree.guard_critical_section() };
                     tree[i] = i;
                 });
@@ -4667,8 +4025,10 @@ int main() {
         if (1) {
             ebr::epoch_map<GL::value, int>
                 tree;
-            if (auto timer = GL::stopwatch().debug_timer("epoch_map 2"); true) {
+            GL::stopwatch_group grp;
+            if (auto timer = GL::stopwatch::debug_timer("epoch_map 2"); true) {
                 GL::parallel::For(0, 1'000'000, [&](int i) {
+                    auto time = grp.debug_timer();
                     auto g{ tree.guard_critical_section() };
                     tree[i % 10'000] = i;
                     tree.erase(i % 10'000);
@@ -4678,8 +4038,10 @@ int main() {
         if (1) {
             ebr::epoch_map<GL::value, int>
                 tree;
-            if (auto timer = GL::stopwatch().debug_timer("epoch_map 3"); true) {
+            GL::stopwatch_group grp;
+            if (auto timer = GL::stopwatch::debug_timer("epoch_map 3"); true) {
                 GL::parallel::For(0, 1'000'000, [&](int i) {
+                    auto time = grp.debug_timer();
                     tree.erase(i % 100);
                     tree[i % 100] = i; // protected (temporarily!) by the epoch-based protections.                     
                 });
@@ -4689,8 +4051,10 @@ int main() {
         if (1) {
             ebr::epoch_map<int, int>
                 tree;
-            if (auto timer = GL::stopwatch().debug_timer("epoch_map 1 linear"); true) {
+            GL::stopwatch_group grp;
+            if (auto timer = GL::stopwatch::debug_timer("epoch_map 1 linear"); true) {
                 for (auto i = 0; i < 1'000'000; ++i) {
+                    auto time = grp.debug_timer();
                     auto g{ tree.guard_critical_section() };
                     tree[i] = i;
                 };
@@ -4699,8 +4063,10 @@ int main() {
         if (1) {
             ebr::epoch_map<GL::value, int>
                 tree;
-            if (auto timer = GL::stopwatch().debug_timer("epoch_map 2 linear"); true) {
+            GL::stopwatch_group grp;
+            if (auto timer = GL::stopwatch::debug_timer("epoch_map 2 linear"); true) {
                 for (auto i = 0; i < 1'000'000; ++i) {
+                    auto time = grp.debug_timer();
                     auto g{ tree.guard_critical_section() };
                     tree[i % 10'000] = i;
                     tree.erase(i % 10'000);
@@ -4710,8 +4076,10 @@ int main() {
         if (1) {
             ebr::epoch_map<GL::value, int>
                 tree;
-            if (auto timer = GL::stopwatch().debug_timer("epoch_map 3 linear"); true) {
+            GL::stopwatch_group grp;
+            if (auto timer = GL::stopwatch::debug_timer("epoch_map 3 linear"); true) {
                 for (auto i = 0; i < 1'000'000; ++i) {
+                    auto time = grp.debug_timer();
                     tree.erase(i % 100);
                     tree[i % 100] = i; // protected (temporarily!) by the epoch-based protections.                     
                 };
@@ -4729,7 +4097,7 @@ int main() {
         //for (int i = 0; i < 100; ++i) {
         //    tree.Add((int)i, i);
         //}
-        if (auto timer = GL::stopwatch().debug_timer("epoch_btree"); true) {
+        if (auto timer = GL::stopwatch::debug_timer("epoch_btree"); true) {
             GL::parallel::For(0, 10'000'000, [&](int i) {
                 auto g{ tree.guard_critical_section() };
                 auto node = tree.Add((int)i, i);

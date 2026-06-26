@@ -23,6 +23,10 @@ namespace GL {
             ~Node() noexcept = default;
         };
 
+        static bool CAS(size_t* Destination, size_t& Comperand, size_t& Exchange) noexcept {
+            return InterlockedCompareExchangeNoFence(reinterpret_cast<volatile size_t*>(Destination), Exchange, Comperand) == Comperand;
+        };
+
         template<class T>
         union THead {
         public:
@@ -54,10 +58,6 @@ namespace GL {
             THead* Node(T* p) noexcept { m_bits.m_nABA++; m_bits.m_pNode = (uint64_t)p; return this; }
         };
 
-        static bool CAS(size_t* Destination, size_t& Comperand, size_t& Exchange) noexcept {
-            return InterlockedCompareExchangeNoFence(reinterpret_cast<volatile size_t*>(Destination), Exchange, Comperand) == Comperand;
-        };
-
         template<class T>
         static bool CAS(THead<T>& Head, T* Comperand, T* Exchange) noexcept {
             THead<T> Old, New; // Get an atomic copy of head and call it old.
@@ -73,7 +73,7 @@ namespace GL {
         };
 
         // pop pNode from head of list.
-        template<class T> __declspec(noinline) T* Pop(THead<T>& Head) noexcept {
+        template<class T> T* Pop(THead<T>& Head) noexcept {
             THead<T> Old, New; // Get an atomic copy of head and call it old.
             while (1) { // race loop                
                 New.m_n64 = (Old.m_n64 = Head.m_n64);
@@ -87,7 +87,7 @@ namespace GL {
         };
 
         // push pNode onto head of list. 
-        template<class T> __declspec(noinline) void Stack_Push(THead<T>& Head, T* pNode) noexcept {
+        template<class T> void Stack_Push(THead<T>& Head, T* pNode) noexcept {
             THead<T> Old, New;
             while (1) { // race loop                
                 New.m_n64 = Old.m_n64 = Head.m_n64; // Get an atomic copy of head and call it old. Copy old and call it new.                
