@@ -81,13 +81,6 @@ namespace GL {
             }
         };
         template <typename T> __forceinline T increment(T& rhs) {
-            //while (true) {
-            //    T old = rhs;
-            //    if (compare_exchange(rhs, old, old + 1)) {
-            //        return old + 1;
-            //    }
-            //}
-
             if constexpr (std::is_same_v<size_t, T>) {
                 return InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&rhs));
             }
@@ -105,14 +98,6 @@ namespace GL {
             }
         };
         template <typename T> __forceinline T decrement(T& rhs) {
-            //while (true) {
-            //    T old = rhs;
-            //    if (compare_exchange(rhs, old, old - 1)) {
-            //        return old - 1;
-            //    }
-            //}
-
-            
             if constexpr (std::is_same_v<size_t, T>) {
                 return InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&rhs));
             }
@@ -129,7 +114,23 @@ namespace GL {
                 return InterlockedDecrementNoFence(reinterpret_cast<volatile T*>(&rhs));
             }
         };
-
+        template <typename T> __forceinline T add(T& rhs, T add) {
+            if constexpr (std::is_same_v<size_t, T>) {
+                return InterlockedAddNoFence(reinterpret_cast<volatile size_t*>(&rhs), add);
+            }
+            else if constexpr (std::is_same_v<long long, T>) {
+                return InterlockedAddNoFence64(reinterpret_cast<volatile long long*>(&rhs), add);
+            }
+            else if constexpr (std::is_same_v<unsigned long, T> || std::is_same_v<unsigned int, T>) {
+                return InterlockedAddNoFence(reinterpret_cast<volatile unsigned long*>(&rhs), add);
+            }
+            else if constexpr (std::is_same_v<long, T> || std::is_same_v<int, T>) {
+                return InterlockedAddNoFence(reinterpret_cast<volatile long*>(&rhs), add);
+            }
+            else {
+                return InterlockedAddNoFence(reinterpret_cast<volatile T*>(&rhs), add);
+            }
+        };
     };
 
     // utilities
@@ -514,6 +515,8 @@ namespace GL {
         fast_shared_mutex mut;
 
     public:
+        using type = T;
+
         class locked {
         private:
             T& obj;

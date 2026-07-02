@@ -17,11 +17,13 @@ namespace GL {
         T const _default; // for initializing new thread objects
         std::function<void(T&)> _before_destruction; // optionally called before thread objects are destroyed.
         std::function<void(T&)> _after_construction; // optionally called after thread objects are created.
+        using type = T;
+
     private:
         mutable size_t _tls_size{ 0 };  
         mutable GL::atomic_allocator<T> _alloc;
         mutable atomic_vector<std::pair<size_t, T*>> _tls;
-
+        
         __declspec(noinline) auto* GetTLS() const {
             thread_local size_t _tl_index = 0; // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
             if (!_tl_index) _tl_index = GL::util::get_thread_id();
@@ -135,6 +137,7 @@ namespace GL {
     public:
         std::function<void(T&)> _before_destruction; // optionally called before thread objects are destroyed.
         std::function<void(T&)> _after_construction; // optionally called after thread objects are created.
+        using type = T;
 
     private:
         template <typename... Args>

@@ -1099,7 +1099,7 @@ namespace GL {
     __forceinline string printf(const char* format, ...) {
         va_list args;
         va_start(args, format);
-
+        
         // Determine the required buffer size
         int size = ::vsnprintf(nullptr, 0, format, args);
         va_end(args);
