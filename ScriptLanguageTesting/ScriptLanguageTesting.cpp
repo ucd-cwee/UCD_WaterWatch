@@ -4304,396 +4304,29 @@ namespace ebr {
     };
 
     template<class type>
-    class cweeDynamicBlock {
-    public:
-        type* 
-            GetMemory() const { return (type*)(((::byte*)this) + sizeof(cweeDynamicBlock<type>)); }
-        int								
-            GetSize() const { return abs(size); }
-        void							
-            SetSize(int s, bool isBaseBlock) { size = isBaseBlock ? -s : s; }
-        bool							
-            IsBaseBlock() const { return (size < 0); }
-        int								
-            size = 0;					// size in bytes of the block
-        cweeDynamicBlock<type>* 
-            prev = NULL;					// previous memory block
-        cweeDynamicBlock<type>* 
-            next = NULL;					// next memory block
-        typename bTree<cweeDynamicBlock<type>, int>::bTreeNode*
-            node = NULL;			// node in the B-Tree with free blocks
-        size_t
-            thread_id = 0;
-    };
-
-    template<class type, int baseBlockSize>
-    class cweeDynamicBlockAlloc {
-    public:
-        cweeDynamicBlockAlloc(ebr::fast_atomic_allocator<typename bTree<cweeDynamicBlock<type>, int>::bTreeNode, 128>* allocator = nullptr)
-        {
-            this->freeTree.nodeAllocator = allocator;
-            Clear(); 
-        };
-        ~cweeDynamicBlockAlloc() { 
-            Shutdown(); 
-        };
-
-        void 
-            SetAllocator(ebr::fast_atomic_allocator<typename bTree<cweeDynamicBlock<type>, int>::bTreeNode, 128>& allocator) {
-            this->freeTree.nodeAllocator = &allocator;
-        };
-        void							
-            Shutdown() {
-            cweeDynamicBlock<type>* block;
-            
-            for (block = lastBlock; block != NULL; block = block->prev) 
-                if (block->node == NULL) 
-                    FreeInternal(block);              
-
-            for (block = lastBlock; block != NULL; block = lastBlock) {
-                lastBlock = block->prev;
-                GL::mfree(block);
-            }
-
-            //for (block = firstBlock; block != NULL; block = block->next) 
-            //    if (block->node == NULL) 
-            //        FreeInternal(block);
-            //for (block = firstBlock; block != NULL; block = firstBlock) {
-            //    firstBlock = block->next;
-            //    GL::mfree(block);
-            //}
-
-            Clear();
-        };
-        void							
-            FreeEmptyBaseBlocks() {
-            cweeDynamicBlock<type>* block, * next;
-
-            for (block = firstBlock; block != NULL; block = next) {
-                next = block->next;
-
-                if (block->IsBaseBlock() && block->node != NULL && (next == NULL || next->IsBaseBlock())) {
-                    UnlinkFreeInternal(block);
-                    if (block->prev) {
-                        block->prev->next = block->next;
-                    }
-                    else {
-                        firstBlock = block->next;
-                    }
-                    if (block->next) {
-                        block->next->prev = block->prev;
-                    }
-                    else {
-                        lastBlock = block->prev;
-                    }
-                    numBaseBlocks--;
-                    baseBlockMemory -= block->GetSize() + (int)sizeof(cweeDynamicBlock<type>);
-                    GL::mfree(block);
-                }
-            }
-
-        };
-        type* 
-            Alloc(const int num, bool clearMemory = false) {
-            cweeDynamicBlock<type>* block;
-            if (num <= 0) return NULL;           
-            
-            numAllocs++;
-            block = AllocInternal(num);
-            if (block == NULL) {
-                return NULL;
-            }
-            block = ResizeInternal(block, num);
-            if (block == NULL) {
-                return NULL;
-            }
-            numUsedBlocks++;
-            usedBlockMemory += block->GetSize();
-
-            type* ptr = block->GetMemory();
-            if (clearMemory && std::is_pod<type>::value) {
-                ::memset((void*)ptr, 0, sizeof(type) * num);
-            }
-            return ptr;            
-        };
-        type* 
-            Resize(type* ptr, const int num, bool clearMemory = false) {
-            numResizes++;
-            if (ptr == NULL) {
-                return Alloc(num, clearMemory);
-            }
-            if (num <= 0) {
-                Free(ptr);
-                return NULL;
-            }
-            cweeDynamicBlock<type>* block = (cweeDynamicBlock<type>*) (((::byte*)ptr) - (int)sizeof(cweeDynamicBlock<type>));
-            usedBlockMemory -= block->GetSize();
-            block = ResizeInternal(block, num);
-            if (block == NULL) {
-                return NULL;
-            }
-            usedBlockMemory += block->GetSize();
-
-            type* p = block->GetMemory();
-            if (clearMemory && std::is_pod<type>::value) {
-                ::memset((void*)p, 0, sizeof(type) * num);
-            }
-            return p;
-        };
-        void  
-            Free(type* ptr) {
-            if (!ptr) { return; }
-            
-            cweeDynamicBlock<type>* block = (cweeDynamicBlock<type>*) (((::byte*)ptr) - (int)sizeof(cweeDynamicBlock<type>));
-
-            numFrees++;
-            numUsedBlocks--;
-            usedBlockMemory -= block->GetSize();
-            FreeInternal(block);
-        };        
-        static cweeDynamicBlock<type>* // get the block for a given allocated pointer. 
-            Block(type* ptr) {
-            return (cweeDynamicBlock<type>*) (((::byte*)ptr) - (int)sizeof(cweeDynamicBlock<type>));
-        };
-
-        int								
-            GetNumBaseBlocks() const {
-            return numBaseBlocks;
-        };
-        int								
-            GetBaseBlockMemory() const {
-            return baseBlockMemory;
-        };
-        int								
-            GetNumUsedBlocks() const {
-            return numUsedBlocks;
-        };
-        int								
-            GetUsedBlockMemory() const {
-            return usedBlockMemory;
-        };
-        int								
-            GetNumFreeBlocks() const {
-            return numFreeBlocks;
-        };
-        int								
-            GetFreeBlockMemory() const {
-            return freeBlockMemory;
-        };
-        int								
-            GetNumEmptyBaseBlocks() const {
-            int numEmptyBaseBlocks;
-            cweeDynamicBlock<type>* block;
-
-            numEmptyBaseBlocks = 0;
-            for (block = firstBlock; block != NULL; block = block->next) {
-                if (block->IsBaseBlock() && block->node != NULL && (block->next == NULL || block->next->IsBaseBlock())) {
-                    numEmptyBaseBlocks++;
-                }
-            }
-            return numEmptyBaseBlocks;
-        };
-
-    private:
-        cweeDynamicBlock<type>* 
-            firstBlock;				// first block in list in order of increasing address
-        cweeDynamicBlock<type>* 
-            lastBlock;				// last block in list in order of increasing address
-        bTree<cweeDynamicBlock<type>, int> 
-            freeTree;			// B-Tree with free memory blocks
-        int								
-            numBaseBlocks = 0;			// number of base blocks
-        int								
-            baseBlockMemory = 0;		// total memory in base blocks
-        int								
-            numUsedBlocks = 0;			// number of used blocks
-        int								
-            usedBlockMemory = 0;		// total memory in used blocks
-        int								
-            numFreeBlocks = 0;			// number of free blocks
-        int								
-            freeBlockMemory = 0;		// total memory in free blocks
-        int								
-            numAllocs = 0;
-        int								
-            numResizes = 0;
-        int								
-            numFrees = 0;
-
-        void							
-            Clear() {
-            firstBlock = NULL;
-            lastBlock = NULL;
-            numBaseBlocks = 0;
-            baseBlockMemory = 0;
-            numUsedBlocks = 0;
-            usedBlockMemory = 0;
-            numFreeBlocks = 0;
-            freeBlockMemory = 0;
-            numAllocs = 0;
-            numResizes = 0;
-            numFrees = 0;
-        };
-        cweeDynamicBlock<type>* 
-            AllocInternal(const int num) {
-            cweeDynamicBlock<type>* block;
-            int alignedBytes = (num * sizeof(type) + 15) & ~15;
-
-            block = freeTree.FindSmallestLargerEqual(alignedBytes);
-            if (block/* && block != NULL && block != nullptr*/) {
-                UnlinkFreeInternal(block);
-            }
-            else {
-                int allocSize = std::max(baseBlockSize, alignedBytes + (int)sizeof(cweeDynamicBlock<type>));
-
-                block = (cweeDynamicBlock<type>*)GL::malloc((size_t)allocSize);
-                block->SetSize(allocSize - (int)sizeof(cweeDynamicBlock<type>), true);
-                block->next = NULL;
-                block->prev = lastBlock;                
-                if (lastBlock) {
-                    lastBlock->next = block;
-                }
-                else {
-                    firstBlock = block;
-                }
-                lastBlock = block;
-                block->node = NULL;
-
-                numBaseBlocks++;
-                baseBlockMemory += allocSize;
-            }
-            block->thread_id = GL::util::get_thread_id();
-
-            return block;
-        };
-        cweeDynamicBlock<type>* 
-            ResizeInternal(cweeDynamicBlock<type>* block, const int num) {
-            int alignedBytes = (num * sizeof(type) + 15) & ~15;
-            // if the new size is larger
-            if (alignedBytes > block->GetSize()) {
-
-                cweeDynamicBlock<type>* nextBlock = block->next;
-
-                // try to annexate the next block if it's free
-                if (nextBlock && !nextBlock->IsBaseBlock() && nextBlock->node != NULL &&
-                    block->GetSize() + (int)sizeof(cweeDynamicBlock<type>) + nextBlock->GetSize() >= alignedBytes) {
-
-                    UnlinkFreeInternal(nextBlock);
-                    block->SetSize(block->GetSize() + (int)sizeof(cweeDynamicBlock<type>) + nextBlock->GetSize(), block->IsBaseBlock());
-                    block->next = nextBlock->next;
-                    if (nextBlock->next) {
-                        nextBlock->next->prev = block;
-                    }
-                    else {
-                        lastBlock = block;
-                    }
-                }
-                else {
-                    // allocate a new block and copy
-                    cweeDynamicBlock<type>* oldBlock = block;
-                    block = AllocInternal(num);
-                    if (block == NULL) {
-                        return NULL;
-                    }
-                    ::memcpy(block->GetMemory(), oldBlock->GetMemory(), oldBlock->GetSize());
-                    FreeInternal(oldBlock);
-                }
-            }
-
-            // if the unused space at the end of this block is large enough to hold a block with at least one element
-            if (block->GetSize() - alignedBytes - (int)sizeof(cweeDynamicBlock<type>) < (int)sizeof(type)) {
-                return block;
-            }
-
-            cweeDynamicBlock<type>* newBlock;
-
-            newBlock = (cweeDynamicBlock<type>*) (((::byte*)block) + (int)sizeof(cweeDynamicBlock<type>) + alignedBytes);
-            try {
-                newBlock->SetSize(block->GetSize() - alignedBytes - (int)sizeof(cweeDynamicBlock<type>), false);
-            }
-            catch (...) {}
-            newBlock->next = block->next;
-            newBlock->prev = block;
-            if (newBlock->next != NULL) {
-                newBlock->next->prev = newBlock;
-            }
-            else {
-                lastBlock = newBlock;
-            }
-            newBlock->node = NULL;
-            block->next = newBlock;
-            block->SetSize(alignedBytes, block->IsBaseBlock());
-
-            FreeInternal(newBlock);
-
-            return block;
-        };
-        void							
-            FreeInternal(cweeDynamicBlock<type>* block) {
-            // try to merge with a next free block
-            cweeDynamicBlock<type>* nextBlock = block->next;
-            if (nextBlock && !nextBlock->IsBaseBlock() && nextBlock->node != NULL) {
-                UnlinkFreeInternal(nextBlock);
-                block->SetSize(block->GetSize() + (int)sizeof(cweeDynamicBlock<type>) + nextBlock->GetSize(), block->IsBaseBlock());
-                block->next = nextBlock->next;
-                if (nextBlock->next) {
-                    nextBlock->next->prev = block;
-                }
-                else {
-                    lastBlock = block;
-                }
-            }
-
-            // try to merge with a previous free block
-            cweeDynamicBlock<type>* prevBlock = block->prev;
-            if (prevBlock && !prevBlock->IsBaseBlock() && prevBlock->node != NULL) {
-                UnlinkFreeInternal(prevBlock);
-                prevBlock->SetSize(prevBlock->GetSize() + (int)sizeof(cweeDynamicBlock<type>) + block->GetSize(), prevBlock->IsBaseBlock());
-                prevBlock->next = block->next;
-                if (block->next) {
-                    block->next->prev = prevBlock;
-                }
-                else {
-                    lastBlock = prevBlock;
-                }
-                LinkFreeInternal(prevBlock);
-            }
-            else {
-                LinkFreeInternal(block);
-            }
-        };
-        void							
-            LinkFreeInternal(cweeDynamicBlock<type>* block) {
-            block->node = freeTree.Add(block, block->GetSize());
-            numFreeBlocks++;
-            freeBlockMemory += block->GetSize();
-        };
-        void							
-            UnlinkFreeInternal(cweeDynamicBlock<type>* block) {
-            freeTree.Remove(block->node);
-            block->node = NULL;
-            numFreeBlocks--;
-            freeBlockMemory -= block->GetSize();
-        };
-    };
-
-    template<class type>
     class unsorted_list {
     public:
-        GL::atomic_vector<std::pair<type, bool>> 
+        //std::vector<std::pair<type, bool>> // 
+        GL::atomic_vector<std::pair<type, bool>>
             items;
         GL::fast_ticket_dispensor<false>
             tickets;
         // re-uses the position of previous slots as much as is possible. Returns the index or "ticket" for that item.
         size_t push_back(type&& rhs) {
             auto ticket = tickets.get_ticket();
-            items.get_or_make(ticket) = { std::forward<type>(rhs), true };
+            //if (items.size() <= ticket) items.resize(ticket + 16);
+            //items[ticket] = 
+            items.get_or_make(ticket) = 
+            { std::forward<type>(rhs), true };
             return ticket;
         };
         // re-uses the position of previous slots as much as is possible. Returns the index or "ticket" for that item.
         size_t push_back(type const& rhs) {
             auto ticket = tickets.get_ticket();
-            items.get_or_make(ticket) = { rhs, true };
+            //if (items.size() <= ticket) items.resize(ticket + 16);
+            //items[ticket] = 
+            items.get_or_make(ticket) = 
+            { rhs, true };
             return ticket;
         };
         type& operator[](size_t position) {
@@ -4728,7 +4361,7 @@ namespace ebr {
         class dynamic_block {
         public:
             type*
-                GetMemory() const { return (type*)(((::byte*)this) + sizeof(cweeDynamicBlock<type>)); }
+                GetMemory() const { return (type*)(((::byte*)this) + sizeof(dynamic_block)); }
             int
                 GetSize() const { return abs(size); }
             void
@@ -4748,6 +4381,10 @@ namespace ebr {
                 allocated_block_index = 0;
             int
                 size = 0; // size in bytes of the block
+            int
+                initialized_block_index = 0;
+            int 
+                num = 0;
         };
 
     private:
@@ -4755,6 +4392,8 @@ namespace ebr {
             freeTree;   // B-Tree with free memory blocks
         unsorted_list< dynamic_block* >
             allocated_blocks;
+        unsorted_list< dynamic_block* >
+            initialized_blocks;
 
     public:
         void
@@ -4762,6 +4401,13 @@ namespace ebr {
             this->freeTree.nodeAllocator = &allocator;
         };
         ~dynamic_allocator() {
+            if (!std::is_pod<type>::value) {                
+                initialized_blocks.unsafe_for_each([](dynamic_block* block) {
+                    type* ptr{ block->GetMemory() };
+                    for (int i = 0; i < block->num; ++i)
+                        (ptr + i)->~type();
+                });
+            }
             allocated_blocks.unsafe_for_each([](dynamic_block* block) {
                 GL::mfree(block);
             });
@@ -4788,7 +4434,12 @@ namespace ebr {
 
             if (std::is_pod<type>::value) 
                 ::memset((void*)ptr, 0, sizeof(type) * num);
-            
+            else {
+                block->num = num;
+                for (int i = 0; i < num; ++i) new (ptr + i) type();
+                block->initialized_block_index = initialized_blocks.push_back(block);
+            }
+
             return ptr;
         };
         void
@@ -4796,6 +4447,11 @@ namespace ebr {
             if (!ptr) { return; }
 
             dynamic_block* block = (dynamic_block*) (((::byte*)ptr) - (int)sizeof(dynamic_block));
+
+            if (!std::is_pod<type>::value) {
+                for (int i = 0; i < block->num; ++i) (ptr + i)->~type();
+                initialized_blocks.erase(block->initialized_block_index);
+            }
 
             FreeInternal(block);
         };
@@ -4815,10 +4471,11 @@ namespace ebr {
                 UnlinkFreeInternal(block);
             }
             else {
-                int allocSize = std::max(baseBlockSize, alignedBytes + (int)sizeof(cweeDynamicBlock<type>));
+                int allocSize = std::max(baseBlockSize, alignedBytes + (int)sizeof(dynamic_block));
 
                 block = (dynamic_block*)GL::malloc((size_t)allocSize);
-                block->SetSize(allocSize - (int)sizeof(cweeDynamicBlock<type>), true);
+
+                block->SetSize(allocSize - (int)sizeof(dynamic_block), true);
                 block->allocated_block_index = allocated_blocks.push_back(block);                
                 block->next = nullptr;
                 block->prev = nullptr;
@@ -4928,6 +4585,39 @@ namespace ebr {
 
     };
 
+    template<class type>
+    class parallel_dynamic_allocator {
+    protected:
+        ebr::fast_atomic_allocator<typename ebr::bTree<typename ebr::dynamic_allocator<type>::dynamic_block, int>::bTreeNode, 128>
+            allocator;
+        GL::thread_object_no_default < GL::shared_lockable<ebr::dynamic_allocator<type>> >
+            alloc;
+
+    public:
+        parallel_dynamic_allocator() 
+            : allocator()
+            , alloc()
+        {
+            alloc._after_construction = [this](GL::shared_lockable<ebr::dynamic_allocator<type>>& tree) { tree.lock()->SetAllocator(this->allocator); };
+        };
+        parallel_dynamic_allocator(parallel_dynamic_allocator const&) = delete;
+        parallel_dynamic_allocator(parallel_dynamic_allocator &&) noexcept = delete;
+        parallel_dynamic_allocator& operator=(parallel_dynamic_allocator const&) = delete;
+        parallel_dynamic_allocator& operator=(parallel_dynamic_allocator&&) noexcept = delete;
+        ~parallel_dynamic_allocator() = default;
+        type*
+            Alloc(const int num) {
+            // type* ptr = 
+                return alloc->lock()->Alloc(num);
+            //typename ebr::dynamic_allocator<type>::Block(ptr)->thread_id = GL::util::get_thread_id();
+            //return ptr;
+        };
+        void
+            Free(type* ptr) {
+            alloc[ebr::dynamic_allocator<type>::Block(ptr)->thread_id].lock()->Free(ptr);
+        };
+
+    };
 };
 
 namespace GL {
@@ -5095,29 +4785,86 @@ int main() {
             //    }
             //}
 
-            if (auto timer = GL::stopwatch::debug_timer("DynamicBlockAlloc"); true) {
+            if (auto timer = GL::stopwatch::debug_timer("parallel_dynamic_allocator float"); true) {
+                ebr::parallel_dynamic_allocator<float> allocator;
+
+                std::vector<float*> ptrs(2'000, nullptr);
+                if (1) {
+                    try {
+                        GL::parallel::For(0, 1'000'000, [&](int i) {
+                            auto* ptr = allocator.Alloc((int)GL::util::rand_fast(1 << 4, 1 << 16));
+                            allocator.Free(ptr);
+                            });
+                        GL::parallel::For_Each(ptrs, [&](float*& p) {
+                            p = allocator.Alloc((int)GL::util::rand_fast(1 << 4, 1 << 16));
+                            });
+                        //GL::parallel::For_Each(ptrs, [&](float*& p) {
+                        //    allocator.Free(p);
+                        //    });
+                    }
+                    catch (std::runtime_error const& rte) {
+                        std::cout << rte.what() << std::endl;
+                        std::rethrow_exception(std::current_exception());
+                    }
+                }
+            }
+
+            if (auto timer = GL::stopwatch::debug_timer("new/delete float"); true) {
                 ebr::fast_atomic_allocator<typename ebr::bTree<ebr::dynamic_allocator<float>::dynamic_block, int>::bTreeNode, 128> allocator;
                 GL::thread_object_no_default < GL::shared_lockable<ebr::dynamic_allocator<float>> > alloc;
                 alloc._after_construction = [&allocator](GL::shared_lockable<ebr::dynamic_allocator<float>>& tree) { tree.lock()->SetAllocator(allocator); };
 
-                std::vector<float*> ptrs(1'000, nullptr);
-                while (1) {
+                std::vector<float*> ptrs(2'000, nullptr);
+                if (1) {
                     GL::parallel::For(0, 1'000'000, [&](int i) {
-                        auto* ptr = alloc->lock()->Alloc((int)GL::util::rand_fast(1 << 4, 1 << 16));
-                        using T = typename typename std::decay_t<decltype(alloc)>::type ::type;
-                        alloc[T::Block(ptr)->thread_id].lock()->Free(ptr);
-                        // if (i % 1'000 == 0) alloc->lock()->FreeEmptyBaseBlocks();
-                    });                    
-                    GL::parallel::For(0, 1'000, [&](int i) {
-                        ptrs[i] = alloc->lock()->Alloc((int)GL::util::rand_fast(1 << 4, 1 << 16));
-                        *ptrs[i] = i;
+                        auto* ptr = reinterpret_cast<float*>(GL::malloc(GL::util::rand_fast(1 << 4, 1 << 16) * sizeof(float)));
+                        GL::mfree(ptr);
                     });
-                    GL::parallel::For(0, 1'000, [&](int i) {
-                        using T = typename typename std::decay_t<decltype(alloc)>::type::type;
-                        alloc[T::Block(ptrs[i])->thread_id].lock()->Free(ptrs[i]);
+                    GL::parallel::For_Each(ptrs, [&](float*& p) {
+                        p = reinterpret_cast<float*>(GL::malloc(GL::util::rand_fast(1 << 4, 1 << 16) * sizeof(float)));
+                    });
+                    GL::parallel::For_Each(ptrs, [&](float*& p) {
+                        GL::mfree(p);
                     });
                 }
+            }
 
+            if (auto timer = GL::stopwatch::debug_timer("parallel_dynamic_allocator std::string"); true) {
+                ebr::parallel_dynamic_allocator<std::string> allocator;
+
+                std::vector<std::string*> ptrs(2'000, nullptr);
+                if (1) {
+                    GL::parallel::For(0, 1'000'000, [&](int i) {
+                        auto* ptr = allocator.Alloc((int)GL::util::rand_fast(1 << 4, 1 << 10));
+                        allocator.Free(ptr);
+                    });
+                    GL::parallel::For_Each(ptrs, [&](std::string*& p) {
+                        p = allocator.Alloc((int)GL::util::rand_fast(1 << 4, 1 << 10));
+                        *p = "TESTING";
+                    });
+                    //GL::parallel::For_Each(ptrs, [&](std::string*& p) {
+                    //    allocator.Free(p);
+                    //});
+                }
+            }
+
+            if (auto timer = GL::stopwatch::debug_timer("new/delete std::string"); true) {
+                std::vector<std::string*> ptrs(2'000, nullptr);
+                if (1) {
+                    GL::parallel::For(0, 1'000'000, [&](int i) {
+                        int n = GL::util::rand_fast(1 << 4, 1 << 10);
+                        auto* ptr = new std::string[n];
+                        delete[] ptr;
+                    });
+                    GL::parallel::For_Each(ptrs, [&](std::string*& p) {
+                        int n = GL::util::rand_fast(1 << 4, 1 << 10);
+                        p = new std::string[n];
+                        *p = "TESTING";
+                    });
+                    GL::parallel::For_Each(ptrs, [&](std::string*& p) {
+                        delete[] p;
+                    });
+                }
             }
 
 
