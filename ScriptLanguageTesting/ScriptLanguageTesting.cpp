@@ -4303,61 +4303,56 @@ namespace ebr {
 
     };
 
-    template<class type>
-    class unsorted_list {
-    public:
-        //std::vector<std::pair<type, bool>> // 
+    // An unsorted list of items. Items, when inserted, are given a unique (non-contiguous) index to access them later. Erasing items allows for the re-use of their index in the future.
+    // Insertion, access, and erasure are all atomic actions.
+    // Memory corruption is not prevented if attempting to access an index after it has been erased. 
+    template<class type> class atomic_bag {
+    private:
         GL::atomic_vector<std::pair<type, bool>>
             items;
-        GL::fast_ticket_dispensor<false>
+        GL::ticket_dispensor<false>
             tickets;
+
+    public:
         // re-uses the position of previous slots as much as is possible. Returns the index or "ticket" for that item.
         size_t push_back(type&& rhs) {
             auto ticket = tickets.get_ticket();
-            //if (items.size() <= ticket) items.resize(ticket + 16);
-            //items[ticket] = 
-            items.get_or_make(ticket) = 
-            { std::forward<type>(rhs), true };
+            items.get_or_make(ticket) = { std::forward<type>(rhs), true };
             return ticket;
         };
         // re-uses the position of previous slots as much as is possible. Returns the index or "ticket" for that item.
         size_t push_back(type const& rhs) {
             auto ticket = tickets.get_ticket();
-            //if (items.size() <= ticket) items.resize(ticket + 16);
-            //items[ticket] = 
-            items.get_or_make(ticket) = 
-            { rhs, true };
+            items.get_or_make(ticket) = { rhs, true };
             return ticket;
         };
+        // accessor using a valid position or ticket value.
         type& operator[](size_t position) {
             return items[position];
         };
+        // accessor using a valid position or ticket value.
         type const& operator[](size_t position) const {
             return items[position];
         };
-        // returns a position for re-use later. May not destroy the object until the position is re-used or until the list is destroyed. 
+        // returns a position for re-use later. May not destroy the object until the position is re-used or until the list is destroyed. Thread-safe. 
         void erase(size_t position) {
             items.at(position).second = false;
             tickets.return_ticket(position);
         };
-
-        template <typename F> 
-        void unsafe_for_each(F const& func) {
+        // for-each loop on the current, valid items. Not thread-safe. 
+        template <typename F> void unsafe_for_each(F const& func) {
             for (auto& x : items) {
                 if (x.second) {
                     func(x.first);
                 }
             }
         };
-
     };
 
-    template<class type>
+    // non-atomic, non-thread-safe allocator that can allocate arrays of items (e.g. 128 floats, 1024 strings, etc.).
+    template<class type, int baseBlockSize = 1024 * sizeof(type)>
     class dynamic_allocator {
     public:
-        int baseBlockSize = 1024 * sizeof(type);
-        // using type = float;
-
         class dynamic_block {
         public:
             type*
@@ -4390,16 +4385,26 @@ namespace ebr {
     private:
         bTree<dynamic_block, int>
             freeTree;   // B-Tree with free memory blocks
-        unsorted_list< dynamic_block* >
+        atomic_bag< dynamic_block* >
             allocated_blocks;
-        unsorted_list< dynamic_block* >
+        atomic_bag< dynamic_block* >
             initialized_blocks;
 
     public:
-        void
+        void // required to set the node allocator before first use. 
             SetAllocator(ebr::fast_atomic_allocator<typename bTree<dynamic_block, int>::bTreeNode, 128>& allocator) {
             this->freeTree.nodeAllocator = &allocator;
         };
+        static dynamic_block* // get the block for a given allocated pointer. 
+            Block(type* ptr) {
+            return (dynamic_block*)(((::byte*)ptr) - (int)sizeof(dynamic_block));
+        };
+
+        dynamic_allocator() = default;
+        dynamic_allocator(dynamic_allocator const&) = delete;
+        dynamic_allocator(dynamic_allocator &&) noexcept = delete;
+        dynamic_allocator& operator=(dynamic_allocator const&) = delete;
+        dynamic_allocator& operator=(dynamic_allocator&&) noexcept = delete;
         ~dynamic_allocator() {
             if (!std::is_pod<type>::value) {                
                 initialized_blocks.unsafe_for_each([](dynamic_block* block) {
@@ -4412,8 +4417,10 @@ namespace ebr {
                 GL::mfree(block);
             });
         };
-        type*
-            Alloc(const int num) {
+
+    public:
+        template <typename Lock, typename Unlock> type*
+            Alloc(const int num, Lock const& lock, Unlock const& unlock) {
             dynamic_block
                 *block;
             type
@@ -4422,6 +4429,8 @@ namespace ebr {
             if (num <= 0) 
                 return nullptr;
             
+            lock();
+
             block = AllocInternal(num);
             if (block == nullptr) 
                 return nullptr;
@@ -4429,6 +4438,8 @@ namespace ebr {
             block = ResizeInternal(block, num);
             if (block == nullptr) 
                 return nullptr;
+
+            unlock();
 
             ptr = block->GetMemory();
 
@@ -4442,8 +4453,8 @@ namespace ebr {
 
             return ptr;
         };
-        void
-            Free(type* ptr) {
+        template <typename Lock, typename Unlock> void
+            Free(type* ptr, Lock const& lock, Unlock const& unlock) {
             if (!ptr) { return; }
 
             dynamic_block* block = (dynamic_block*) (((::byte*)ptr) - (int)sizeof(dynamic_block));
@@ -4453,11 +4464,11 @@ namespace ebr {
                 initialized_blocks.erase(block->initialized_block_index);
             }
 
+            lock();
+
             FreeInternal(block);
-        };
-        static dynamic_block* // get the block for a given allocated pointer. 
-            Block(type* ptr) {
-            return (dynamic_block*) (((::byte*)ptr) - (int)sizeof(dynamic_block));
+
+            unlock();
         };
 
     private:
@@ -4585,12 +4596,13 @@ namespace ebr {
 
     };
 
-    template<class type>
+    // thread-safe allocator that can allocate arrays of items (e.g. 128 floats, 1024 strings, etc.).
+    template<class type, int baseBlockSize = 1024 * sizeof(type)>
     class parallel_dynamic_allocator {
     protected:
-        ebr::fast_atomic_allocator<typename ebr::bTree<typename ebr::dynamic_allocator<type>::dynamic_block, int>::bTreeNode, 128>
+        ebr::fast_atomic_allocator<typename ebr::bTree<typename ebr::dynamic_allocator<type, baseBlockSize>::dynamic_block, int>::bTreeNode, 128>
             allocator;
-        GL::thread_object_no_default < GL::shared_lockable<ebr::dynamic_allocator<type>> >
+        GL::thread_object_no_default < std::pair<ebr::dynamic_allocator<type, baseBlockSize>, GL::fast_exclusive_mutex> >
             alloc;
 
     public:
@@ -4598,26 +4610,38 @@ namespace ebr {
             : allocator()
             , alloc()
         {
-            alloc._after_construction = [this](GL::shared_lockable<ebr::dynamic_allocator<type>>& tree) { tree.lock()->SetAllocator(this->allocator); };
+            alloc._after_construction = [this](auto& tree) {
+                tree.first.SetAllocator(this->allocator);
+            };
         };
         parallel_dynamic_allocator(parallel_dynamic_allocator const&) = delete;
         parallel_dynamic_allocator(parallel_dynamic_allocator &&) noexcept = delete;
         parallel_dynamic_allocator& operator=(parallel_dynamic_allocator const&) = delete;
         parallel_dynamic_allocator& operator=(parallel_dynamic_allocator&&) noexcept = delete;
         ~parallel_dynamic_allocator() = default;
+
+    public:
         type*
             Alloc(const int num) {
-            // type* ptr = 
-                return alloc->lock()->Alloc(num);
-            //typename ebr::dynamic_allocator<type>::Block(ptr)->thread_id = GL::util::get_thread_id();
-            //return ptr;
+            auto& Alloc = *alloc;
+            return Alloc.first.Alloc(num, [&Alloc](void)->void {
+                Alloc.second.lock();
+            }, [&Alloc](void)->void {
+                Alloc.second.unlock();
+            });
         };
         void
             Free(type* ptr) {
-            alloc[ebr::dynamic_allocator<type>::Block(ptr)->thread_id].lock()->Free(ptr);
+            auto& Alloc = alloc[ebr::dynamic_allocator<type, baseBlockSize>::Block(ptr)->thread_id];
+            Alloc.first.Free(ptr, [&Alloc](void)->void {
+                Alloc.second.lock();
+            }, [&Alloc](void)->void {
+                Alloc.second.unlock();
+            });
         };
 
     };
+
 };
 
 namespace GL {
@@ -4627,6 +4651,7 @@ namespace GL {
             stopwatches;
         GL::thread_object_no_default<std::vector<GL::nanosecond>>
             time_results;
+
     public:
         ~stopwatch_group() {   
             std::vector<GL::nanosecond> quantile;
@@ -4686,6 +4711,7 @@ namespace GL {
                 // std::cout << "Min/25%/50%/75%/Max: [ " + quantile[0].to_string().add_to_delim(fst.to_string(), " / ").add_to_delim(median.to_string(), " / ").add_to_delim(trd.to_string(), " / ").add_to_delim(quantile[quantile.size()-1].to_string(), " / ") + " ]\n";
             }
         };
+
     public:
         std::shared_ptr<void> debug_timer() {
             return std::static_pointer_cast<void>(std::shared_ptr<int>(reinterpret_cast<int*>(1ull << 63ull), [startTime = clock::ns(), this](int*) -> void {
@@ -4809,7 +4835,7 @@ int main() {
                 }
             }
 
-            if (auto timer = GL::stopwatch::debug_timer("new/delete float"); true) {
+            if (auto timer = GL::stopwatch::debug_timer("new/delete float"); false) {
                 ebr::fast_atomic_allocator<typename ebr::bTree<ebr::dynamic_allocator<float>::dynamic_block, int>::bTreeNode, 128> allocator;
                 GL::thread_object_no_default < GL::shared_lockable<ebr::dynamic_allocator<float>> > alloc;
                 alloc._after_construction = [&allocator](GL::shared_lockable<ebr::dynamic_allocator<float>>& tree) { tree.lock()->SetAllocator(allocator); };
@@ -4848,7 +4874,7 @@ int main() {
                 }
             }
 
-            if (auto timer = GL::stopwatch::debug_timer("new/delete std::string"); true) {
+            if (auto timer = GL::stopwatch::debug_timer("new/delete std::string"); false) {
                 std::vector<std::string*> ptrs(2'000, nullptr);
                 if (1) {
                     GL::parallel::For(0, 1'000'000, [&](int i) {

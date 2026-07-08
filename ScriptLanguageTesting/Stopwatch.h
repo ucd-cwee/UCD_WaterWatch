@@ -49,23 +49,29 @@ namespace GL {
 
 		static std::shared_ptr<void> debug_timer() {
 			return std::static_pointer_cast<void>(std::shared_ptr<int>(reinterpret_cast<int*>(1ull << 63ull), [startTime = clock::ns()](int*) -> void {
-				auto stopTime = static_cast<long double>(clock::ns() - startTime) / 1000000000.0;
-				std::string to_print = std::to_string(stopTime) + " s\n";
-				std::cout << to_print;
+				long long NS = clock::ns() - startTime;
+				if (NS >= 3000) {
+					auto stopTime = static_cast<long double>(NS) / 1000000000.0;
+					std::string to_print = std::to_string(stopTime) + " s\n";
+					std::cout << to_print;
+				}
 			}));
 		};
 
 		template <size_t N>
 		__forceinline static std::shared_ptr<void> debug_timer(const char(&additional_message_content)[N]) {
 			return std::static_pointer_cast<void>(std::shared_ptr<int>(reinterpret_cast<int*>(1ull << 63ull), [startTime = clock::ns(), additional_message = additional_message_content](int*) -> void {
-				auto stopTime = static_cast<long double>(clock::ns() - startTime) / 1000000000.0;
-				if constexpr (N == 0) {
-					std::string to_print = std::to_string(stopTime) + " s\n";
-					std::cout << to_print;
-				}
-				else {
-					std::string to_print = std::string(additional_message) + ": " + std::to_string(stopTime) + " s\n";
-					std::cout << to_print;
+				long long NS = clock::ns() - startTime;
+				if (NS >= 3000) {
+					auto stopTime = static_cast<long double>(NS) / 1000000000.0;
+					if constexpr (N == 0) {
+						std::string to_print = std::to_string(stopTime) + " s\n";
+						std::cout << to_print;
+					}
+					else {
+						std::string to_print = std::string(additional_message) + ": " + std::to_string(stopTime) + " s\n";
+						std::cout << to_print;
+					}
 				}
 			}));
 		};
@@ -73,14 +79,17 @@ namespace GL {
 		template<typename T>
 		__forceinline static std::shared_ptr<void> debug_timer(T const& additional_message_content) {
 			return std::static_pointer_cast<void>(std::shared_ptr<int>(reinterpret_cast<int*>(1ull << 63ull), [startTime = clock::ns(), additional_message = std::to_string(additional_message_content)](int*) -> void {
-				auto stopTime = static_cast<long double>(clock::ns() - startTime) / 1000000000.0;
-				if (additional_message.empty()) {
-					std::string to_print = std::to_string(stopTime) + " s\n";
-					std::cout << to_print;
-				}
-				else {
-					std::string to_print = additional_message + ": " + std::to_string(stopTime) + " s\n";
-					std::cout << to_print;
+				long long NS = clock::ns() - startTime;
+				if (NS >= 3000) {
+					auto stopTime = static_cast<long double>(NS) / 1000000000.0;
+					if (additional_message.empty()) {
+						std::string to_print = std::to_string(stopTime) + " s\n";
+						std::cout << to_print;
+					}
+					else {
+						std::string to_print = additional_message + ": " + std::to_string(stopTime) + " s\n";
+						std::cout << to_print;
+					}
 				}
 			}));
 		};

@@ -503,6 +503,34 @@ namespace GL {
             return false;
         };
     };
+
+    class fast_exclusive_mutex {
+    private:
+        RTL_CRITICAL_SECTION mut;
+
+    public:
+        fast_exclusive_mutex() : mut{ 0 } {
+            InitializeCriticalSection(&mut);
+        };
+        fast_exclusive_mutex(fast_exclusive_mutex const&) : mut{ 0 } {
+            InitializeCriticalSection(&mut);
+        };
+        fast_exclusive_mutex(fast_exclusive_mutex&&) noexcept : mut{ 0 } {
+            InitializeCriticalSection(&mut);
+        };
+        fast_exclusive_mutex& operator=(fast_exclusive_mutex const&) { return *this; };
+        fast_exclusive_mutex& operator=(fast_exclusive_mutex&&) noexcept { return *this; };
+        ~fast_exclusive_mutex() noexcept {
+            DeleteCriticalSection(&mut);
+        };
+
+        void lock() {
+            EnterCriticalSection(&mut);
+        };
+        void unlock() {
+            LeaveCriticalSection(&mut);
+        };
+    };
 };
 
 // Good Language namespace
