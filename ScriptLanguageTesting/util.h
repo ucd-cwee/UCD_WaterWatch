@@ -176,6 +176,13 @@ namespace GL {
         double rand_fast(double max);
         // min..max or max..min (faster, but not truly random)
         double rand_fast(double min, double max);
+        // 0..1
+        double rand_very_fast();
+        // 0..max or max..0
+        double rand_very_fast(double max);
+        // min..max or max..min
+        double rand_very_fast(double min, double max);
+
 
         struct type_hash_impl {
             static GL::type_hash_t get_next_ticket(size_t hash);

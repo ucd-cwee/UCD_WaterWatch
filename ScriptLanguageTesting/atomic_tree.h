@@ -1162,7 +1162,7 @@ namespace GL {
 
 	// Multi-threaded version of a B-Tree that uses a course-grained lock with parallel allocator to make it thread-safe. Nodes are at-risk of disposal once the lock is returned.
 	// Attempts to speed-up searching using a binomial search within BTree nodes. In theory should benefit from larger maxChildrenPerNode values. 
-	template< class objType, class keyType, int maxChildrenPerNode >
+	template< class objType, class keyType, int maxChildrenPerNode = 10 >
 	class binary_search_tree {
 	public:
 		struct binary_search_treeNode {

@@ -119,17 +119,6 @@ namespace GL {
 //            return clock::ms();
 //#endif
 //        };
-        static long long _epoch = 0;
-        struct Wrap {
-            static void UpdateEpoch(void) {
-                InterlockedExchangeNoFence64(reinterpret_cast<volatile long long*>(&_epoch), clock::ms());
-                // InterlockedExchange64(reinterpret_cast<volatile long long*>(&_epoch), clock::ms());
-            };
-        };
-        static Taskable<Wrap::UpdateEpoch> _update_thread;
-        long long get_current_epoch() {            
-            return _epoch;
-        };
 
         size_t get_actual_unique_thread_id() {
             thread_local size_t out{ GL::util::inline_hash(GL::util::get_current_epoch(), std::this_thread::get_id()) };
@@ -166,7 +155,7 @@ namespace GL {
                     static constexpr result_type(min)() { return 0; }
                     static constexpr result_type(max)() { return UINT32_MAX; }
 
-                    result_type operator()() noexcept {
+                    __declspec(noinline) result_type operator()() noexcept {
                         return xorshift32(&m_state);
                         // return xorshift128(&m_state);
                     };
@@ -188,7 +177,7 @@ namespace GL {
 
                         std::atomic<uint32_t> a;
                     }; /* The state must be initialized to non-zero */
-                    static uint32_t xorshift32(xorshift32_state* state) {
+                    __declspec(noinline) static uint32_t xorshift32(xorshift32_state* state) {
                         /* Algorithm "xor" from p. 4 of Marsaglia, "Xorshift RNGs" */
                         uint32_t x = state->a;
                         x ^= x << 13;
@@ -295,12 +284,15 @@ namespace GL {
                     Random_Impl();
                 };
                 double Random(double t1 = 0.0, double t2 = 1.0) const noexcept { return Random_HighRes(t1, t2); };
-                double FastRandom(double t1 = 0.0, double t2 = 1.0) const noexcept { return FastRandom_HighRes(t1, t2); };
+                __declspec(noinline) double FastRandom(double t1 = 0.0, double t2 = 1.0) const noexcept { return FastRandom_HighRes(t1, t2); };
+                __declspec(noinline) double random_base() const noexcept {
+                    return FastRandom_Impl();
+                };
             private:
                 double Random_Impl() const noexcept {
                     return u(rand);
                 };
-                double FastRandom_Impl() const noexcept {
+                __declspec(noinline) double FastRandom_Impl() const noexcept {
                     return u_fast.operator()(*randFast);
                 };
                 double Random_HighRes(double t1, double t2) const noexcept {
@@ -309,7 +301,7 @@ namespace GL {
                     t1 += t2;
                     return t1;
                 };
-                double FastRandom_HighRes(double t1, double t2) const noexcept {
+                __declspec(noinline) double FastRandom_HighRes(double t1, double t2) const noexcept {
                     t2 -= t1;
                     t2 *= FastRandom_Impl();
                     t1 += t2;
@@ -349,6 +341,34 @@ namespace GL {
             if (max >= min) return rand_impl().FastRandom(min, max);
             else return rand_impl().FastRandom(max, min);
         };
+
+        static long long _epoch = 0;
+        static double _global_random = 0;
+        struct Wrap {
+            static void UpdateEpoch(void) {
+                InterlockedExchangeNoFence64(reinterpret_cast<volatile long long*>(&_epoch), clock::ms());
+                double new_rand = rand_impl().random_base();
+                InterlockedExchangeNoFence64(reinterpret_cast<volatile long long*>(&_global_random), *reinterpret_cast<long long*>(&new_rand));
+            };
+        };
+        static Taskable<Wrap::UpdateEpoch> _update_thread;
+        long long get_current_epoch() {
+            return _epoch;
+        };
+        // 0..1
+        double rand_very_fast() {
+            return _global_random;
+        };
+        // 0..max or max..0
+        double rand_very_fast(double max) {
+            return max * _global_random;
+        };
+        // min..max or max..min
+        double rand_very_fast(double min, double max) {
+            return min + ((max - min) * _global_random);
+        };
+
+
 
         GL::type_hash_t type_hash_impl::get_next_ticket(size_t original_hash) {
             static GL::ticket_dispensor builtin_ticket_dispensor{};

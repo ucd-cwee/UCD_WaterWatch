@@ -11,7 +11,7 @@ namespace GL {
     private:
         GL::atomic_vector<std::pair<type, bool>>
             items;
-        GL::ticket_dispensor<false>
+        GL::fast_ticket_dispensor<false>
             tickets;
 
     public:
