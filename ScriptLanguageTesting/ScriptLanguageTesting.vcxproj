@@ -193,6 +193,8 @@
   <ItemGroup>
     <ClInclude Include="aba_problem.h" />
     <ClInclude Include="atomic_allocator.h" />
+    <ClInclude Include="atomic_bag.h" />
+    <ClInclude Include="atomic_epoch_allocator.h" />
     <ClInclude Include="atomic_maps.h" />
     <ClInclude Include="atomic_numbers.h" />
     <ClInclude Include="atomic_queue.h" />
@@ -203,6 +205,8 @@
     <ClInclude Include="basic_atomic_allocator.h" />
     <ClInclude Include="constexpr_math.h" />
     <ClInclude Include="datetime.h" />
+    <ClInclude Include="array_allocator.h" />
+    <ClInclude Include="epoch_map.h" />
     <ClInclude Include="functions.h" />
     <ClInclude Include="multithreaded_allocator.h" />
     <ClInclude Include="Parallel.h" />

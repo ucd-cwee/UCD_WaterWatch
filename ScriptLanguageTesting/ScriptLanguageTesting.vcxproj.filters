@@ -37,5 +37,9 @@
     <ClInclude Include="basic_atomic_allocator.h" />
     <ClInclude Include="ScriptLanguage_V2.h" />
     <ClInclude Include="multithreaded_allocator.h" />
+    <ClInclude Include="atomic_bag.h" />
+    <ClInclude Include="atomic_epoch_allocator.h" />
+    <ClInclude Include="epoch_map.h" />
+    <ClInclude Include="array_allocator.h" />
   </ItemGroup>
 </Project>
