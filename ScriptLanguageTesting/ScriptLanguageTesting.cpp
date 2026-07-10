@@ -2146,7 +2146,7 @@ int main() {
                 }
             }
 
-            if (auto timer = GL::stopwatch::debug_timer("new/delete std::string"); false) {
+            if (auto timer = GL::stopwatch::debug_timer("new/delete std::string"); true) {
                 std::vector<std::string*> ptrs(2'000, nullptr);
                 if (1) {
                     GL::parallel::For(0, 1'000'000, [&](int i) {
@@ -2165,9 +2165,145 @@ int main() {
                 }
             }
 
+            if (auto timer = GL::stopwatch::debug_timer("parallel_array_allocator std::string (linear)"); true) {
+                GL::parallel_array_allocator<std::string>
+                    allocator;
+
+                std::vector<std::string*> ptrs(2'000, nullptr);
+                if (1) {
+                    for (int i = 0; i < 1'000'000; ++i) {
+                        auto* ptr = allocator.alloc((int)GL::util::rand_very_fast(1 << 4, 1 << 10));
+                        allocator.free(ptr);
+                    };
+                    for (std::string*& p : ptrs) {
+                        p = allocator.alloc((int)GL::util::rand_very_fast(1 << 4, 1 << 10));
+                    };
+                }
+            }
+
+            if (auto timer = GL::stopwatch::debug_timer("parallel_generic_array_allocator std::string (linear)"); true) {
+                GL::parallel_generic_array_allocator
+                    allocator;
+
+                std::vector<std::string*> ptrs(2'000, nullptr);
+                if (1) {
+                    for (int i = 0; i < 1000000; ++i) {
+                        auto* ptr = allocator.alloc<std::string>((int)GL::util::rand_very_fast(1 << 4, 1 << 10));
+                        allocator.free(ptr);
+                    };
+                    for (std::string*& p : ptrs) {
+                        p = allocator.alloc<std::string>((int)GL::util::rand_very_fast(1 << 4, 1 << 10));
+                    };
+                }
+            }
+
+            if (auto timer = GL::stopwatch::debug_timer("new/delete std::string (linear)"); true) {
+                std::vector<std::string*> ptrs(2'000, nullptr);
+                if (1) {
+                    for (int i = 0; i < 1000000; ++i) {
+                        int n = GL::util::rand_very_fast(1 << 4, 1 << 10);
+                        auto* ptr = new std::string[n];
+                        delete[] ptr;
+                    };
+                    for (std::string*& p : ptrs) {
+                        int n = GL::util::rand_very_fast(1 << 4, 1 << 10);
+                        p = new std::string[n];
+                    };
+                    for (std::string*& p : ptrs) {
+                        delete[] p;
+                    };
+                }
+            }
+
+            if (auto timer = GL::stopwatch::debug_timer("parallel_generic_singleton_array_allocator GL::epoch_map<int, int> singleton (linear)"); true) {
+                GL::parallel_generic_singleton_array_allocator
+                    allocator;
+
+                std::vector<GL::epoch_map<int, int>*> ptrs(2'000, nullptr);
+                if (1) {
+                    for (int i = 0; i < 1000000; ++i) {
+                        auto* ptr = allocator.alloc<GL::epoch_map<int, int>>();
+                        allocator.free(ptr);
+                    };
+                    for (auto*& p : ptrs) {
+                        p = allocator.alloc<GL::epoch_map<int, int>>();
+                    };
+                    for (auto*& p : ptrs) {
+                        allocator.free(p);
+                    };
+                }
+            }
 
 
+            if (auto timer = GL::stopwatch::debug_timer("parallel_generic_singleton_array_allocator GL::epoch_map<int, int> singleton"); true) {
+                GL::parallel_generic_singleton_array_allocator
+                    allocator;
 
+                std::vector<GL::epoch_map<int, int>*> ptrs(2'000, nullptr);
+                if (1) {
+                    GL::parallel::For(0, 1'000'000, [&](int i) {
+                        auto* ptr = allocator.alloc<GL::epoch_map<int, int>>();
+                        allocator.free(ptr);
+                    });
+                    GL::parallel::For_Each(ptrs, [&](GL::epoch_map<int, int>*& p) {
+                        p = allocator.alloc<GL::epoch_map<int, int>>();
+                    });
+                    //GL::parallel::For_Each(ptrs, [&](GL::epoch_map<int, int>*& p) {
+                    //    allocator.free(p);
+                    //});
+                }
+            }
+
+            if (auto timer = GL::stopwatch::debug_timer("new/delete GL::epoch_map<int, int> singleton"); true) {
+                std::vector<GL::epoch_map<int, int>*> ptrs(2'000, nullptr);
+                if (1) {
+                    GL::parallel::For(0, 1'000'000, [&](int i) {
+                        auto* ptr = new GL::epoch_map<int, int>();
+                        delete ptr;
+                    });
+                    GL::parallel::For_Each(ptrs, [&](GL::epoch_map<int, int>*& p) {
+                        p = new GL::epoch_map<int, int>();
+                    });
+                    GL::parallel::For_Each(ptrs, [&](GL::epoch_map<int, int>*& p) {
+                        delete p;
+                    });
+                }
+            }
+
+            if (auto timer = GL::stopwatch::debug_timer("parallel_generic_singleton_array_allocator float singleton"); true) {
+                GL::parallel_generic_singleton_array_allocator
+                    allocator;
+
+                std::vector<float*> ptrs(2'000, nullptr);
+                if (1) {
+                    GL::parallel::For(0, 1'000'000, [&](int i) {
+                        auto* ptr = allocator.alloc<float>();
+                        allocator.free(ptr);
+                        });
+                    GL::parallel::For_Each(ptrs, [&](float*& p) {
+                        p = allocator.alloc<float>();
+                        });
+                    //GL::parallel::For_Each(ptrs, [&](float*& p) {
+                    //    allocator.free(p);
+                    //});
+                }
+            }
+
+            if (auto timer = GL::stopwatch::debug_timer("new/delete float singleton"); true) {
+                std::vector<float*> ptrs(2'000, nullptr);
+                if (1) {
+                    GL::parallel::For(0, 1'000'000, [&](int i) {
+                        auto* ptr = new float();
+                        delete ptr;
+                    });
+                    GL::parallel::For_Each(ptrs, [&](float*& p) {
+                        p = new float();
+                    });
+                    GL::parallel::For_Each(ptrs, [&](float*& p) {
+                        delete p;
+                    });
+                }
+            }
 
             //if (auto timer = GL::stopwatch::debug_timer("b_tree"); true) {
             //    GL::fast_atomic_allocator<GL::b_tree<float, int, 10>::b_treeNode, 128> allocator;

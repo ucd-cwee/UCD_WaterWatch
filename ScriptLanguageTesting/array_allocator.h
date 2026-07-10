@@ -4,9 +4,12 @@
 #include "atomic_epoch_allocator.h"
 #include "epoch_map.h"
 #include "atomic_tree.h"
+#include "atomic_vector.h"
 #include <array>
 #include <execution>
 #include <memory>
+#include <concurrent_unordered_map.h>
+
 
 namespace GL {
     namespace impl{
@@ -774,6 +777,8 @@ namespace GL {
                     * parent,
                     * oldRoot;
 
+                if (node == nullptr) return false;
+
                 // unlink the node from it's parent
                 parent = node->parent;
                 parent->pop_child(node->parent_index);
@@ -1327,7 +1332,7 @@ namespace GL {
         // non-atomic, non-thread-safe allocator that can allocate arrays of items (e.g. 128 floats, 1024 strings, etc.).
         class generic_array_allocator {
         public:
-            constexpr static int  baseBlockSize = 1024;
+            constexpr static int baseBlockSize = 8 << 12;
 
             class dynamic_block {
             public:
@@ -1422,17 +1427,15 @@ namespace GL {
                 unlock();
 
                 ptr = reinterpret_cast<T*>(block->GetMemory());
-
+                block->deleter = deleter;
+                block->num = num;
                 if constexpr (std::is_pod<T>::value) {
-                    block->deleter = nullptr;
                     if (cleared_alloc) ::memset((void*)ptr, 0, sizeof(T) * num);                
                 }
                 else {
-                    block->deleter = deleter;
-                    block->num = num;
-                    std::uninitialized_default_construct(ptr, ptr + num);
-                    block->initialized_block_index = initialized_blocks.push_back(block);
+                    std::uninitialized_default_construct(ptr, ptr + num);                    
                 }
+                block->initialized_block_index = initialized_blocks.push_back(block);
 
                 return ptr;
             };
@@ -1455,7 +1458,7 @@ namespace GL {
             };
 
         private:
-            __declspec(noinline) dynamic_block* // find a free block that is big enough for the request, otherwise manufacture it. 
+            __declspec(noinline) dynamic_block* // find a free block that is big enough for the request, otherwise manufactures it. 
                 AllocInternal(const int num) {
                 dynamic_block* block;
                 int alignedBytes = (num + 15) & ~15; // request is aligned to 16 bytes
@@ -1581,7 +1584,8 @@ namespace GL {
     }
 
     // thread-safe allocator that can allocate arrays of items of the specified type (e.g. 128 floats, 1024 strings, etc.).
-    // all items will be of the same type using this allocator.
+    // all items will be of the same type using this allocator. Allocates an array of items at a time. 
+    // On destruction of the allocator, all memory will be collected properly. 
     template<class type, int baseBlockSize = 1024 * sizeof(type)>
     class parallel_array_allocator {
     protected:
@@ -1645,7 +1649,8 @@ namespace GL {
     };
 
     // thread-safe allocator that can allocate arrays of any types of items (e.g. 128 floats, 1024 strings, etc.).
-    // allowed to mix-and-match types using this allocator.
+    // allowed to mix-and-match types using this allocator. Allocates an array of items at a time. 
+    // On destruction of the allocator, all memory will be collected properly. 
     class parallel_generic_array_allocator {
     protected:
         GL::fast_atomic_allocator<typename impl::binary_search_b_tree<typename GL::impl::generic_array_allocator::dynamic_block, int>::binary_search_b_treeNode, 256>
@@ -1672,6 +1677,17 @@ namespace GL {
         ~parallel_generic_array_allocator() = default;
 
     public:
+        // allocate N bytes.
+        __declspec(noinline) void*
+            alloc(const size_t bytes, void(*destroy)(void*, size_t)) {
+            auto& Alloc = *alloc_m;
+            return Alloc.first.Alloc<unsigned char>(bytes / sizeof(unsigned char), [&Alloc](void)->void {
+                Alloc.second.lock();
+            }, [&Alloc](void)->void {
+                Alloc.second.unlock();
+            }, destroy, true);
+        };
+
         // allocate N items as an array. POD-types are not cleared and may be garbage data. 
         template <typename T> __declspec(noinline) T*
             alloc(const int num) {
@@ -1710,4 +1726,145 @@ namespace GL {
         };
 
     };
+
+#if 1
+    // thread-safe allocator that can allocate any type of item (e.g. float, string, etc.).
+    // allowed to mix-and-match types using this allocator. Only allocates one item at a time. 
+    // On destruction of the allocator, all memory will be collected properly. 
+    class parallel_generic_singleton_array_allocator {
+    protected:
+        GL::fast_atomic_allocator<typename impl::binary_search_b_tree<typename GL::impl::generic_array_allocator::dynamic_block, int>::binary_search_b_treeNode, 256>
+            node_allocator_m;
+        GL::fast_atomic_allocator< std::array<typename impl::binary_search_b_tree<typename GL::impl::generic_array_allocator::dynamic_block, int>::binary_search_b_treeNode*, 10>, 32 >
+            node_children_allocator_m;
+        GL::thread_object_no_default < std::pair<GL::impl::generic_array_allocator, GL::fast_exclusive_mutex> >
+            alloc_m;
+
+    public:
+        parallel_generic_singleton_array_allocator()
+            : node_allocator_m()
+            , node_children_allocator_m()
+            , alloc_m()
+        {
+            alloc_m._after_construction = [this](auto& tree) {
+                tree.first.SetAllocator(this->node_allocator_m, this->node_children_allocator_m);
+            };
+        };
+        parallel_generic_singleton_array_allocator(parallel_generic_singleton_array_allocator const&) = delete;
+        parallel_generic_singleton_array_allocator(parallel_generic_singleton_array_allocator&&) noexcept = delete;
+        parallel_generic_singleton_array_allocator& operator=(parallel_generic_singleton_array_allocator const&) = delete;
+        parallel_generic_singleton_array_allocator& operator=(parallel_generic_singleton_array_allocator&&) noexcept = delete;
+        ~parallel_generic_singleton_array_allocator() = default;
+
+    public:
+        // allocate N items as an array. POD-types are not cleared and may be garbage data. 
+        template <typename T> __declspec(noinline) T*
+            alloc() {
+            auto& Alloc = *alloc_m;
+            T* out = reinterpret_cast<T*>(Alloc.first.Alloc<unsigned char>(sizeof(T), [&Alloc](void)->void {
+                Alloc.second.lock();
+            }, [&Alloc](void)->void {
+                Alloc.second.unlock();
+            }, [](void* ptr, size_t num) -> void {
+                reinterpret_cast<T*>(ptr)->~T();
+            }, false));
+            if constexpr (!std::is_pod_v<T>) {
+                new (out) T();
+            }
+            return out;
+        };
+
+        // allocate N items as an array. POD-types are cleared to 0. 
+        template <typename T> __declspec(noinline) T*
+            calloc() {
+            auto& Alloc = *alloc_m;
+            T* out = reinterpret_cast<T*>(Alloc.first.Alloc<unsigned char>(sizeof(T), [&Alloc](void)->void {
+                Alloc.second.lock();
+            }, [&Alloc](void)->void {
+                Alloc.second.unlock();
+            }, [](void* ptr, size_t num) -> void {
+                reinterpret_cast<T*>(ptr)->~T();
+            }, true));
+            if constexpr (!std::is_pod_v<T>) {
+                new (out) T();
+            }
+            return out;
+        };
+
+        // free a pointer to an array of items. 
+        __declspec(noinline) void
+            free(void* ptr) {
+            auto& Alloc = alloc_m[GL::impl::generic_array_allocator::Block(ptr)->thread_id];
+            Alloc.first.Free(ptr, [&Alloc](void)->void {
+                Alloc.second.lock();
+            }, [&Alloc](void)->void {
+                Alloc.second.unlock();
+            });
+        };
+
+    };
+#else
+    class parallel_generic_singleton_array_allocator {
+    private:
+        struct wrap {
+            wrap* m_pNext;
+            size_t type_index;
+        };
+        GL::epoch_map<size_t, GL::type> 
+            type_to_index;
+        GL::ticket_dispensor<false>
+            tickets;
+        GL::atomic_vector< GL::aba_problem::THead<wrap> >
+            stack_heads;
+        parallel_generic_array_allocator
+            allocator;
+
+    public:
+
+        template <typename T> __declspec(noinline) T*
+            alloc() {        
+            size_t index = type_to_index.get_or_make(GL::type_of<T>(), [this]() -> size_t {
+                return this->tickets.get_ticket();
+            });
+            GL::aba_problem::THead<wrap>& head = stack_heads.get_or_make(index);
+            while (true) {
+                if (wrap* p = GL::aba_problem::Pop(head)) {
+                    T* out = reinterpret_cast<T*>(&p[0] + 2);
+                    return out;
+                }
+                else {
+                    static constexpr size_t Num = 1024;
+                    void* ptr = allocator.alloc(Num * (sizeof(T) + sizeof(wrap)), [](void* ptr, size_t num) -> void {
+                        if constexpr (!std::is_pod_v<T>) {
+                            for (int i = 0; i < num; ++i) {
+                                auto* p = reinterpret_cast<wrap*>((reinterpret_cast<unsigned char*>(ptr) + ((sizeof(T) + sizeof(wrap)) * i)));
+                                T* out = reinterpret_cast<T*>(&p[0] + 2);
+                                out->~T();
+                            }
+                        }
+                    });
+                    for (int i = 0; i < Num; ++i) {
+                        auto* this_wrap = reinterpret_cast<wrap*>((reinterpret_cast<unsigned char*>(ptr) + ((sizeof(T) + sizeof(wrap)) * i)));
+                        this_wrap->type_index = index;
+                        T* out = reinterpret_cast<T*>(&this_wrap[0] + 2);
+                        new (out) T();
+                        GL::aba_problem::Stack_Push(head, this_wrap);
+                    }
+                }
+            }
+        };
+
+        // free a pointer to an array of items. 
+        __declspec(noinline) void
+            free(void* ptr) {
+            wrap* this_ptr = reinterpret_cast<wrap*>(&reinterpret_cast<wrap*>(ptr)[0] - 2);
+            GL::aba_problem::Stack_Push(stack_heads.get_or_make(this_ptr->type_index), this_ptr);
+        };
+
+    };
+
+
+#endif
+
+
 };
