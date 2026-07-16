@@ -155,7 +155,8 @@ namespace GL {
 					numCores{ 0 };
 				size_t 
 					numThreads{ 0 };
-				parallel_queue< thread_task > // locking_queue > atomic_parallel_stack > atomic_parallel_queue > parallel_queue
+				GL::atomic_queue< thread_task >
+				// parallel_queue< thread_task > // locking_queue > atomic_parallel_stack > atomic_parallel_queue > parallel_queue
 					jobQueue{};
 				std::atomic<alive_state> 
 					alive{ is_dead };

@@ -1539,6 +1539,7 @@ namespace GL {
             };
             __declspec(noinline) void
                 FreeInternal(dynamic_block* block) {
+                // short max_help = 1;
                 while (true) {
                     // try to merge with a previous free block
                     if (dynamic_block* prevBlock = block->prev; prevBlock && !prevBlock->IsBaseBlock() && prevBlock->node != nullptr) {
@@ -1637,9 +1638,9 @@ namespace GL {
         
         // free a pointer to an array of items. 
         __declspec(noinline) void 
-            free(type* ptr) {
-            auto& Alloc = alloc_m[GL::impl::array_allocator<type, baseBlockSize>::Block(ptr)->thread_id];
-            Alloc.first.Free(ptr, [&Alloc](void)->void {
+            free(void* ptr) {
+            auto& Alloc = alloc_m[GL::impl::array_allocator<type, baseBlockSize>::Block((type*)ptr)->thread_id];
+            Alloc.first.Free((type*)ptr, [&Alloc](void)->void {
                 Alloc.second.lock();
             }, [&Alloc](void)->void {
                 Alloc.second.unlock();

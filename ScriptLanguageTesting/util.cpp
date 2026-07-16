@@ -84,7 +84,7 @@ namespace GL {
                         // go to sleep, to be awoken when new jobs are added
                         auto lock{ std::unique_lock(this->wakeMutex) };
                         // this->wakeCondition.wait(lock);
-                        this->wakeCondition.wait_for(lock, std::chrono::microseconds(500));
+                        this->wakeCondition.wait_for(lock, std::chrono::microseconds(50)); // std::chrono::microseconds(500)
                     }
                 } };
             }

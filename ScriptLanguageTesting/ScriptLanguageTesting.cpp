@@ -1889,23 +1889,23 @@ namespace GL {
     protected:
         GL::thread_object_no_default<GL::stopwatch> 
             stopwatches;
-        GL::thread_object_no_default<std::vector<GL::nanosecond>>
+        GL::thread_object_no_default<GL::atomic_vector<long long>> // GL::atomic_vector
             time_results;
 
     public:
         ~stopwatch_group() {   
-            std::vector<GL::nanosecond> quantile;
-            time_results.for_each([&quantile](std::vector<GL::nanosecond> const& times) {
-                quantile.insert(quantile.end(), times.begin(), times.end());
+            std::vector<long long> quantile;
+            time_results.for_each([&quantile](auto const& times) {
+                quantile.insert(quantile.end(), std::make_move_iterator(times.begin()), std::make_move_iterator(times.end()));
             });
             std::sort(quantile.begin(), quantile.end());            
             if (quantile.size() > 3) {
                 int size = quantile.size();
                 int mid = size / 2;
-                GL::nanosecond median = (size % 2 == 0) ? ((quantile[mid] + quantile[mid - 1]) / 2) : quantile[mid];
+                long long median = (size % 2 == 0) ? ((quantile[mid] + quantile[mid - 1]) / 2) : quantile[mid];
 
-                std::vector<GL::nanosecond> first;
-                std::vector<GL::nanosecond> third;
+                std::vector<long long> first;
+                std::vector<long long> third;
                 first.resize(mid + 1);
                 third.resize(mid + 1);
 
@@ -1915,8 +1915,8 @@ namespace GL {
                 for (int i = mid; i != size; ++i)                
                     third[i-mid] = quantile[i];
                 
-                GL::nanosecond fst;
-                GL::nanosecond trd;
+                long long fst;
+                long long trd;
 
                 int side_length = 0;
                 if (size % 2 == 0) side_length = size / 2;                
@@ -1925,20 +1925,12 @@ namespace GL {
                 fst = (size / 2) % 2 == 0 ? (first[side_length / 2] / 2 + first[(side_length - 1) / 2]) / 2 : first[side_length / 2];
                 trd = (size / 2) % 2 == 0 ? (third[side_length / 2] / 2 + third[(side_length - 1) / 2]) / 2 : third[side_length / 2];
                 
-                auto as_reasonable_time = [](GL::nanosecond const& rhs) -> GL::value {
-                    if (GL::second(rhs) > 0.5f) return GL::second(rhs);
-                    if (GL::decisecond(rhs) > 0.5f) return GL::millisecond(rhs);
-                    if (GL::centisecond(rhs) > 0.5f) return GL::millisecond(rhs);
-                    if (GL::millisecond(rhs) > 0.5f) return GL::millisecond(rhs);                    
-                    return GL::millisecond(rhs);
-                };
-
                 auto out = std::vector{ 
-                    as_reasonable_time(quantile[0]).to_string(), 
-                    as_reasonable_time(fst).to_string(), 
-                    as_reasonable_time(median).to_string(), 
-                    as_reasonable_time(trd).to_string(), 
-                    as_reasonable_time(quantile[quantile.size() - 1]).to_string() 
+                    GL::millisecond(GL::nanosecond(quantile[0])).to_string(),
+                    GL::millisecond(GL::nanosecond(fst)).to_string(),
+                    GL::millisecond(GL::nanosecond(median)).to_string(),
+                    GL::millisecond(GL::nanosecond(trd)).to_string(),
+                    GL::millisecond(GL::nanosecond(quantile[quantile.size() - 1])).to_string()
                 };
                 std::cout << GL::printf("[ Min: %s, 25%: %s, 50%: %s, 75%: %s, Max: %s ]\n", 
                     out[0].c_str().data(), 
@@ -1951,13 +1943,26 @@ namespace GL {
                 // std::cout << "Min/25%/50%/75%/Max: [ " + quantile[0].to_string().add_to_delim(fst.to_string(), " / ").add_to_delim(median.to_string(), " / ").add_to_delim(trd.to_string(), " / ").add_to_delim(quantile[quantile.size()-1].to_string(), " / ") + " ]\n";
             }
         };
+        class wrapper {
+        private:
+            stopwatch_group* P;
+            long long startTime;
+
+        public:
+            wrapper(stopwatch_group* p) : P{ p }, startTime{ clock::ns()/* GL::util::get_current_epoch()*/ } {};
+            wrapper(wrapper const&) = delete;
+            wrapper(wrapper &&) = delete;
+            wrapper& operator=(wrapper const&) = delete;
+            wrapper& operator=(wrapper&&) = delete;
+            ~wrapper() {
+                P->time_results->push_back(/*GL::util::get_current_epoch()*/clock::ns() - startTime);
+            };
+            constexpr operator bool() const { return true; };
+        };        
 
     public:
-        std::shared_ptr<void> debug_timer() {
-            return std::static_pointer_cast<void>(std::shared_ptr<int>(reinterpret_cast<int*>(1ull << 63ull), [startTime = clock::ns(), this](int*) -> void {
-                auto stopTime_s = GL::nanosecond(static_cast<long double>(clock::ns() - startTime));
-                this->time_results->push_back(stopTime_s);
-            }));
+        auto debug_timer() {
+            return wrapper(this);
         };
 
     };
@@ -2036,6 +2041,57 @@ int main() {
 #endif
 
     while (true) {
+
+        while (true) {
+            GL::parallel_generic_array_allocator alloc;
+            GL::atomic_queue<void*> ptrs;
+            GL::stopwatch_group timer;
+
+            GL::parallel::For(0, 1'000'000, [&](size_t const& i) {                
+                if (auto t = timer.debug_timer()) {
+                    if (GL::util::rand_very_fast(0, 100) > 50) {
+                        switch (i % 10) {
+                        case 0:
+                            ptrs.push(alloc.alloc<int>(GL::util::rand_very_fast(100, 1'000)));
+                            break;
+                        case 1:
+                            ptrs.push(alloc.alloc<float>(GL::util::rand_very_fast(100, 10'000)));
+                            break;
+                        case 2:
+                            ptrs.push(alloc.alloc<long double>(GL::util::rand_very_fast(100, 10'000)));
+                            break;
+                        case 3:
+                            ptrs.push(alloc.alloc<std::string>(GL::util::rand_very_fast(100, 10'000)));
+                            break;
+                        case 4:
+                            ptrs.push(alloc.alloc<GL::string>(GL::util::rand_very_fast(100, 10'000)));
+                            break;
+                        case 5:
+                            ptrs.push(alloc.alloc<GL::shared_ptr<std::string>>(GL::util::rand_very_fast(100, 10'000)));
+                            break;
+                        case 6:
+                            ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
+                            break;
+                        case 7:
+                            ptrs.push(alloc.alloc<GL::any>(GL::util::rand_very_fast(100, 10'000)));
+                            break;
+                        case 8:
+                            ptrs.push(alloc.alloc<GL::atomic_bag<std::string>>(GL::util::rand_very_fast(100, 10'000)));
+                            break;
+                        case 9:
+                            ptrs.push(alloc.alloc<GL::meter>(GL::util::rand_very_fast(100, 10'000)));
+                            break;
+                        default:
+                            break;
+                        }
+                    }
+                    else if (void* p; ptrs.try_pop(p)) {
+                        alloc.free(p);
+                    }
+                }
+            });
+        }
+
         while (1) {
             //GL::fast_atomic_general_allocator alloc;            
             //if (auto timer = GL::stopwatch::debug_timer("fast_atomic_general_allocator"); true) {
