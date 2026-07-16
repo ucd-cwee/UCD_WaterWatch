@@ -10,27 +10,64 @@
 #include "ticket_dispensor.h"
 #include "stopwatch.h"
 #include <map>
-#include "multithreaded_allocator.h"
+#include "atomic_stack.h"
 
 namespace GL {
-    static auto Settup = []() -> bool {
-        CppAD::thread_alloc::hold_memory(true);
-        CppAD::thread_alloc::parallel_setup(std::max<size_t>(32ull, GL::util::get_hardware_thread_count()), []() -> bool {
-            return true;
-        }, []() -> size_t {
-            thread_local size_t thread_num{ GL::util::get_thread_id() };
-            return thread_num;
-        });
-        return true;
-    }();
+    template <void (*Func)(void)> class Taskable {
+        std::atomic<bool>
+            alive;
+        std::condition_variable
+            wakeCondition;
+        std::mutex
+            wakeMutex;
+        std::thread
+            thread;
+
+    public:
+        Taskable()
+            : alive{ 1 }, wakeMutex{}, wakeCondition{}
+        {
+            thread = std::thread{ [this] {
+                // pre-warm this thread's heap
+                for (int i = 0; i < 100000; i++) delete (new int(i));
+
+                while (this->alive.load()) {
+                    // Work until no more jobs are found
+                    Func();
+
+                    // go to sleep, to be awoken when new jobs are added
+                    auto lock{ std::unique_lock(this->wakeMutex) };
+                    // this->wakeCondition.wait(lock);
+                    this->wakeCondition.wait_for(lock, std::chrono::microseconds(50)); // std::chrono::microseconds(500)
+                }
+            } };
+        }
+        Taskable(Taskable const&) = delete;
+        Taskable(Taskable&&) = delete;
+        Taskable& operator=(Taskable const&) = delete;
+        Taskable& operator=(Taskable&&) = delete;
+        ~Taskable() {
+            if (alive) {
+                alive = false; // indicate that new jobs cannot be started from this point                
+                wakeCondition.notify_all();
+                thread.join();
+            }
+        }
+
+        void wake() { // try to wake-up the thread if it is sleeping. 
+            wakeCondition.notify_one();
+        };
+    };
+    
+    GL::atomic_parallel_void_stack
+        freed_pointers; // only works because allocations are guarranteed to be aligned to 16-bytes. 
 
     void* malloc(size_t bytes) {
         return ::_aligned_malloc(bytes, 16);
-        // return CppAD::thread_alloc::get_memory(bytes, bytes);
     };
     void mfree(void* ptr) {
-        ::_aligned_free(ptr);
-        // CppAD::thread_alloc::return_memory(ptr);
+        freed_pointers.push(ptr);
+        // ::_aligned_free(ptr);
     };
 
     namespace util {
@@ -58,53 +95,7 @@ namespace GL {
             if (!out) out = ticket.ticket;
             return out;
         };
-#if 1
-        template <void (*Func)(void)> class Taskable {
-            std::atomic<bool>
-                alive;
-            std::condition_variable
-                wakeCondition;
-            std::mutex
-                wakeMutex;
-            std::thread
-                thread;
 
-        public:
-            Taskable()
-                : alive{ 1 }, wakeMutex{}, wakeCondition{}
-            {
-                thread = std::thread{ [this] {
-                    // pre-warm this thread's heap
-                    for (int i = 0; i < 100000; i++) delete (new int(i));
-
-                    while (this->alive.load()) {
-                        // Work until no more jobs are found
-                        Func();
-
-                        // go to sleep, to be awoken when new jobs are added
-                        auto lock{ std::unique_lock(this->wakeMutex) };
-                        // this->wakeCondition.wait(lock);
-                        this->wakeCondition.wait_for(lock, std::chrono::microseconds(50)); // std::chrono::microseconds(500)
-                    }
-                } };
-            }
-            Taskable(Taskable const&) = delete;
-            Taskable(Taskable&&) = delete;
-            Taskable& operator=(Taskable const&) = delete;
-            Taskable& operator=(Taskable&&) = delete;
-            ~Taskable() {
-                if (alive) {
-                    alive = false; // indicate that new jobs cannot be started from this point                
-                    wakeCondition.notify_all();
-                    thread.join();
-                }
-            }
-
-            void wake() { // try to wake-up the thread if it is sleeping. 
-                wakeCondition.notify_one();
-            };
-        };
-#endif
 //        long long get_current_epoch() {
 //#if 1
 //            static std::atomic<long long> _epoch{ clock::ms() };
@@ -349,6 +340,10 @@ namespace GL {
                 InterlockedExchangeNoFence64(reinterpret_cast<volatile long long*>(&_epoch), clock::ms());
                 double new_rand = rand_impl().random_base();
                 InterlockedExchangeNoFence64(reinterpret_cast<volatile long long*>(&_global_random), *reinterpret_cast<long long*>(&new_rand));
+                freed_pointers.free_all();
+                //freed_pointers.for_each_pop([](void* p) {
+                //    ::_aligned_free(p);
+                //});
             };
         };
         static Taskable<Wrap::UpdateEpoch> _update_thread;

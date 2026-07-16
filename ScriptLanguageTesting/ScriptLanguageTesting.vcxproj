@@ -208,7 +208,6 @@
     <ClInclude Include="array_allocator.h" />
     <ClInclude Include="epoch_map.h" />
     <ClInclude Include="functions.h" />
-    <ClInclude Include="multithreaded_allocator.h" />
     <ClInclude Include="Parallel.h" />
     <ClInclude Include="scripting.h" />
     <ClInclude Include="ScriptLanguage_V2.h" />

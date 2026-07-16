@@ -42,7 +42,7 @@ namespace uuid {
     static uuid_ticket& get_uuid(unsigned long rhs) noexcept;
 };
 
-// wrapper
+// not thread-safe. Should only be accessed in a single-threaded fashion.
 class any {
 public:
     void* m_ptr;    
@@ -1889,7 +1889,7 @@ namespace GL {
     protected:
         GL::thread_object_no_default<GL::stopwatch> 
             stopwatches;
-        GL::thread_object_no_default<GL::atomic_vector<long long>> // GL::atomic_vector
+        GL::thread_object_no_default<GL::atomic_vector<long long>>
             time_results;
 
     public:
@@ -2042,55 +2042,58 @@ int main() {
 
     while (true) {
 
-        while (true) {
-            GL::parallel_generic_array_allocator alloc;
-            GL::atomic_queue<void*> ptrs;
-            GL::stopwatch_group timer;
+        if (auto timer = GL::stopwatch::debug_timer()) {
+            for (int loops = 0; loops < 100; ++loops) {
+                GL::parallel_generic_array_allocator alloc;
+                GL::atomic_queue<void*> ptrs;
+                GL::stopwatch_group timer;
 
-            GL::parallel::For(0, 1'000'000, [&](size_t const& i) {                
-                if (auto t = timer.debug_timer()) {
-                    if (GL::util::rand_very_fast(0, 100) > 50) {
-                        switch (i % 10) {
-                        case 0:
-                            ptrs.push(alloc.alloc<int>(GL::util::rand_very_fast(100, 1'000)));
-                            break;
-                        case 1:
-                            ptrs.push(alloc.alloc<float>(GL::util::rand_very_fast(100, 10'000)));
-                            break;
-                        case 2:
-                            ptrs.push(alloc.alloc<long double>(GL::util::rand_very_fast(100, 10'000)));
-                            break;
-                        case 3:
-                            ptrs.push(alloc.alloc<std::string>(GL::util::rand_very_fast(100, 10'000)));
-                            break;
-                        case 4:
-                            ptrs.push(alloc.alloc<GL::string>(GL::util::rand_very_fast(100, 10'000)));
-                            break;
-                        case 5:
-                            ptrs.push(alloc.alloc<GL::shared_ptr<std::string>>(GL::util::rand_very_fast(100, 10'000)));
-                            break;
-                        case 6:
-                            ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
-                            break;
-                        case 7:
-                            ptrs.push(alloc.alloc<GL::any>(GL::util::rand_very_fast(100, 10'000)));
-                            break;
-                        case 8:
-                            ptrs.push(alloc.alloc<GL::atomic_bag<std::string>>(GL::util::rand_very_fast(100, 10'000)));
-                            break;
-                        case 9:
-                            ptrs.push(alloc.alloc<GL::meter>(GL::util::rand_very_fast(100, 10'000)));
-                            break;
-                        default:
-                            break;
+                GL::parallel::For(0, 1'000'000, [&](size_t const& i) {
+                    if (auto t = timer.debug_timer()) {
+                        if (GL::util::rand_very_fast(0, 100) > 50) {
+                            switch (i % 10) {
+                            case 0:
+                                ptrs.push(alloc.alloc<int>(GL::util::rand_very_fast(100, 1'000)));
+                                break;
+                            case 1:
+                                ptrs.push(alloc.alloc<float>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 2:
+                                ptrs.push(alloc.alloc<long double>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 3:
+                                ptrs.push(alloc.alloc<std::string>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 4:
+                                ptrs.push(alloc.alloc<GL::string>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 5:
+                                ptrs.push(alloc.alloc<GL::shared_ptr<std::string>>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 6:
+                                ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 7:
+                                ptrs.push(alloc.alloc<GL::any>(GL::util::rand_very_fast(100, 1'000)));
+                                break;
+                            case 8:
+                                ptrs.push(alloc.alloc<GL::atomic_bag<std::string>>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 9:
+                                ptrs.push(alloc.alloc<GL::meter>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            default:
+                                break;
+                            }
+                        }
+                        else if (void* p; ptrs.try_pop(p)) {
+                            alloc.free(p);
                         }
                     }
-                    else if (void* p; ptrs.try_pop(p)) {
-                        alloc.free(p);
-                    }
-                }
-            });
+                    });
+            }
         }
+
 
         while (1) {
             //GL::fast_atomic_general_allocator alloc;            

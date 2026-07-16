@@ -77,7 +77,7 @@ namespace GL {
                 else {
                     return false;
                 }
-            });
+                });
         };
         template <typename F>
         void for_each_pop(F const& func) {
@@ -93,10 +93,70 @@ namespace GL {
                     allocator.Free(ptr);
                     --count;
                 }
-            });
+                });
         };
         size_t size() const {
             return count.load();
+        };
+    };
+    
+    // does not allocate any new memory. Utilizes pointers that are provided to hold pointers to next position in stack. 
+    class atomic_parallel_void_stack {
+        struct element_t {
+            element_t*
+                m_pNext;
+        };
+        struct container {
+            aba_problem::THead<element_t>
+                head_1;
+            aba_problem::THead<element_t>
+                head_2;
+            char
+                which;
+        };
+
+        thread_object_no_default<container>
+            head;
+    public:
+        ~atomic_parallel_void_stack() {
+            bool Continue = true;
+            while (Continue) {
+                Continue = false;
+                head.for_each([&Continue](container& this_head) {
+                    // if (this_head.which = !this_head.which)
+                    if (InterlockedExchange8(reinterpret_cast<volatile char*>(&this_head.which), !this_head.which) == 0)
+                        while (element_t* ptr = aba_problem::Pop(this_head.head_1)) {
+                            ::_aligned_free(ptr);
+                            Continue = true;
+                        }
+                    else
+                        while (element_t* ptr = aba_problem::Pop(this_head.head_2)) {
+                            ::_aligned_free(ptr);
+                            Continue = true;
+                        }
+                });
+            }
+        };
+        void push(void* obj) {
+            element_t* new_ptr = reinterpret_cast<element_t*>(obj);
+            new_ptr->m_pNext = nullptr;
+
+            auto& thisHead = *head;
+            if (thisHead.which == 0) {
+                aba_problem::Stack_Push(thisHead.head_1, new_ptr);
+            }
+            else {
+                aba_problem::Stack_Push(thisHead.head_2, new_ptr);
+            }
+        };
+        void free_all() {
+            head.for_each([](container& this_head) {
+                // if (this_head.which = !this_head.which)
+                if (InterlockedExchange8(reinterpret_cast<volatile char*>(&this_head.which), !this_head.which) == 0)
+                    while (element_t* ptr = aba_problem::Pop(this_head.head_1)) ::_aligned_free(ptr); 
+                else 
+                    while (element_t* ptr = aba_problem::Pop(this_head.head_2)) ::_aligned_free(ptr);
+            });            
         };
     };
 
