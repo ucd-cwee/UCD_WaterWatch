@@ -2094,7 +2094,6 @@ int main() {
             }
         }
 
-
         while (1) {
             //GL::fast_atomic_general_allocator alloc;            
             //if (auto timer = GL::stopwatch::debug_timer("fast_atomic_general_allocator"); true) {
