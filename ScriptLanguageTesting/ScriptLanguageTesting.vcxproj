@@ -181,6 +181,7 @@
     <ClCompile Include="scripting.cpp" />
     <ClCompile Include="ScriptLanguageTesting.cpp" />
     <ClCompile Include="shared_ptr.cpp" />
+    <ClCompile Include="stopwatch.cpp" />
     <ClCompile Include="types.cpp" />
     <ClCompile Include="units.cpp" />
     <ClCompile Include="util.cpp" />

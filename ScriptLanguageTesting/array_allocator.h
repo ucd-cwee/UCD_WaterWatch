@@ -1330,10 +1330,9 @@ namespace GL {
         };
 
         // non-atomic, non-thread-safe allocator that can allocate arrays of items (e.g. 128 floats, 1024 strings, etc.).
+        template <int baseBlockSize = 8 << 12>
         class generic_array_allocator {
         public:
-            constexpr static int baseBlockSize = 8 << 12;
-
             class dynamic_block {
             public:
                 void*
@@ -1652,13 +1651,17 @@ namespace GL {
     // thread-safe allocator that can allocate arrays of any types of items (e.g. 128 floats, 1024 strings, etc.).
     // allowed to mix-and-match types using this allocator. Allocates an array of items at a time. 
     // On destruction of the allocator, all memory will be collected properly. 
+    template <int baseBlockSize = 8 << 12>
     class parallel_generic_array_allocator {
+    // public:
+        // static constexpr int baseBlockSize = 8 << 12;
+
     protected:
-        GL::fast_atomic_allocator<typename impl::binary_search_b_tree<typename GL::impl::generic_array_allocator::dynamic_block, int>::binary_search_b_treeNode, 256>
+        GL::fast_atomic_allocator<typename impl::binary_search_b_tree<typename GL::impl::generic_array_allocator<baseBlockSize>::dynamic_block, int>::binary_search_b_treeNode, 256>
             node_allocator_m;
-        GL::fast_atomic_allocator< std::array<typename impl::binary_search_b_tree<typename GL::impl::generic_array_allocator::dynamic_block, int>::binary_search_b_treeNode*, 10>, 32 >
+        GL::fast_atomic_allocator< std::array<typename impl::binary_search_b_tree<typename GL::impl::generic_array_allocator<baseBlockSize>::dynamic_block, int>::binary_search_b_treeNode*, 10>, 32 >
             node_children_allocator_m;
-        GL::thread_object_no_default < std::pair<GL::impl::generic_array_allocator, GL::fast_exclusive_mutex> >
+        GL::thread_object_no_default < std::pair<GL::impl::generic_array_allocator<baseBlockSize>, GL::fast_exclusive_mutex> >
             alloc_m;
 
     public:
@@ -1718,7 +1721,7 @@ namespace GL {
         // free a pointer to an array of items. 
         __declspec(noinline) void
             free(void* ptr) {
-            auto& Alloc = alloc_m[GL::impl::generic_array_allocator::Block(ptr)->thread_id];
+            auto& Alloc = alloc_m[GL::impl::generic_array_allocator<baseBlockSize>::Block(ptr)->thread_id];
             Alloc.first.Free(ptr, [&Alloc](void)->void {
                 Alloc.second.lock();
             }, [&Alloc](void)->void {
@@ -1733,12 +1736,15 @@ namespace GL {
     // allowed to mix-and-match types using this allocator. Only allocates one item at a time. 
     // On destruction of the allocator, all memory will be collected properly. 
     class parallel_generic_singleton_array_allocator {
+    public:
+        static constexpr int baseBlockSize = 8 << 12;
+
     protected:
-        GL::fast_atomic_allocator<typename impl::binary_search_b_tree<typename GL::impl::generic_array_allocator::dynamic_block, int>::binary_search_b_treeNode, 256>
+        GL::fast_atomic_allocator<typename impl::binary_search_b_tree<typename GL::impl::generic_array_allocator<baseBlockSize>::dynamic_block, int>::binary_search_b_treeNode, 256>
             node_allocator_m;
-        GL::fast_atomic_allocator< std::array<typename impl::binary_search_b_tree<typename GL::impl::generic_array_allocator::dynamic_block, int>::binary_search_b_treeNode*, 10>, 32 >
+        GL::fast_atomic_allocator< std::array<typename impl::binary_search_b_tree<typename GL::impl::generic_array_allocator<baseBlockSize>::dynamic_block, int>::binary_search_b_treeNode*, 10>, 32 >
             node_children_allocator_m;
-        GL::thread_object_no_default < std::pair<GL::impl::generic_array_allocator, GL::fast_exclusive_mutex> >
+        GL::thread_object_no_default < std::pair<GL::impl::generic_array_allocator<baseBlockSize>, GL::fast_exclusive_mutex> >
             alloc_m;
 
     public:
@@ -1795,7 +1801,7 @@ namespace GL {
         // free a pointer to an array of items. 
         __declspec(noinline) void
             free(void* ptr) {
-            auto& Alloc = alloc_m[GL::impl::generic_array_allocator::Block(ptr)->thread_id];
+            auto& Alloc = alloc_m[GL::impl::generic_array_allocator<baseBlockSize>::Block(ptr)->thread_id];
             Alloc.first.Free(ptr, [&Alloc](void)->void {
                 Alloc.second.lock();
             }, [&Alloc](void)->void {

@@ -178,15 +178,13 @@ namespace GL {
         };
 
         element_t& at(size_t index) noexcept {
-            auto block_i = global_index_to_block(index);
-            auto block_j = global_index_to_local_index(index, block_i);
-            return blocks[block_i][block_j];
+            short block_i{ global_index_to_block(index) };
+            return blocks[block_i][global_index_to_local_index(index, block_i)];
         };
         element_t& operator[](size_t index) noexcept { return at(index); };
         const element_t& at(size_t index) const noexcept {
-            auto block_i = global_index_to_block(index);
-            auto block_j = global_index_to_local_index(index, block_i);
-            return blocks[block_i][block_j];
+            short block_i{ global_index_to_block(index) };
+            return blocks[block_i][global_index_to_local_index(index, block_i)];
         };
         const element_t& operator[](size_t index) const noexcept { return at(index); };
         bool grow_to_at_least(size_t index) noexcept {

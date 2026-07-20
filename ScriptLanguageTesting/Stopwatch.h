@@ -12,21 +12,13 @@
 namespace GL {
 	namespace clock {
 		// seconds since boot
-		__forceinline static long long s() {
-			return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-		};
+		long long s();
 		// milliseconds since boot
-		__forceinline static long long ms() {
-			return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-		};
+		long long ms();
 		// microseconds since boot
-		__forceinline static long long us() {
-			return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-		};
+		long long us();
 		// nanoseconds since boot
-		__forceinline static long long ns() {
-			return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-		};
+		long long ns();
 	};
 	class stopwatch {
 	public:
@@ -59,9 +51,10 @@ namespace GL {
 				wrapper& operator=(wrapper const&) = delete;
 				wrapper& operator=(wrapper&&) = delete;
 				~wrapper() {
-					long long NS = clock::ns() - startTime;
-					if (NS >= 3000) {
-						auto stopTime = static_cast<long double>(NS) / 1000000000.0;
+					startTime -= clock::ns();
+					startTime *= -1ll;
+					if (startTime >= 3000) {
+						auto stopTime = static_cast<long double>(startTime) / 1'000'000'000.0;
 						std::string to_print = std::to_string(stopTime) + " s\n";
 						std::cout << to_print;
 					}
@@ -85,9 +78,10 @@ namespace GL {
 				wrapper& operator=(wrapper const&) = delete;
 				wrapper& operator=(wrapper&&) = delete;
 				~wrapper() {
-					long long NS = clock::ns() - startTime;
-					if (NS >= 3000) {
-						auto stopTime = static_cast<long double>(NS) / 1000000000.0;
+					startTime -= clock::ns();
+					startTime *= -1ll;
+					if (startTime >= 3000) {
+						auto stopTime = static_cast<long double>(startTime) / 1'000'000'000.0;
 						if constexpr (N == 0) {
 							std::string to_print = std::to_string(stopTime) + " s\n";
 							std::cout << to_print;
@@ -117,9 +111,10 @@ namespace GL {
 				wrapper& operator=(wrapper const&) = delete;
 				wrapper& operator=(wrapper&&) = delete;
 				~wrapper() {
-					long long NS = clock::ns() - startTime;
-					if (NS >= 3000) {
-						auto stopTime = static_cast<long double>(NS) / 1000000000.0;
+					startTime -= clock::ns();
+					startTime *= -1ll;
+					if (startTime >= 3000) {
+						auto stopTime = static_cast<long double>(startTime) / 1'000'000'000.0;
 						if (additional_message.empty()) {
 							std::string to_print = std::to_string(stopTime) + " s\n";
 							std::cout << to_print;

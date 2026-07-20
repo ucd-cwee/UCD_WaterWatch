@@ -149,6 +149,27 @@ namespace GL {
                 aba_problem::Stack_Push(thisHead.head_2, new_ptr);
             }
         };
+        void* try_pop() {
+            element_t* ptr{ nullptr };
+            container& this_head = *head;
+            if (this_head.which == 0) {
+                if (ptr = GL::aba_problem::Pop(this_head.head_1)) {
+                    return ptr;
+                }
+                if (ptr = GL::aba_problem::Pop(this_head.head_2)) {
+                    return ptr;
+                }
+            }
+            else {
+                if (ptr = GL::aba_problem::Pop(this_head.head_2)) {
+                    return ptr;
+                }
+                if (ptr = GL::aba_problem::Pop(this_head.head_1)) {
+                    return ptr;
+                }
+            }
+            return ptr;
+        };
         void free_all() {
             head.for_each([](container& this_head) {
                 // if (this_head.which = !this_head.which)
@@ -157,6 +178,15 @@ namespace GL {
                 else 
                     while (element_t* ptr = aba_problem::Pop(this_head.head_2)) ::_aligned_free(ptr);
             });            
+        };
+        void free_some() {
+            head.for_each([](container& this_head) {
+                // if (this_head.which = !this_head.which)
+                if (InterlockedExchange8(reinterpret_cast<volatile char*>(&this_head.which), !this_head.which) == 0)
+                    if (element_t* ptr = aba_problem::Pop(this_head.head_1)) ::_aligned_free(ptr);
+                else
+                    if (element_t* ptr = aba_problem::Pop(this_head.head_2)) ::_aligned_free(ptr);
+            });
         };
     };
 

@@ -10,6 +10,7 @@
     <ClCompile Include="units.cpp" />
     <ClCompile Include="datetime.cpp" />
     <ClCompile Include="scripting.cpp" />
+    <ClCompile Include="stopwatch.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="aba_problem.h" />

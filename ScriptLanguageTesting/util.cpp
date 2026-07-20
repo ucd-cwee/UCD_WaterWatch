@@ -67,7 +67,6 @@ namespace GL {
     };
     void mfree(void* ptr) {
         freed_pointers.push(ptr);
-        // ::_aligned_free(ptr);
     };
 
     namespace util {
@@ -341,9 +340,6 @@ namespace GL {
                 double new_rand = rand_impl().random_base();
                 InterlockedExchangeNoFence64(reinterpret_cast<volatile long long*>(&_global_random), *reinterpret_cast<long long*>(&new_rand));
                 freed_pointers.free_all();
-                //freed_pointers.for_each_pop([](void* p) {
-                //    ::_aligned_free(p);
-                //});
             };
         };
         static Taskable<Wrap::UpdateEpoch> _update_thread;

@@ -183,7 +183,7 @@ namespace GL {
             // step 1, grow the _tls if necessary
             if (_tls_size <= _tl_index) { // lazy growth, taking advantage of grow_to_at_least being safe to call on repeat. 
                 (void)_tls.grow_to_at_least(_tl_index + 1);
-                InterlockedExchangeNoFence(reinterpret_cast<volatile size_t*>(&_tls_size), _tl_index + 1);
+                GL::interlocked::exchange(_tls_size, _tl_index + 1);
             }
 
             // step 2, get the address of the unique _tls slot
@@ -191,10 +191,10 @@ namespace GL {
 
             // step 2, detect if the thread id changed (including if it was never initialized at all)
             if (_tls_slot.first != _tl_unique_id) {
-                InterlockedExchangeNoFence(reinterpret_cast<volatile size_t*>(&_tls_slot.first), _tl_unique_id);
+                GL::interlocked::exchange(_tls_slot.first, _tl_unique_id);
                 T* newPtr{ _alloc.Alloc(args...) };
                 if (_after_construction) _after_construction(*newPtr);
-                if (T* old_ptr = reinterpret_cast<T*>(InterlockedExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&_tls_slot.second), newPtr))) {
+                if (T* old_ptr = reinterpret_cast<T*>(GL::interlocked::exchange(_tls_slot.second, newPtr))) {
                     if (_before_destruction) _before_destruction(*old_ptr);
                     _alloc.Free(old_ptr);
                 }
@@ -215,7 +215,7 @@ namespace GL {
             // 3. Grow vector if necessary
             if (_tls_size <= _tl_index) {
                 (void)_tls.grow_to_at_least(_tl_index + 1);
-                InterlockedExchangeNoFence(reinterpret_cast<volatile size_t*>(&_tls_size), _tl_index + 1);
+                GL::interlocked::exchange(_tls_size, _tl_index + 1);
             }
 
             // 4. Slot
@@ -223,10 +223,10 @@ namespace GL {
 
             // 5. Thread ID migration or initialization check
             if (tls_slot.first != _tl_unique_id) {
-                InterlockedExchangeNoFence(reinterpret_cast<volatile size_t*>(&tls_slot.first), _tl_unique_id);
+                GL::interlocked::exchange(tls_slot.first, _tl_unique_id);
                 T* newPtr = _alloc.Alloc();
                 if (_after_construction) _after_construction(*newPtr);
-                if (T* old_ptr = reinterpret_cast<T*>(InterlockedExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&tls_slot.second), newPtr))) {
+                if (T* old_ptr = reinterpret_cast<T*>(GL::interlocked::exchange(tls_slot.second, newPtr))) {
                     if (_before_destruction) _before_destruction(*old_ptr);
                     _alloc.Free(old_ptr);
                 }
@@ -237,31 +237,16 @@ namespace GL {
         };
         // valid call to get a _tls slot when it was properly initialized at some point previously. 
         T* GetTLS(size_t thread_index) const {
-            //if (_tls.size() > thread_index) {
-                auto& _tls_slot = _tls[thread_index];
-                if (!_tls_slot.second) {
-                    throw std::runtime_error("The TLS should be previously initialized by the appropriate thread before access");
-                }
-                return _tls_slot.second;
-            //}
-            //else {
-            //    throw std::runtime_error("The TLS should be previously initialized by the appropriate thread before access");
-            //}
+            auto& _tls_slot = _tls[thread_index];
+            if (!_tls_slot.second) {
+                throw std::runtime_error("The TLS should be previously initialized by the appropriate thread before access");
+            }
+            return _tls_slot.second;
         };
 
     public:
         thread_object_no_default() : _tls{}, _tls_size{ 0 } {};
-        thread_object_no_default(thread_object_no_default const& rhs) = delete; /* : _tls{}, _tls_size{0} {
-            size_t index = 0;
-            for (auto& x : rhs._tls) {
-                _tls.grow_to_at_least(index + 1);
-                _tls[index].first = x.first;
-                if (x.second) {
-                    _tls[index].second = new T(*x.second);
-                }
-                ++index;
-            }
-        };*/
+        thread_object_no_default(thread_object_no_default const& rhs) = delete;
         thread_object_no_default(thread_object_no_default&& rhs) : _tls{ std::move(rhs._tls) }, _tls_size{ rhs._tls_size } { rhs._tls.clear(); rhs._tls_size = 0; };
         thread_object_no_default& operator=(thread_object_no_default const&) = delete;
         thread_object_no_default& operator=(thread_object_no_default&&) = delete;

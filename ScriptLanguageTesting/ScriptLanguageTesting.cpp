@@ -1949,13 +1949,15 @@ namespace GL {
             long long startTime;
 
         public:
-            wrapper(stopwatch_group* p) : P{ p }, startTime{ clock::ns()/* GL::util::get_current_epoch()*/ } {};
+            wrapper(stopwatch_group* p) : P{ p }, startTime{ clock::ns() } {};
             wrapper(wrapper const&) = delete;
             wrapper(wrapper &&) = delete;
             wrapper& operator=(wrapper const&) = delete;
             wrapper& operator=(wrapper&&) = delete;
             ~wrapper() {
-                P->time_results->push_back(/*GL::util::get_current_epoch()*/clock::ns() - startTime);
+                startTime -= clock::ns();
+                startTime *= -1ll;
+                P->time_results->push_back(startTime);
             };
             constexpr operator bool() const { return true; };
         };        
@@ -2041,15 +2043,68 @@ int main() {
 #endif
 
     while (true) {
-
         if (auto timer = GL::stopwatch::debug_timer()) {
+            GL::stopwatch_group timer2;
             for (int loops = 0; loops < 100; ++loops) {
                 GL::parallel_generic_array_allocator alloc;
                 GL::atomic_queue<void*> ptrs;
-                GL::stopwatch_group timer;
+                GL::parallel::For(0, 1'000, [&](size_t const& i) {
+                    if (auto t = timer2.debug_timer()) {
+#if 0
+                        if (GL::util::rand_very_fast(0, 100) > 50) {
+                            switch (i % 10) {
+                            case 0:
+                                ptrs.push(alloc.alloc<int>(GL::util::rand_very_fast(100, 1'000)));
+                                break;
+                            case 1:
+                                ptrs.push(alloc.alloc<float>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 2:
+                                ptrs.push(alloc.alloc<long double>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 3:
+                                ptrs.push(alloc.alloc<std::string>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 4:
+                                ptrs.push(alloc.alloc<GL::string>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 5:
+                                ptrs.push(alloc.alloc<GL::shared_ptr<std::string>>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 6:
+                                ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 7:
+                                ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 8:
+                                ptrs.push(alloc.alloc<GL::atomic_bag<std::string>>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 9:
+                                ptrs.push(alloc.alloc<GL::meter>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            default:
+                                break;
+                            }
+                        }
+                        else if (void* p; ptrs.try_pop(p)) {
+                            alloc.free(p);
+                        }
+#endif
+                    }
+                });
+            }
+        }
 
+
+        if (auto timer = GL::stopwatch::debug_timer()) {
+            GL::stopwatch_group timer2;
+            for (int loops = 0; loops < 100; ++loops) {
+                GL::parallel_generic_array_allocator alloc;
+                GL::atomic_queue<void*> ptrs;
                 GL::parallel::For(0, 1'000'000, [&](size_t const& i) {
-                    if (auto t = timer.debug_timer()) {
+                    if (auto t = timer2.debug_timer()) {
+#if 0
                         if (GL::util::rand_very_fast(0, 100) > 50) {
                             switch (i % 10) {
                             case 0:
@@ -2089,11 +2144,14 @@ int main() {
                         else if (void* p; ptrs.try_pop(p)) {
                             alloc.free(p);
                         }
+#endif
                     }
-                    });
+                });
             }
         }
+    }
 
+    while(true){
         while (1) {
             //GL::fast_atomic_general_allocator alloc;            
             //if (auto timer = GL::stopwatch::debug_timer("fast_atomic_general_allocator"); true) {

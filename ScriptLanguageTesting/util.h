@@ -62,7 +62,7 @@ namespace GL {
         };
         template <typename T> __forceinline T exchange(T& rhs, T exchange) {
             if constexpr (std::is_pointer_v<T>) {
-                return InterlockedExchangePointerNoFence(reinterpret_cast<volatile size_t*>(&rhs), exchange);
+                return reinterpret_cast<T>(InterlockedExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&rhs), exchange));
             }
             else if constexpr (std::is_same_v<size_t, T>) {
                 return InterlockedExchangeNoFence(reinterpret_cast<volatile size_t*>(&rhs), exchange);
