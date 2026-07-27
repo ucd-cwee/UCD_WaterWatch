@@ -13,7 +13,7 @@
 #include "atomic_stack.h"
 
 namespace GL {
-    template <void (*Func)(void)> class Taskable {
+    template <void (*Func)(void), int MicrosecondWait = 50> class Taskable {
         std::atomic<bool>
             alive;
         std::condition_variable
@@ -38,7 +38,7 @@ namespace GL {
                     // go to sleep, to be awoken when new jobs are added
                     auto lock{ std::unique_lock(this->wakeMutex) };
                     // this->wakeCondition.wait(lock);
-                    this->wakeCondition.wait_for(lock, std::chrono::microseconds(50)); // std::chrono::microseconds(500)
+                    this->wakeCondition.wait_for(lock, std::chrono::microseconds(MicrosecondWait)); // std::chrono::microseconds(500)
                 }
             } };
         }
@@ -58,15 +58,159 @@ namespace GL {
             wakeCondition.notify_one();
         };
     };
-    
+    // does not allocate any new memory. Utilizes pointers that are provided to hold pointers to next position in stack. 
+    class atomic_parallel_void_stack {
+        struct element_t {
+            element_t*
+                m_pNext;
+        };
+        struct container {
+            aba_problem::THead<element_t>
+                head_1;
+            aba_problem::THead<element_t>
+                head_2;
+            char
+                which;
+        };
+
+        thread_object_no_malloc<container>
+            head;
+    public:
+        atomic_parallel_void_stack() {
+            const_cast<container&>(head._default) = { aba_problem::THead<element_t>{0}, aba_problem::THead<element_t>{0}, 0 };
+            head._before_destruction = [](container& head) {
+                bool Continue = true;
+                while (Continue) {
+                    Continue = false;
+                    while (element_t* ptr = aba_problem::Pop(head.head_1)) {
+                        ::free(ptr);
+                        Continue = true;
+                    }
+                    while (element_t* ptr = aba_problem::Pop(head.head_2)) {
+                        ::free(ptr);
+                        Continue = true;
+                    }
+                }
+            };
+        };
+        ~atomic_parallel_void_stack() {
+            bool Continue = true;
+            while (Continue) {
+                Continue = false;
+                head.for_each([&Continue](container& this_head) {
+                    while (element_t* ptr = aba_problem::Pop(this_head.head_1)) {
+                        ::free(ptr);
+                        Continue = true;
+                    }
+                    while (element_t* ptr = aba_problem::Pop(this_head.head_2)) {
+                        ::free(ptr);
+                        Continue = true;
+                    }
+                });
+            }
+        };
+        void push(void* obj) {
+            element_t* new_ptr = reinterpret_cast<element_t*>(obj);
+            new_ptr->m_pNext = nullptr;
+
+            auto& thisHead = *head;
+            if (thisHead.which == 0)
+                aba_problem::Stack_Push(thisHead.head_1, new_ptr);
+            else
+                aba_problem::Stack_Push(thisHead.head_2, new_ptr);
+        };
+        void* try_pop() {
+            element_t* ptr{ nullptr };
+            container& this_head = *head;
+            if (this_head.which == 0) {
+                if (ptr = GL::aba_problem::Pop(this_head.head_1)) return ptr;
+                if (ptr = GL::aba_problem::Pop(this_head.head_2)) return ptr;
+            }
+            else {
+                if (ptr = GL::aba_problem::Pop(this_head.head_2)) return ptr;
+                if (ptr = GL::aba_problem::Pop(this_head.head_1)) return ptr;
+            }
+            return ptr;
+        };
+        void free_all() {
+            head.for_each([](container& this_head) {
+                if (InterlockedExchangeNoFence8(reinterpret_cast<volatile char*>(&this_head.which), !this_head.which) == 0)
+                    while (element_t* ptr = aba_problem::Pop(this_head.head_1)) ::free(ptr);
+                else
+                    while (element_t* ptr = aba_problem::Pop(this_head.head_2)) ::free(ptr);
+                });
+        };
+        void free_fast() {
+            container& this_head = *head;
+            bool Continue = true;
+            if (InterlockedExchangeNoFence8(reinterpret_cast<volatile char*>(&this_head.which), !this_head.which) == 0)
+                while (Continue) {
+                    Continue = false;
+                    if (element_t* ptr = aba_problem::Pop(this_head.head_1)) {
+                        ::free(ptr);
+                        Continue = true;
+                    }
+                }
+            else
+                while (Continue) {
+                    Continue = false;
+                    if (element_t* ptr = aba_problem::Pop(this_head.head_2)) {
+                        ::free(ptr);
+                        Continue = true;
+                    }
+                }
+        };
+        void free_some() {
+            head.for_each([](container& this_head) {
+                // if (this_head.which = !this_head.which)
+                if (InterlockedExchangeNoFence8(reinterpret_cast<volatile char*>(&this_head.which), !this_head.which) == 0)
+                    if (element_t* ptr = aba_problem::Pop(this_head.head_1)) ::free(ptr);
+                    else
+                        if (element_t* ptr = aba_problem::Pop(this_head.head_2)) ::free(ptr);
+                });
+        };
+    };
+
     GL::atomic_parallel_void_stack
         freed_pointers; // only works because allocations are guarranteed to be aligned to 16-bytes. 
+    std::atomic<long long>
+        freed_pointers_count = 0;
+    std::atomic<short>
+        doing_free = 0;
 
-    void* malloc(size_t bytes) {
+    void* malloc(size_t bytes) {         
+        //void* out = ::malloc(bytes + sizeof(long long));
+        //if (out) *reinterpret_cast<long long*>(out) = bytes + sizeof(long long);
+        //return reinterpret_cast<void*>(reinterpret_cast<unsigned char*>(out) + sizeof(long long));
+
         return ::_aligned_malloc(bytes, 16);
     };
     void mfree(void* ptr) {
-        freed_pointers.push(ptr);
+        //if (!ptr) return;
+        //long long* p = reinterpret_cast<long long*>(reinterpret_cast<unsigned char*>(ptr) - sizeof(long long));
+        //if (*p < 64) {
+        //    ::free(p);
+        //}
+        //else {            
+        //    auto prev_locked_count = freed_pointers_count.load();
+        //    if ((freed_pointers_count += *p) > (2 << 11)) {
+        //        short expect = 0;
+        //        if (doing_free.compare_exchange_strong(expect, 1)) {
+        //            freed_pointers_count -= (prev_locked_count + *p);
+        //            freed_pointers.push(p);
+        //            freed_pointers.free_all();
+        //            doing_free.exchange(0);
+        //        }
+        //        else {
+        //            freed_pointers.push(p);
+        //        }
+        //    }
+        //    else {
+        //        freed_pointers.push(p);
+        //    }
+        //}
+
+        if (ptr) ::_aligned_free(ptr);
     };
 
     namespace util {
@@ -339,10 +483,13 @@ namespace GL {
                 InterlockedExchangeNoFence64(reinterpret_cast<volatile long long*>(&_epoch), clock::ms());
                 double new_rand = rand_impl().random_base();
                 InterlockedExchangeNoFence64(reinterpret_cast<volatile long long*>(&_global_random), *reinterpret_cast<long long*>(&new_rand));
-                freed_pointers.free_all();
             };
+            //static void PerformFree(void) {
+            //    freed_pointers.free_all();
+            //};
         };
-        static Taskable<Wrap::UpdateEpoch> _update_thread;
+        static Taskable<Wrap::UpdateEpoch, 500> _update_thread;
+        // static Taskable<Wrap::PerformFree, 1> _free_thread;
         long long get_current_epoch() {
             return _epoch;
         };

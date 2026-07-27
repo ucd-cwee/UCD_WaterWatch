@@ -246,7 +246,7 @@ namespace GL {
 
 					// handle job completion callback
 					if (0ull == --task.ctx->counter) {
-						if (task.ctx->callback) {
+						if (task.ctx->callback != nullptr) {
 							task.ctx->callback(task.ctx->callback_data);
 						}
 					}
@@ -412,7 +412,6 @@ namespace GL {
 						internal_state.threads.emplace_back(thread_wrap{ std::thread{ [threadID, &boot_count] {
 							// pre-warm this thread's heap
 							for (int i = 0; i < 100000; i++) delete (new int(5));
-							for (int i = 0; i < 100000; i++) GL::free(GL::alloc<int>());
 
 							internal_state.threads[threadID].thread_hash = std::hash<std::thread::id>{}(std::this_thread::get_id());
 							internal_state.threads[threadID].thread_index = GL::util::get_thread_id();
@@ -444,10 +443,14 @@ namespace GL {
 								}
 							}
 
+							long long previousSuccess = GL::clock::ns();
 							while ((internal_state.alive == alive_state::is_alive) && (internal_state.threads[my_final_index].thread_alive == is_alive)) {
 								work(); // Work until no more jobs are found		
-								auto lock{ std::unique_lock(internal_state.wakeMutex) };
-								internal_state.wakeCondition.wait(lock);
+								if (long long check = GL::clock::ns(); check - previousSuccess > 16000) {
+									auto lock{ std::unique_lock(internal_state.wakeMutex) };
+									internal_state.wakeCondition.wait(lock);
+									previousSuccess = GL::clock::ns();
+								}
 							}
 						} }, 0, 0, alive_state::is_booting, 0.0 });
 						std::thread& worker = internal_state.threads.back().thread;
@@ -493,6 +496,7 @@ namespace GL {
 					}
 					while (boot_count.load() > 0) {}
 					
+#if 0
 					double total = 0;
 					for (size_t threadID = 0; threadID < internal_state.numThreads; ++threadID) {
 						double this_speed = internal_state.threads[threadID].relative_speed;
@@ -526,6 +530,11 @@ namespace GL {
 						wake_loop = false;
 						waker.join();
 					}
+#else
+					prevS = alive_state::is_booting;
+					internal_state.alive.compare_exchange_strong(prevS, alive_state::is_alive);
+#endif
+
 				}
 				else {
 					while (internal_state.alive.load(std::memory_order_relaxed) != alive_state::is_alive) {};

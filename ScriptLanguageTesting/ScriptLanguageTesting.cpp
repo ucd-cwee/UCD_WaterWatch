@@ -1889,58 +1889,64 @@ namespace GL {
     protected:
         GL::thread_object_no_default<GL::stopwatch> 
             stopwatches;
-        GL::thread_object_no_default<GL::atomic_vector<long long>>
+        GL::thread_object_no_default<std::map<long long, long long>>
             time_results;
 
     public:
         ~stopwatch_group() {   
-            std::vector<long long> quantile;
-            time_results.for_each([&quantile](auto const& times) {
-                quantile.insert(quantile.end(), std::make_move_iterator(times.begin()), std::make_move_iterator(times.end()));
+            std::map<long long, long double> quantile;
+            long double total_count = 0;
+            time_results.for_each([&](auto const& times) {
+                for (auto& pair : times) {
+                    quantile[pair.first] += pair.second;
+                    total_count += pair.second;
+                }
             });
-            std::sort(quantile.begin(), quantile.end());            
-            if (quantile.size() > 3) {
-                int size = quantile.size();
-                int mid = size / 2;
-                long long median = (size % 2 == 0) ? ((quantile[mid] + quantile[mid - 1]) / 2) : quantile[mid];
+            if (total_count > 0) {
+                long long min = -1;
+                long long fst = -1;
+                long long mid = -1;
+                long long trd = -1;
+                long long max = -1;
+                long double totalizer = 0.0;
 
-                std::vector<long long> first;
-                std::vector<long long> third;
-                first.resize(mid + 1);
-                third.resize(mid + 1);
+                for (auto& pair : quantile) {
+                    pair.second /= total_count;
+                    totalizer += pair.second;
+                    pair.second = totalizer;
 
-                for (int i = 0; i != mid; ++i)                
-                    first[i] = quantile[i];
-                
-                for (int i = mid; i != size; ++i)                
-                    third[i-mid] = quantile[i];
-                
-                long long fst;
-                long long trd;
+                    if (min == -1) {
+                        min = pair.first;
+                    }
+                    if (fst == -1 
+                        && pair.second >= 0.25) {
+                        fst = pair.first;
+                    }
+                    if (mid == -1
+                        && pair.second >= 0.50) {
+                        mid = pair.first;
+                    }
+                    if (trd == -1
+                        && pair.second >= 0.75) {
+                        trd = pair.first;
+                    }
+                    max = pair.first;
+                }
 
-                int side_length = 0;
-                if (size % 2 == 0) side_length = size / 2;                
-                else side_length = (size - 1) / 2;
-
-                fst = (size / 2) % 2 == 0 ? (first[side_length / 2] / 2 + first[(side_length - 1) / 2]) / 2 : first[side_length / 2];
-                trd = (size / 2) % 2 == 0 ? (third[side_length / 2] / 2 + third[(side_length - 1) / 2]) / 2 : third[side_length / 2];
-                
-                auto out = std::vector{ 
-                    GL::millisecond(GL::nanosecond(quantile[0])).to_string(),
+                auto out = std::vector{
+                    GL::millisecond(GL::nanosecond(min)).to_string(),
                     GL::millisecond(GL::nanosecond(fst)).to_string(),
-                    GL::millisecond(GL::nanosecond(median)).to_string(),
+                    GL::millisecond(GL::nanosecond(mid)).to_string(),
                     GL::millisecond(GL::nanosecond(trd)).to_string(),
-                    GL::millisecond(GL::nanosecond(quantile[quantile.size() - 1])).to_string()
+                    GL::millisecond(GL::nanosecond(max)).to_string()
                 };
-                std::cout << GL::printf("[ Min: %s, 25%: %s, 50%: %s, 75%: %s, Max: %s ]\n", 
-                    out[0].c_str().data(), 
+                std::cout << GL::printf("[ Min: %s, 25%: %s, 50%: %s, 75%: %s, Max: %s ]\n",
+                    out[0].c_str().data(),
                     out[1].c_str().data(),
                     out[2].c_str().data(),
                     out[3].c_str().data(),
                     out[4].c_str().data()
                 );
-
-                // std::cout << "Min/25%/50%/75%/Max: [ " + quantile[0].to_string().add_to_delim(fst.to_string(), " / ").add_to_delim(median.to_string(), " / ").add_to_delim(trd.to_string(), " / ").add_to_delim(quantile[quantile.size()-1].to_string(), " / ") + " ]\n";
             }
         };
         class wrapper {
@@ -1957,7 +1963,7 @@ namespace GL {
             ~wrapper() {
                 startTime -= clock::ns();
                 startTime *= -1ll;
-                P->time_results->push_back(startTime);
+                P->time_results->operator[](startTime)++;
             };
             constexpr operator bool() const { return true; };
         };        
@@ -2043,7 +2049,9 @@ int main() {
 #endif
 
     while (true) {
-        if (auto timer = GL::stopwatch::debug_timer()) {
+        std::cout << "\n";
+
+        if (auto timer = GL::stopwatch::debug_timer("A1. For 1'000"); true) {
             GL::stopwatch_group timer2;
             for (int loops = 0; loops < 100; ++loops) {
                 GL::parallel_generic_array_allocator alloc;
@@ -2095,9 +2103,163 @@ int main() {
                 });
             }
         }
-
-
-        if (auto timer = GL::stopwatch::debug_timer()) {
+        if (auto timer = GL::stopwatch::debug_timer("A2. Std_For 1'000"); true) {
+            GL::stopwatch_group timer2;
+            for (int loops = 0; loops < 100; ++loops) {
+                GL::parallel_generic_array_allocator alloc;
+                GL::atomic_queue<void*> ptrs;
+                GL::parallel::Std_For(0, 1'000, [&](size_t const& i) noexcept {
+                    if (auto t = timer2.debug_timer()) {
+#if 0
+                        if (GL::util::rand_very_fast(0, 100) > 50) {
+                            switch (i % 10) {
+                            case 0:
+                                ptrs.push(alloc.alloc<int>(GL::util::rand_very_fast(100, 1'000)));
+                                break;
+                            case 1:
+                                ptrs.push(alloc.alloc<float>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 2:
+                                ptrs.push(alloc.alloc<long double>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 3:
+                                ptrs.push(alloc.alloc<std::string>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 4:
+                                ptrs.push(alloc.alloc<GL::string>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 5:
+                                ptrs.push(alloc.alloc<GL::shared_ptr<std::string>>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 6:
+                                ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 7:
+                                ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 8:
+                                ptrs.push(alloc.alloc<GL::atomic_bag<std::string>>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 9:
+                                ptrs.push(alloc.alloc<GL::meter>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            default:
+                                break;
+                            }
+                        }
+                        else if (void* p; ptrs.try_pop(p)) {
+                            alloc.free(p);
+                        }
+#endif
+                    }
+                });
+            }
+        }
+        if (auto timer = GL::stopwatch::debug_timer("B3. For 1'000 (work)"); true) {
+            GL::stopwatch_group timer2;
+            for (int loops = 0; loops < 100; ++loops) {
+                GL::parallel_generic_array_allocator alloc;
+                GL::atomic_queue<void*> ptrs;
+                GL::parallel::For(0, 1'000, [&](size_t const& i) {
+                    if (auto t = timer2.debug_timer()) {
+#if 1
+                        if (GL::util::rand_very_fast(0, 100) > 50) {
+                            switch (i % 10) {
+                            case 0:
+                                ptrs.push(alloc.alloc<int>(GL::util::rand_very_fast(100, 1'000)));
+                                break;
+                            case 1:
+                                ptrs.push(alloc.alloc<float>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 2:
+                                ptrs.push(alloc.alloc<long double>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 3:
+                                ptrs.push(alloc.alloc<std::string>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 4:
+                                ptrs.push(alloc.alloc<GL::string>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 5:
+                                ptrs.push(alloc.alloc<GL::shared_ptr<std::string>>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 6:
+                                ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 7:
+                                ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 8:
+                                ptrs.push(alloc.alloc<GL::atomic_bag<std::string>>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 9:
+                                ptrs.push(alloc.alloc<GL::meter>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            default:
+                                break;
+                            }
+                        }
+                        else if (void* p; ptrs.try_pop(p)) {
+                            alloc.free(p);
+                        }
+#endif
+                    }
+                    });
+            }
+        }
+        if (auto timer = GL::stopwatch::debug_timer("B4. Std_For 1'000 (work)"); true) {
+            GL::stopwatch_group timer2;
+            for (int loops = 0; loops < 100; ++loops) {
+                GL::parallel_generic_array_allocator alloc;
+                GL::atomic_queue<void*> ptrs;
+                GL::parallel::Std_For(0, 1'000, [&](size_t const& i) {
+                    if (auto t = timer2.debug_timer()) {
+#if 1
+                        if (GL::util::rand_very_fast(0, 100) > 50) {
+                            switch (i % 10) {
+                            case 0:
+                                ptrs.push(alloc.alloc<int>(GL::util::rand_very_fast(100, 1'000)));
+                                break;
+                            case 1:
+                                ptrs.push(alloc.alloc<float>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 2:
+                                ptrs.push(alloc.alloc<long double>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 3:
+                                ptrs.push(alloc.alloc<std::string>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 4:
+                                ptrs.push(alloc.alloc<GL::string>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 5:
+                                ptrs.push(alloc.alloc<GL::shared_ptr<std::string>>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 6:
+                                ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 7:
+                                ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 8:
+                                ptrs.push(alloc.alloc<GL::atomic_bag<std::string>>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 9:
+                                ptrs.push(alloc.alloc<GL::meter>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            default:
+                                break;
+                            }
+                        }
+                        else if (void* p; ptrs.try_pop(p)) {
+                            alloc.free(p);
+                        }
+#endif
+                    }
+                    });
+            }
+        }
+        if (auto timer = GL::stopwatch::debug_timer("C5. For 1'000'000"); true) {
             GL::stopwatch_group timer2;
             for (int loops = 0; loops < 100; ++loops) {
                 GL::parallel_generic_array_allocator alloc;
@@ -2149,6 +2311,163 @@ int main() {
                 });
             }
         }
+        if (auto timer = GL::stopwatch::debug_timer("C6. Std_For 1'000'000"); true) {
+            GL::stopwatch_group timer2;
+            for (int loops = 0; loops < 100; ++loops) {
+                GL::parallel_generic_array_allocator alloc;
+                GL::atomic_queue<void*> ptrs;
+                GL::parallel::Std_For(0, 1'000'000, [&](size_t const& i) noexcept {
+                    if (auto t = timer2.debug_timer()) {
+#if 0
+                        if (GL::util::rand_very_fast(0, 100) > 50) {
+                            switch (i % 10) {
+                            case 0:
+                                ptrs.push(alloc.alloc<int>(GL::util::rand_very_fast(100, 1'000)));
+                                break;
+                            case 1:
+                                ptrs.push(alloc.alloc<float>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 2:
+                                ptrs.push(alloc.alloc<long double>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 3:
+                                ptrs.push(alloc.alloc<std::string>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 4:
+                                ptrs.push(alloc.alloc<GL::string>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 5:
+                                ptrs.push(alloc.alloc<GL::shared_ptr<std::string>>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 6:
+                                ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 7:
+                                ptrs.push(alloc.alloc<GL::any>(GL::util::rand_very_fast(100, 1'000)));
+                                break;
+                            case 8:
+                                ptrs.push(alloc.alloc<GL::atomic_bag<std::string>>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 9:
+                                ptrs.push(alloc.alloc<GL::meter>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            default:
+                                break;
+                            }
+                        }
+                        else if (void* p; ptrs.try_pop(p)) {
+                            alloc.free(p);
+                        }
+#endif
+                    }
+                    });
+            }
+        }
+        if (auto timer = GL::stopwatch::debug_timer("D7. For 1'000'000 (work)"); true) {
+            GL::stopwatch_group timer2;
+            for (int loops = 0; loops < 100; ++loops) {
+                GL::parallel_generic_array_allocator alloc;
+                GL::atomic_queue<void*> ptrs;
+                GL::parallel::For(0, 1'000'000, [&](size_t const& i) {
+                    if (auto t = timer2.debug_timer()) {
+#if 1
+                        if (GL::util::rand_very_fast(0, 100) > 50) {
+                            switch (i % 10) {
+                            case 0:
+                                ptrs.push(alloc.alloc<int>(GL::util::rand_very_fast(100, 1'000)));
+                                break;
+                            case 1:
+                                ptrs.push(alloc.alloc<float>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 2:
+                                ptrs.push(alloc.alloc<long double>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 3:
+                                ptrs.push(alloc.alloc<std::string>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 4:
+                                ptrs.push(alloc.alloc<GL::string>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 5:
+                                ptrs.push(alloc.alloc<GL::shared_ptr<std::string>>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 6:
+                                ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 7:
+                                ptrs.push(alloc.alloc<GL::any>(GL::util::rand_very_fast(100, 1'000)));
+                                break;
+                            case 8:
+                                ptrs.push(alloc.alloc<GL::atomic_bag<std::string>>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 9:
+                                ptrs.push(alloc.alloc<GL::meter>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            default:
+                                break;
+                            }
+                        }
+                        else if (void* p; ptrs.try_pop(p)) {
+                            alloc.free(p);
+                        }
+#endif
+                    }
+                    });
+            }
+        }
+        if (auto timer = GL::stopwatch::debug_timer("D8. Std_For 1'000'000 (work)"); true) {
+            GL::stopwatch_group timer2;
+            for (int loops = 0; loops < 100; ++loops) {
+                GL::parallel_generic_array_allocator alloc;
+                GL::atomic_queue<void*> ptrs;
+                GL::parallel::Std_For(0, 1'000'000, [&](size_t const& i) {
+                    if (auto t = timer2.debug_timer()) {
+#if 1
+                        if (GL::util::rand_very_fast(0, 100) > 50) {
+                            switch (i % 10) {
+                            case 0:
+                                ptrs.push(alloc.alloc<int>(GL::util::rand_very_fast(100, 1'000)));
+                                break;
+                            case 1:
+                                ptrs.push(alloc.alloc<float>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 2:
+                                ptrs.push(alloc.alloc<long double>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 3:
+                                ptrs.push(alloc.alloc<std::string>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 4:
+                                ptrs.push(alloc.alloc<GL::string>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 5:
+                                ptrs.push(alloc.alloc<GL::shared_ptr<std::string>>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 6:
+                                ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 7:
+                                ptrs.push(alloc.alloc<GL::any>(GL::util::rand_very_fast(100, 1'000)));
+                                break;
+                            case 8:
+                                ptrs.push(alloc.alloc<GL::atomic_bag<std::string>>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 9:
+                                ptrs.push(alloc.alloc<GL::meter>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            default:
+                                break;
+                            }
+                        }
+                        else if (void* p; ptrs.try_pop(p)) {
+                            alloc.free(p);
+                        }
+#endif
+                    }
+                    });
+            }
+        }
+
     }
 
     while(true){

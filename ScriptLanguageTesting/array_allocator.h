@@ -1701,7 +1701,9 @@ namespace GL {
             }, [&Alloc](void)->void {
                 Alloc.second.unlock();
             }, [](void* ptr, size_t num) -> void {
-                std::destroy(reinterpret_cast<T*>(ptr), reinterpret_cast<T*>(ptr) + num);
+                if constexpr (!std::is_pod_v<T>) {
+                    std::destroy(reinterpret_cast<T*>(ptr), reinterpret_cast<T*>(ptr) + num);
+                }
             }, false);
         };
 
@@ -1714,7 +1716,9 @@ namespace GL {
             }, [&Alloc](void)->void {
                 Alloc.second.unlock();
             }, [](void* ptr, size_t num) -> void {
-                std::destroy(reinterpret_cast<T*>(ptr), reinterpret_cast<T*>(ptr) + num);
+                if constexpr (!std::is_pod_v<T>) {
+                    std::destroy(reinterpret_cast<T*>(ptr), reinterpret_cast<T*>(ptr) + num);
+                }
             }, true);
         };
 
@@ -1773,7 +1777,9 @@ namespace GL {
             }, [&Alloc](void)->void {
                 Alloc.second.unlock();
             }, [](void* ptr, size_t num) -> void {
-                reinterpret_cast<T*>(ptr)->~T();
+                if constexpr (!std::is_pod_v<T>) {
+                    reinterpret_cast<T*>(ptr)->~T();
+                }
             }, false));
             if constexpr (!std::is_pod_v<T>) {
                 new (out) T();
@@ -1790,7 +1796,9 @@ namespace GL {
             }, [&Alloc](void)->void {
                 Alloc.second.unlock();
             }, [](void* ptr, size_t num) -> void {
-                reinterpret_cast<T*>(ptr)->~T();
+                if constexpr (!std::is_pod_v<T>) {
+                    reinterpret_cast<T*>(ptr)->~T();
+                }
             }, true));
             if constexpr (!std::is_pod_v<T>) {
                 new (out) T();

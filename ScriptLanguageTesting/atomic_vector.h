@@ -16,7 +16,7 @@ namespace GL {
     // buckets increase the number of allocations by *2 each time. Maximum number of buckets must be known at compile-time. 
     // Therefore, there is a maximum size this vector may have. Note that increasing the maximum number of buckets 
     // should only result in a minor increase to the memory use, and little to no impact on performance. Suggest 24 for ~ 33M items, while 64 would handle nearly all use cases possible. 
-    template <typename T, size_t max_num_buckets = 32>
+    template <typename T, size_t max_num_buckets = 32, bool use_malloc = true>
     class atomic_vector {
         inline static const short tab64[64] = {
             63,  0, 58,  1, 59, 47, 53,  2,
@@ -125,7 +125,13 @@ namespace GL {
             if (blocks[block_n]) return out;
             for (short blockN = 0; blockN <= block_n; ++blockN) {
                 if (!blocks[blockN]) {
-                    element_t* new_ptr = (element_t*)GL::malloc(block_to_allocsize(blockN) * sizeof(element_t)); 
+                    element_t* new_ptr;
+                    if constexpr (use_malloc) {
+                        new_ptr = (element_t*)GL::malloc(block_to_allocsize(blockN) * sizeof(element_t));
+                    }
+                    else {
+                        new_ptr = (element_t*)::malloc(block_to_allocsize(blockN) * sizeof(element_t));
+                    }
                     if (new_ptr) {
                         if constexpr (!std::is_pod_v<T>) {
                             for (int i = 0; i < block_to_allocsize(blockN); ++i) {
@@ -145,7 +151,12 @@ namespace GL {
                                     (new_ptr + i)->~element_t();
                                 }
                             }
-                            GL::mfree(new_ptr); 
+                            if constexpr (use_malloc) {
+                                GL::mfree(new_ptr);
+                            }
+                            else {
+                                ::free(new_ptr);
+                            }
                         }
                     }
                 }
@@ -172,7 +183,12 @@ namespace GL {
                             (blocks[blockN] + i)->~element_t();
                         }
                     }
-                    GL::mfree(blocks[blockN]); 
+                    if constexpr (use_malloc) {
+                        GL::mfree(blocks[blockN]);
+                    }
+                    else {
+                        ::free(blocks[blockN]);
+                    }
                 }
             }
         };
@@ -234,23 +250,6 @@ namespace GL {
         element_t& get_or_make(size_t index) {
             grow_to_at_least(index + 1);
             return at(index);
-
-            //auto block_i = global_index_to_block(index);
-            //auto block_j = global_index_to_local_index(index, block_i);
-            //if (EnsureBlockExists(block_i)) {
-            //    while (true) {
-            //        size_t prevValid = valid_pos;
-            //        if (prevValid < (index + 1)) {
-            //            if (InterlockedCompareExchange(reinterpret_cast<volatile size_t*>(&valid_pos), (index + 1), prevValid) == prevValid) {
-            //                break;
-            //            }
-            //        }
-            //        else {
-            //            break;
-            //        }
-            //    }
-            //}
-            //return blocks[block_i][block_j];
         };
 
         class Iterator {

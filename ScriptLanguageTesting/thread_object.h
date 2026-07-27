@@ -88,16 +88,118 @@ namespace GL {
         thread_object& operator=(thread_object const&) = delete;
         thread_object& operator=(thread_object&&) = delete;
         ~thread_object() {
-            //for (auto& x : _tls) if (x.second) {
-            //    if (_before_destruction) _before_destruction(*x.second);
-            //    _alloc.Free(x.second);
-            //}
+            for (auto& x : _tls) if (x.second) {
+                if (_before_destruction) _before_destruction(*x.second);
+                _alloc.Free(x.second);
+            }
         };
 
         T* operator->() { return GetTLS(); };
         const T* operator->() const { return const_cast<thread_object*>(this)->GetTLS(); };
         T& operator*() { return *GetTLS(); };
         const T& operator*() const { return *const_cast<thread_object*>(this)->GetTLS(); };
+
+        T& operator[](size_t thread_index) { return *GetTLS(thread_index); };
+
+        template <typename T> bool for_each_cancellable(T const& func) {
+            const auto index = GL::util::get_thread_id();
+            size_t i;
+            for (i = index; i < _tls_size; ++i) {
+                auto& x = _tls[i];
+                if (x.second) {
+                    if (func(*x.second)) { return true; }
+                }
+            }
+            for (i = 0; (i < index) && (i < _tls_size); ++i) {
+                auto& x = _tls[i];
+                if (x.second) {
+                    if (func(*x.second)) { return true; }
+                }
+            }
+            return false;
+        };
+        template <typename T> void for_each(T const& func) {
+            (void)for_each_cancellable([&func](auto& x) -> bool {
+                func(x);
+                return false;
+            });
+        };
+
+    };
+
+    // Equivalent to thread_local, for member objects. New threads that attempt to re-use old indexes are caught, and the object is re-initialized accordingly. 
+    template <typename T>
+    class thread_object_no_malloc {
+    public:
+        T const _default; // for initializing new thread objects
+        std::function<void(T&)> _before_destruction; // optionally called before thread objects are destroyed.
+        std::function<void(T&)> _after_construction; // optionally called after thread objects are created.
+        using type = T;
+
+    private:
+        mutable size_t _tls_size{ 0 };
+        mutable atomic_vector<std::pair<size_t, T*>, 32, false> _tls;
+
+        __declspec(noinline) auto* GetTLS() const {
+            thread_local size_t _tl_index = 0; // index of our thread, kept to the smallest number(s) we can. Indexes are re-used frequently, even during the lifetime of this thread_object. 
+            if (!_tl_index) _tl_index = GL::util::get_thread_id();
+            thread_local size_t _tl_unique_id = 0; // actual unique hash id of our thread. Will not be re-used by any thread. Even if the same thread dies and is re-born, the epoch may catch that. 
+            if (!_tl_unique_id) _tl_unique_id = GL::util::get_actual_unique_thread_id();
+
+            // step 1, grow the _tls if necessary
+            if (_tls_size <= _tl_index) { // lazy growth, taking advantage of grow_to_at_least being safe to call on repeat. 
+                (void)_tls.grow_to_at_least(_tl_index + 1);
+                InterlockedExchangeNoFence(reinterpret_cast<volatile size_t*>(&_tls_size), _tl_index + 1);
+            }
+
+            // step 2, get the address of the unique _tls slot
+            auto& _tls_slot = _tls.at(_tl_index);
+
+            // step 2, detect if the thread id changed (including if it was never initialized at all)
+            if (_tls_slot.first != _tl_unique_id) {
+                InterlockedExchangeNoFence(reinterpret_cast<volatile size_t*>(&_tls_slot.first), _tl_unique_id);
+
+                T* newPtr{ new T(_default) };
+                if (_after_construction) _after_construction(*newPtr);
+                if (T* old_ptr = reinterpret_cast<T*>(InterlockedExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&_tls_slot.second), newPtr))) {
+                    if (_before_destruction) _before_destruction(*old_ptr);
+                    delete old_ptr;
+                }
+            }
+
+            // step 3, return the resultign pointer, which should be properly initialized.
+            return _tls_slot.second;
+        };
+        auto* GetTLS(size_t thread_index) const {
+            auto& _tls_slot = _tls[thread_index];
+            if (!_tls_slot.second) {
+                throw std::runtime_error("The TLS should be previously initialized by the appropriate thread before access");
+            }
+            return _tls_slot.second;
+        };
+
+    public:
+        // approximate number of threads that have been activated
+        size_t size() const {
+            return _tls_size;
+        };
+
+        thread_object_no_malloc() : _default{}, _tls{}, _tls_size{ 0 } {};
+        thread_object_no_malloc(thread_object_no_malloc const& rhs) = delete;
+        thread_object_no_malloc(thread_object_no_malloc&& rhs) = delete;
+        thread_object_no_malloc& operator=(thread_object_no_malloc const&) = delete;
+        thread_object_no_malloc& operator=(thread_object_no_malloc&&) = delete;
+        ~thread_object_no_malloc() {
+            for (auto& x : _tls) if (x.second) {
+                if (_before_destruction) _before_destruction(*x.second);
+                delete x.second;
+            }
+        };
+
+        T* operator->() { return GetTLS(); };
+        const T* operator->() const { return const_cast<thread_object_no_malloc*>(this)->GetTLS(); };
+        T& operator*() { return *GetTLS(); };
+        const T& operator*() const { return *const_cast<thread_object_no_malloc*>(this)->GetTLS(); };
 
         T& operator[](size_t thread_index) { return *GetTLS(thread_index); };
 
@@ -251,22 +353,22 @@ namespace GL {
         thread_object_no_default& operator=(thread_object_no_default const&) = delete;
         thread_object_no_default& operator=(thread_object_no_default&&) = delete;
         ~thread_object_no_default() {
-            //for (int i = 0; i < _tls_size + 1; ++i) {
-            //    if (_tls.size() < i) {
-            //        if (auto* p = _tls.at(i).second; p) {
-            //            if (_before_destruction) _before_destruction(*p);
-            //            _alloc.Free(p);
-            //        }
-            //        _tls.at(i).second = nullptr;
-            //    }
-            //}
-            //for (auto& x : _tls) {
-            //    if (x.second) {
-            //        if (_before_destruction) _before_destruction(*x.second);
-            //        _alloc.Free(x.second);
-            //    }
-            //    x.second = nullptr;
-            //}
+            for (int i = 0; i < _tls_size + 1; ++i) {
+                if (_tls.size() < i) {
+                    if (auto* p = _tls.at(i).second; p) {
+                        if (_before_destruction) _before_destruction(*p);
+                        _alloc.Free(p);
+                    }
+                    _tls.at(i).second = nullptr;
+                }
+            }
+            for (auto& x : _tls) {
+                if (x.second) {
+                    if (_before_destruction) _before_destruction(*x.second);
+                    _alloc.Free(x.second);
+                }
+                x.second = nullptr;
+            }
         };
 
         __forceinline T* operator->() { return GetTLS(); };

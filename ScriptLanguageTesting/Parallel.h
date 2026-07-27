@@ -22,128 +22,6 @@
 // Good Language namespace
 namespace GL {
 	namespace parallel {
-		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
-		If the todo(i) returns anything, it will be collected into a vector at the end. */
-		template<typename iteratorType, class F> decltype(auto) Std_For(iteratorType start, iteratorType end, F const& ToDo) {
-			GL::sequence<iteratorType> seq(start, end); // 0..999
-			std::exception_ptr* e{ nullptr };
-
-			std::for_each(
-				std::execution::par,
-				seq.begin(),
-				seq.end(),
-				[&](auto& x) { // copies are safer, and the resulting code will be as quick.
-					try {
-						if (!e) ToDo(x);
-					}
-					catch (...) {
-						if (!e) {
-							auto ptr = new std::exception_ptr(std::current_exception());
-							if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&e), ptr, nullptr) != nullptr) {
-								delete ptr;
-							}
-						}
-					}
-				}
-			);
-			if (e) {
-				std::exception_ptr copy{ *e };
-				delete e;
-				std::rethrow_exception(std::move(copy));
-			}
-		};
-
-		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
-		If the todo(i) returns anything, it will be collected into a vector at the end. */
-		template<typename iteratorType, class F> decltype(auto) Std_For(iteratorType start, iteratorType end, iteratorType step, F const& ToDo) {
-			GL::sequence<iteratorType> seq(start, end, step); // 0..999
-			std::exception_ptr* e{ nullptr };
-
-			std::for_each(
-				std::execution::par,
-				seq.begin(),
-				seq.end(),
-				[&](auto& x) { // copies are safer, and the resulting code will be as quick.
-					try {
-						if (!e) ToDo(x);
-					}
-					catch (...) {
-						if (!e) {
-							auto ptr = new std::exception_ptr(std::current_exception());
-							if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&e), ptr, nullptr) != nullptr) {
-								delete ptr;
-							}
-						}
-					}
-				}
-			);
-			if (e) {
-				std::exception_ptr copy{ *e };
-				delete e;
-				std::rethrow_exception(std::move(copy));
-			}
-		};
-
-		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
-		If the todo(*i) returns anything, it will be collected into a vector at the end. */
-		template<typename containerType, typename F> decltype(auto) Std_ForEach(containerType& container, F const& ToDo) {
-			std::exception_ptr* e{ nullptr };
-
-			std::for_each(
-				std::execution::par,
-				std::begin(container),
-				std::end(container),
-				[&](auto& x) { // copies are safer, and the resulting code will be as quick.
-					try {
-						if (!e) ToDo(x);
-					}
-					catch (...) {
-						if (!e) {
-							auto ptr = new std::exception_ptr(std::current_exception());
-							if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&e), ptr, nullptr) != nullptr) {
-								delete ptr;
-							}
-						}
-					}
-				}
-			);
-			if (e) {
-				std::exception_ptr copy{ *e };
-				delete e;
-				std::rethrow_exception(std::move(copy));
-			}
-		};
-
-		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
-		If the todo(*i) returns anything, it will be collected into a vector at the end. */
-		template<typename containerType, typename F> decltype(auto) Std_ForEach(containerType const& container, F const& ToDo) {
-			std::exception_ptr* e{ nullptr };
-
-			std::for_each(
-				std::execution::par,
-				std::begin(container),
-				std::end(container),
-				[&](auto const& x) { // copies are safer, and the resulting code will be as quick.
-					try {
-						if (!e) ToDo(x);
-					}
-					catch (...) {
-						if (!e) {
-							auto ptr = new std::exception_ptr(std::current_exception());
-							if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&e), ptr, nullptr) != nullptr) {
-								delete ptr;
-							}
-						}
-					}
-				}
-			);
-			if (e) {
-				std::exception_ptr copy{ *e };
-				delete e;
-				std::rethrow_exception(std::move(copy));
-			}
-		};
-
 		namespace impl {
 			// each dispatch call will be "observed" by this context wrapper.
 			struct dispatch_context {
@@ -247,9 +125,171 @@ namespace GL {
 			};
 		};
 
+		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
+		If the todo(i) returns anything, it will be collected into a vector at the end. */
+		template<typename iteratorType, class F> void Std_For(iteratorType start, iteratorType end, F const& ToDo) {
+			using f_t = impl::function_traits<decltype(std::function(ToDo))>;
+
+			//if constexpr (noexcept(ToDo(start))) {
+			//	GL::sequence<iteratorType> seq(start, end); // 0..999
+			//	std::for_each(
+			//		std::execution::par,
+			//		seq.begin(),
+			//		seq.end(),
+			//		[&](auto& x) { // copies are safer, and the resulting code will be as quick.
+			//			ToDo(x);
+			//		}
+			//	);
+			//}
+			//else {
+				GL::sequence<iteratorType> seq(start, end); // 0..999
+				std::exception_ptr* e{ nullptr };
+				std::for_each(
+					std::execution::par,
+					seq.begin(),
+					seq.end(),
+					[&](auto& x) { // copies are safer, and the resulting code will be as quick.
+						try {
+							if (!e) {
+								if constexpr (std::tuple_size_v<f_t::arguments> == 0) {
+									(void)ToDo();
+								}
+								else if constexpr (std::is_reference_v<std::tuple_element_t<0, f_t::arguments> > && !std::is_const_v< std::remove_reference_t<std::tuple_element_t<0, f_t::arguments>>>) {
+									iteratorType t = static_cast<iteratorType>(x);
+									(void)ToDo(t);
+								}
+								else {
+									(void)ToDo(x);
+								}
+							}
+						}
+						catch (...) {
+							if (!e) {
+								auto ptr = new std::exception_ptr(std::current_exception());
+								if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&e), ptr, nullptr) != nullptr) {
+									delete ptr;
+								}
+							}
+						}
+					}
+				);
+				if (e) {
+					std::exception_ptr copy{ *e };
+					delete e;
+					std::rethrow_exception(std::move(copy));
+				}
+			//}
+		};
+
+		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
+		If the todo(i) returns anything, it will be collected into a vector at the end. */
+		template<typename iteratorType, class F> void Std_For(iteratorType start, iteratorType end, iteratorType step, F const& ToDo) {
+			using f_t = impl::function_traits<decltype(std::function(ToDo))>; 
+			GL::sequence<iteratorType> seq(start, end, step); // 0..999
+			std::exception_ptr* e{ nullptr };
+
+			std::for_each(
+				std::execution::par,
+				seq.begin(),
+				seq.end(),
+				[&](auto& x) { // copies are safer, and the resulting code will be as quick.
+					try {
+						if (!e) {
+							if constexpr (std::tuple_size_v<f_t::arguments> == 0) {
+								(void)ToDo();
+							}
+							else if constexpr (std::is_reference_v<std::tuple_element_t<0, f_t::arguments> > && !std::is_const_v< std::remove_reference_t<std::tuple_element_t<0, f_t::arguments>>>) {
+								iteratorType t = static_cast<iteratorType>(x);
+								(void)ToDo(t);
+							}
+							else {
+								(void)ToDo(x);
+							}
+						}
+					}
+					catch (...) {
+						if (!e) {
+							auto ptr = new std::exception_ptr(std::current_exception());
+							if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&e), ptr, nullptr) != nullptr) {
+								delete ptr;
+							}
+						}
+					}
+				}
+			);
+			if (e) {
+				std::exception_ptr copy{ *e };
+				delete e;
+				std::rethrow_exception(std::move(copy));
+			}
+		};
+
+		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
+		If the todo(*i) returns anything, it will be collected into a vector at the end. */
+		template<typename containerType, typename F> void Std_ForEach(containerType& container, F const& ToDo) {
+			std::exception_ptr* e{ nullptr };
+
+			std::for_each(
+				std::execution::par,
+				std::begin(container),
+				std::end(container),
+				[&](auto& x) { // copies are safer, and the resulting code will be as quick.
+					try {
+						if (!e) ToDo(x);
+					}
+					catch (...) {
+						if (!e) {
+							auto ptr = new std::exception_ptr(std::current_exception());
+							if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&e), ptr, nullptr) != nullptr) {
+								delete ptr;
+							}
+						}
+					}
+				}
+			);
+			if (e) {
+				std::exception_ptr copy{ *e };
+				delete e;
+				std::rethrow_exception(std::move(copy));
+			}
+		};
+
+		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
+		If the todo(*i) returns anything, it will be collected into a vector at the end. */
+		template<typename containerType, typename F> void Std_ForEach(containerType const& container, F const& ToDo) {
+			std::exception_ptr* e{ nullptr };
+
+			std::for_each(
+				std::execution::par,
+				std::begin(container),
+				std::end(container),
+				[&](auto const& x) { // copies are safer, and the resulting code will be as quick.
+					try {
+						if (!e) ToDo(x);
+					}
+					catch (...) {
+						if (!e) {
+							auto ptr = new std::exception_ptr(std::current_exception());
+							if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&e), ptr, nullptr) != nullptr) {
+								delete ptr;
+							}
+						}
+					}
+				}
+			);
+			if (e) {
+				std::exception_ptr copy{ *e };
+				delete e;
+				std::rethrow_exception(std::move(copy));
+			}
+		};
+
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); } */
 		template<typename iteratorType, class F> void For(iteratorType start, iteratorType end, F const& ToDo) {
 			if (end >= start) {
+#if 0
+				return Std_For(start, end, ToDo);
+#else
 				using f_t = impl::function_traits<decltype(std::function(ToDo))>;
 				impl::dispatch_context ctx{ 0, nullptr, nullptr };
 				if (start == static_cast<iteratorType>(0)) {
@@ -295,6 +335,7 @@ namespace GL {
 					impl::Dispatch(ctx, static_cast<size_t>(end - start), &IterData::DoTask, static_cast<void*>(&data));
 				}
 				impl::Wait(ctx);
+#endif
 			}
 			else {
 				For(end, start, ToDo);
@@ -304,6 +345,9 @@ namespace GL {
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
 		If the todo(i) returns anything, it will be collected into a vector at the end. */
 		template<typename iteratorType, class F> void For(iteratorType start, iteratorType end, iteratorType step, F const& ToDo) {
+#if 0
+			return Std_For(start, end, step, ToDo);
+#else		
 			struct IterData {
 				const F* _to_do;
 				iteratorType _start;
@@ -319,11 +363,15 @@ namespace GL {
 			impl::dispatch_context ctx{ 0, nullptr, nullptr };
 			impl::Dispatch(ctx, static_cast<size_t>((static_cast<size_t>(end) - static_cast<size_t>(start)) / static_cast<size_t>(step)), &IterData::DoTask, reinterpret_cast<void*>(&data));
 			impl::Wait(ctx);
+#endif
 		};
 
 		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
 		If the todo(*i) returns anything, it will be collected into a vector at the end. */
-		template<typename containerType, typename F> decltype(auto) For_Each(containerType& container, F const& ToDo) {
+		template<typename containerType, typename F> void For_Each(containerType& container, F const& ToDo) {
+#if 0
+			return Std_ForEach(container, ToDo);
+#else
 			auto begin = container.begin();
 			auto end = container.end();
 			using iterType = decltype(begin);
@@ -367,11 +415,15 @@ namespace GL {
 				&IterData::GroupEnd
 			);
 			impl::Wait(ctx);
+#endif
 		};
 
 		/* parallel_for (auto i = container.begin(); i != container.end(); i++){ todo(*i); }
 		If the todo(*i) returns anything, it will be collected into a vector at the end. */
-		template<typename containerType, typename F> decltype(auto) For_Each(containerType const& container, F const& ToDo) {
+		template<typename containerType, typename F> void For_Each(containerType const& container, F const& ToDo) {
+#if 0
+			return Std_ForEach(container, ToDo);
+#else		
 			auto begin = container.begin();
 			auto end = container.end();
 			using iterType = decltype(begin);
@@ -415,7 +467,11 @@ namespace GL {
 				&IterData::GroupEnd
 			);
 			impl::Wait(ctx);
+#endif
 		};
+
+
+
 
 		/* while (WhileBoolean()) { Do(); } */
 		template<typename F, typename G> decltype(auto) While(F const& WhileBoolean, G const& Do) {
@@ -456,6 +512,13 @@ namespace GL {
 
 		/* for (int i = 0; i < numToDispatch; i++){ ToDo(i, SharedObject); } return SharedObject; */
 		template<typename F, typename G> F Dispatch(size_t numToDispatch, F&& SharedObject, G const& ToDo) {
+#if 0
+			F out{ std::forward<F>(SharedObject) }; 
+			Std_For(0, numToDispatch, [&](size_t i) {
+				ToDo(i, out);
+			});
+			return out;
+#else
 			F out{ std::forward<F>(SharedObject) };
 			struct IterData {
 				const G* _to_do;
@@ -475,10 +538,17 @@ namespace GL {
 			);
 			impl::Wait(ctx);
 			return out;
+#endif
 		};
 
 		/* for (int i = 0; i < numToDispatch; i++){ ToDo(i, SharedObject); } return SharedObject; */
 		template<typename F, typename G> F& Dispatch(size_t numToDispatch, F& SharedObject, G const& ToDo) {
+#if 0
+			Std_For(0, numToDispatch, [&](size_t i) {
+				ToDo(i, SharedObject);
+			});
+			return SharedObject;
+#else
 			struct IterData {
 				const G* _to_do;
 				F* _obj;
@@ -497,6 +567,7 @@ namespace GL {
 			);
 			impl::Wait(ctx);
 			return SharedObject;
+#endif
 		};
 		
 		namespace impl {
