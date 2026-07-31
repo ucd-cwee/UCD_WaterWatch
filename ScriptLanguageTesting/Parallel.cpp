@@ -155,8 +155,8 @@ namespace GL {
 					numCores{ 0 };
 				size_t 
 					numThreads{ 0 };
-				GL::atomic_queue< thread_task >
-				// parallel_queue< thread_task > // locking_queue > atomic_parallel_stack > atomic_parallel_queue > parallel_queue
+				//GL::atomic_queue< thread_task >
+				parallel_queue< thread_task > // locking_queue > atomic_parallel_stack > atomic_parallel_queue > parallel_queue
 					jobQueue{};
 				std::atomic<alive_state> 
 					alive{ is_dead };
@@ -216,9 +216,9 @@ namespace GL {
 						{
 							if (task.group_memory_size > 0) {
 								if (sizeOfData < ((task.group_memory_size + 15) & ~15)) {
-									if (data) ::_aligned_free(data);
+									if (data) GL::mfree(data);
 									sizeOfData = (task.group_memory_size + 15) & ~15;
-									data = ::_aligned_malloc(sizeOfData, 16);
+									data = GL::malloc(sizeOfData);
 								}
 								::memset(data, 0, sizeOfData);
 								args.group_memory = data;
@@ -245,10 +245,17 @@ namespace GL {
 					}
 
 					// handle job completion callback
-					if (0ull == --task.ctx->counter) {
-						if (task.ctx->callback != nullptr) {
-							task.ctx->callback(task.ctx->callback_data);
+					if (task.ctx->callback) {
+						void (*callback)(void*);
+						void* callback_data;
+						callback = task.ctx->callback;
+						callback_data = task.ctx->callback_data;
+						if (0ull == (task.ctx->counter.fetch_sub(1ull, std::memory_order_relaxed) - 1ull)) {							
+							callback(callback_data);
 						}
+					}
+					else {
+						task.ctx->counter.fetch_sub(1ull, std::memory_order_relaxed);
 					}
 				}
 			};
@@ -260,7 +267,7 @@ namespace GL {
 			void work(const dispatch_context* parentCtx = nullptr) {
 				size_t threadID{ util::get_thread_id() }, sizeOfData{ 0 };
 				void* data{ nullptr };
-				thread_task task;
+				thread_task task; std::memset(&task, 0, sizeof(thread_task));
 				impl::job_argument args{ 
 					0 // jobIndex
 					, 0 // groupID
@@ -275,31 +282,26 @@ namespace GL {
 						if (try_get_job(internal_state.jobQueue, task)) {
 							do_task(task, args, sizeOfData, data);
 						}
-						//else {
-						//	// there are no jobs available, yet the task is not considered complete.
-						//	if (parentCtx->counter.load() == std::numeric_limits<size_t>::max()) {
-						//		throw std::runtime_error("An impossibly large counter was provided to the parallel job system");
-						//	}
-
-						//	if ((parentCtx->waiters.load() > parentCtx->counter.load()) && (parentCtx->counter.load() > 0)) {
-						//		std::cout << GL::printf("NOTE ME: %i / %i\n", (int)parentCtx->waiters.load(), (int)parentCtx->counter.load());
-						//		throw waiting_error{};
-						//	}
-						//}
+						else {
+							// there are no jobs available, yet the task is not considered complete.
+							if (parentCtx->counter.load(std::memory_order_relaxed) == std::numeric_limits<size_t>::max()) {
+								throw std::runtime_error("An impossibly large counter was provided to the parallel job system");
+							}
+						}
 					}
-					if (sizeOfData > 0) ::_aligned_free(data);
+					if (sizeOfData > 0) GL::mfree(data);
 				}
 				else {
 					// work until there are no jobs left
 					while (try_get_job(internal_state.jobQueue, task)) {							
 						do_task(task, args, sizeOfData, data);
 					}	
-					if (data && (sizeOfData > 0)) ::_aligned_free(data);
+					if (data && (sizeOfData > 0)) GL::mfree(data);
 				}
 			};
 
 			void DoDispatch(thread_task job, size_t groupSize, size_t jobCount) {
-#if 1
+#if 0
 				if (jobCount > (32 * internal_state.numThreads)) { 	
 					// if there are enough jobs, then it is worth spending a few extra moments distributing jobs based on the "effectiveness" of the hyperthreads. Not all threads are built equal, 
 					// and some have 1/2 or worse of the performance of others. This strategy attempted to measure the performance at start-up, and then uses that to divy-up jobs. 
@@ -383,9 +385,9 @@ namespace GL {
 						}
 					}
 #endif
-				}
-				else {
+				} else 
 #endif
+				{
 					for (job.group_id = 0, job.group_job_offset = 0; ; ++job.group_id) {
 						// For each group, generate one real job:						
 						job.group_job_end = std::min(job.group_job_offset + groupSize, jobCount);
@@ -423,7 +425,7 @@ namespace GL {
 							internal_state.threads[threadID].relative_speed = 1.0 / (double)((GL::util::get_current_epoch() - start_time) + 1);
 
 							if (1) {
-								thread_task temp{ nullptr, nullptr, 0, 0, 0, 0, nullptr, nullptr, nullptr };
+								thread_task temp; std::memset(&temp, 0, sizeof(thread_task));
 								(void)internal_state.jobQueue.push(temp); // necessary to instantiate the thread_local object
 								while (internal_state.jobQueue.try_pop(temp)) {}
 							}
@@ -464,9 +466,9 @@ namespace GL {
 						DWORD_PTR affinity_result = SetThreadAffinityMask(handle, affinityMask);
 						assert(affinity_result > 0);
 
-						//// Increase thread priority:
-						//BOOL priority_result = SetThreadPriority(handle, THREAD_PRIORITY_HIGHEST);
-						//assert(priority_result != 0);
+						// Increase thread priority:
+						BOOL priority_result = SetThreadPriority(handle, THREAD_PRIORITY_HIGHEST);
+						assert(priority_result != 0);
 
 						// Name the thread:
 						std::wstring wthreadname = L"GL::thread_" + std::to_wstring(threadID);
@@ -566,13 +568,13 @@ namespace GL {
 				while ((size_t)(groupCount * groupSize) < jobCount) groupCount++;
 
 				// context state is updated to its maximum:
-				ctx.counter += groupCount;
+				ctx.counter.fetch_add(groupCount, std::memory_order_relaxed);
 
 				if ((wait_depth > 0) || (groupCount <= 1)) {
 					// do the work directly:
 					void* data{ nullptr };
 					size_t threadID{ util::get_thread_id() }, sizeOfData{ 0 };
-					thread_task task;
+					thread_task task; std::memset(&task, 0, sizeof(thread_task));
 					impl::job_argument args{
 						0 // jobIndex
 						, 0 // groupID
@@ -607,7 +609,7 @@ namespace GL {
 						}
 					}
 
-					if (sizeOfData > 0) ::_aligned_free(data);
+					if (sizeOfData > 0) GL::mfree(data);
 				}
 				else {
 					DoDispatch(thread_task{
@@ -644,13 +646,13 @@ namespace GL {
 				while ((size_t)(groupCount * groupSize) < jobCount) groupCount++;
 
 				// context state is updated to its maximum:
-				ctx.counter += groupCount;
+				ctx.counter.fetch_add(groupCount, std::memory_order_relaxed);
 
 				if ((wait_depth > 0) || (groupCount <= 1)) {
 					// do the work directly:
 					void* data{ nullptr };
 					size_t threadID{ util::get_thread_id() }, sizeOfData{ 0 };
-					thread_task task;
+					thread_task task; std::memset(&task, 0, sizeof(thread_task));
 					impl::job_argument args{
 						0 // jobIndex
 						, 0 // groupID
@@ -685,7 +687,7 @@ namespace GL {
 						}
 					}
 
-					if (sizeOfData > 0) ::_aligned_free(data);
+					if (sizeOfData > 0) GL::mfree(data);
 				}
 				else {
 					DoDispatch(thread_task{
@@ -711,13 +713,13 @@ namespace GL {
 				constexpr size_t groupCount = 1;
 				constexpr size_t groupSize = 1;
 				// context state is updated to its maximum:
-				ctx.counter += groupCount;
+				ctx.counter.fetch_add(groupCount, std::memory_order_relaxed);
 
 				if (wait_depth > 0) {
 					// do the work directly:
 					void* data{ nullptr };
 					size_t threadID{ util::get_thread_id() }, sizeOfData{ 0 };
-					thread_task task;
+					thread_task task; std::memset(&task, 0, sizeof(thread_task));
 					impl::job_argument args{
 						0 // jobIndex
 						, 0 // groupID
@@ -752,7 +754,7 @@ namespace GL {
 						}
 					}
 
-					if (sizeOfData > 0) ::_aligned_free(data);
+					if (sizeOfData > 0) GL::mfree(data);
 				}
 				else {
 					DoDispatch(thread_task{

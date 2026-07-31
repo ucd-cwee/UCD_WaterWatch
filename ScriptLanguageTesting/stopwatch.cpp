@@ -1,4 +1,6 @@
 #include "stopwatch.h"
+
+#ifdef _WIN32
 #include <windows.h>
 
 double PCFreq = 0.0;
@@ -20,36 +22,45 @@ auto StartCounter = []() -> bool {
 	}
 	return false;
 }();
+#endif
 
 namespace GL {
 	namespace clock {
 		// seconds since boot
 		long long s() {
-			LARGE_INTEGER li;
+#ifdef _WIN32
 			QueryPerformanceCounter(&li);
 			return (long long)(double(li.QuadPart - CounterStart) * invPCFreqS);
-			// return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+#else
+			return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+#endif
 		};
 		// milliseconds since boot
 		long long ms() {
-			LARGE_INTEGER li;
+#ifdef _WIN32
 			QueryPerformanceCounter(&li);
 			return (long long)(double(li.QuadPart - CounterStart) * invPCFreqMS);
-			// return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+#else
+			return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+#endif
 		};
 		// microseconds since boot
 		long long us() {
-			LARGE_INTEGER li;
+#ifdef _WIN32
 			QueryPerformanceCounter(&li);
 			return (long long)(double(li.QuadPart - CounterStart) * invPCFreqUS);
-			// return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+#else
+			return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+#endif
 		};
 		// nanoseconds since boot
 		long long ns() {
-			LARGE_INTEGER li;
+#ifdef _WIN32
 			QueryPerformanceCounter(&li);
 			return (long long)(double(li.QuadPart - CounterStart) * invPCFreqNS);
-			// return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+#else
+			return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+#endif
 		};
 	};
 }

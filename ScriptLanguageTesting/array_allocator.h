@@ -1400,7 +1400,7 @@ namespace GL {
 
         public:
             template <typename T, typename Lock, typename Unlock> __declspec(noinline) T*
-                Alloc(const int num, Lock const& lock, Unlock const& unlock, void(*deleter)(void*, size_t), bool cleared_alloc = false) {
+                Alloc(const int num, Lock const& lock, Unlock const& unlock, void(*deleter)(void*, size_t) = nullptr, bool cleared_alloc = false) {
                 dynamic_block
                     * block;
                 T
@@ -1444,10 +1444,10 @@ namespace GL {
 
                 dynamic_block* block = (dynamic_block*)(((::byte*)ptr) - (int)sizeof(dynamic_block));
 
+                initialized_blocks.erase(block->initialized_block_index);
                 if (block->deleter) {
-                    block->deleter(ptr, block->num);
-                    initialized_blocks.erase(block->initialized_block_index);
-                }
+                    block->deleter(ptr, block->num);                    
+                }                
 
                 lock();
 
@@ -1696,30 +1696,52 @@ namespace GL {
         template <typename T> __declspec(noinline) T*
             alloc(const int num) {
             auto& Alloc = *alloc_m;
-            return Alloc.first.Alloc<T>(num, [&Alloc](void)->void {
-                Alloc.second.lock();
-            }, [&Alloc](void)->void {
-                Alloc.second.unlock();
-            }, [](void* ptr, size_t num) -> void {
-                if constexpr (!std::is_pod_v<T>) {
-                    std::destroy(reinterpret_cast<T*>(ptr), reinterpret_cast<T*>(ptr) + num);
-                }
-            }, false);
+            if constexpr (std::is_pod_v<T>) {
+                return Alloc.first.Alloc<T>(num, [&Alloc](void)->void {
+                    Alloc.second.lock();
+                }, [&Alloc](void)->void {
+                    Alloc.second.unlock();
+                }, nullptr 
+                , false);
+            }
+            else {
+                return Alloc.first.Alloc<T>(num, [&Alloc](void)->void {
+                    Alloc.second.lock();
+                }, [&Alloc](void)->void {
+                    Alloc.second.unlock();
+                }, [](void* ptr, size_t num) -> void {
+                    if constexpr (!std::is_pod_v<T>) {
+                        std::destroy(reinterpret_cast<T*>(ptr), reinterpret_cast<T*>(ptr) + num);
+                    }
+                }, false);
+            }
         };
 
         // allocate N items as an array. POD-types are cleared to 0. 
         template <typename T> __declspec(noinline) T*
             calloc(const int num) {
             auto& Alloc = *alloc_m;
-            return Alloc.first.Alloc<T>(num, [&Alloc](void)->void {
-                Alloc.second.lock();
-            }, [&Alloc](void)->void {
-                Alloc.second.unlock();
-            }, [](void* ptr, size_t num) -> void {
-                if constexpr (!std::is_pod_v<T>) {
-                    std::destroy(reinterpret_cast<T*>(ptr), reinterpret_cast<T*>(ptr) + num);
-                }
-            }, true);
+            if constexpr (std::is_pod_v<T>) {
+                return Alloc.first.Alloc<T>(num, [&Alloc](void)->void {
+                    Alloc.second.lock();
+                }, [&Alloc](void)->void {
+                    Alloc.second.unlock();
+                }, nullptr
+                , true);
+            }
+            else {
+                return Alloc.first.Alloc<T>(num, [&Alloc](void)->void {
+                    Alloc.second.lock();
+                }, [&Alloc](void)->void {
+                    Alloc.second.unlock();
+                }, [](void* ptr, size_t num) -> void {
+                    if constexpr (!std::is_pod_v<T>) {
+                        std::destroy(reinterpret_cast<T*>(ptr), reinterpret_cast<T*>(ptr) + num);
+                    }
+                }, true);
+            }
+
+
         };
 
         // free a pointer to an array of items. 

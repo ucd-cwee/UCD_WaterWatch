@@ -1887,8 +1887,6 @@ public:
 namespace GL {
     class stopwatch_group {
     protected:
-        GL::thread_object_no_default<GL::stopwatch> 
-            stopwatches;
         GL::thread_object_no_default<std::map<long long, long long>>
             time_results;
 
@@ -2051,7 +2049,107 @@ int main() {
     while (true) {
         std::cout << "\n";
 
-        if (auto timer = GL::stopwatch::debug_timer("A1. For 1'000"); true) {
+        //for (int i = 0; i < 100; ++i)
+        //    std::cout << GL::util::rand_very_fast() << std::endl;
+
+        // GL::parallel::fire_and_forget([]() {
+            if (auto timer = GL::stopwatch::debug_timer("GL::task automatic scheduling"); true) {
+                GL::stopwatch_group timer2;
+                for (int loops = 0; loops < 100; ++loops) {
+                    auto time{ timer2.debug_timer() };
+
+                    GL::parallel_generic_array_allocator<32768> alloc;
+                    GL::atomic_queue<void*> ptrs;
+                    GL::parallel::task(0, 1'000, [](size_t) {
+
+                    })->and_then(0, 1'000, [&](size_t i) {
+                        if (GL::util::rand_very_fast(0, 100) > 50) {
+                            switch (i % 10) {
+                            case 0:
+                                ptrs.push(alloc.alloc<int>(GL::util::rand_very_fast(100, 1'000)));
+                                break;
+                            case 1:
+                                ptrs.push(alloc.alloc<float>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 2:
+                                ptrs.push(alloc.alloc<long double>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 3:
+                                ptrs.push(alloc.alloc<std::string>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 4:
+                                ptrs.push(alloc.alloc<GL::string>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 5:
+                                ptrs.push(alloc.alloc<GL::shared_ptr<std::string>>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 6:
+                                ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 7:
+                                ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 8:
+                                ptrs.push(alloc.alloc<GL::atomic_bag<std::string>>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 9:
+                                ptrs.push(alloc.alloc<GL::meter>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            default:
+                                break;
+                            }
+                        }
+                        else if (void* p; ptrs.try_pop(p)) {
+                            alloc.free(p);
+                        }
+                    })->and_then(0, 1'000'000, [](size_t) {
+
+                    })->and_then(0, 1'000'000, [&](size_t i) {
+                        if (GL::util::rand_very_fast(0, 100) > 50) {
+                            switch (i % 10) {
+                            case 0:
+                                ptrs.push(alloc.alloc<int>(GL::util::rand_very_fast(100, 1'000)));
+                                break;
+                            case 1:
+                                ptrs.push(alloc.alloc<float>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 2:
+                                ptrs.push(alloc.alloc<long double>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 3:
+                                ptrs.push(alloc.alloc<std::string>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 4:
+                                ptrs.push(alloc.alloc<GL::string>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 5:
+                                ptrs.push(alloc.alloc<GL::shared_ptr<std::string>>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 6:
+                                ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 7:
+                                ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            case 8:
+                                ptrs.push(alloc.alloc<GL::atomic_bag<std::string>>(GL::util::rand_very_fast(10, 100)));
+                                break;
+                            case 9:
+                                ptrs.push(alloc.alloc<GL::meter>(GL::util::rand_very_fast(100, 10'000)));
+                                break;
+                            default:
+                                break;
+                            }
+                        }
+                        else if (void* p; ptrs.try_pop(p)) {
+                            alloc.free(p);
+                        }
+                    });
+                }
+            }
+        // });
+
+        if (auto timer = GL::stopwatch::debug_timer("A1. For 1'000"); false) {
             GL::stopwatch_group timer2;
             for (int loops = 0; loops < 100; ++loops) {
                 GL::parallel_generic_array_allocator alloc;
@@ -2103,7 +2201,7 @@ int main() {
                 });
             }
         }
-        if (auto timer = GL::stopwatch::debug_timer("A2. Std_For 1'000"); true) {
+        if (auto timer = GL::stopwatch::debug_timer("A2. Std_For 1'000"); false) {
             GL::stopwatch_group timer2;
             for (int loops = 0; loops < 100; ++loops) {
                 GL::parallel_generic_array_allocator alloc;
@@ -2155,7 +2253,7 @@ int main() {
                 });
             }
         }
-        if (auto timer = GL::stopwatch::debug_timer("B3. For 1'000 (work)"); true) {
+        if (auto timer = GL::stopwatch::debug_timer("B3. For 1'000 (work)"); false) {
             GL::stopwatch_group timer2;
             for (int loops = 0; loops < 100; ++loops) {
                 GL::parallel_generic_array_allocator alloc;
@@ -2207,7 +2305,7 @@ int main() {
                     });
             }
         }
-        if (auto timer = GL::stopwatch::debug_timer("B4. Std_For 1'000 (work)"); true) {
+        if (auto timer = GL::stopwatch::debug_timer("B4. Std_For 1'000 (work)"); false) {
             GL::stopwatch_group timer2;
             for (int loops = 0; loops < 100; ++loops) {
                 GL::parallel_generic_array_allocator alloc;
@@ -2259,7 +2357,7 @@ int main() {
                     });
             }
         }
-        if (auto timer = GL::stopwatch::debug_timer("C5. For 1'000'000"); true) {
+        if (auto timer = GL::stopwatch::debug_timer("C5. For 1'000'000"); false) {
             GL::stopwatch_group timer2;
             for (int loops = 0; loops < 100; ++loops) {
                 GL::parallel_generic_array_allocator alloc;
@@ -2311,7 +2409,7 @@ int main() {
                 });
             }
         }
-        if (auto timer = GL::stopwatch::debug_timer("C6. Std_For 1'000'000"); true) {
+        if (auto timer = GL::stopwatch::debug_timer("C6. Std_For 1'000'000"); false) {
             GL::stopwatch_group timer2;
             for (int loops = 0; loops < 100; ++loops) {
                 GL::parallel_generic_array_allocator alloc;
@@ -2363,7 +2461,7 @@ int main() {
                     });
             }
         }
-        if (auto timer = GL::stopwatch::debug_timer("D7. For 1'000'000 (work)"); true) {
+        if (auto timer = GL::stopwatch::debug_timer("D7. For 1'000'000 (work)"); false) {
             GL::stopwatch_group timer2;
             for (int loops = 0; loops < 100; ++loops) {
                 GL::parallel_generic_array_allocator alloc;
@@ -2415,7 +2513,7 @@ int main() {
                     });
             }
         }
-        if (auto timer = GL::stopwatch::debug_timer("D8. Std_For 1'000'000 (work)"); true) {
+        if (auto timer = GL::stopwatch::debug_timer("D8. Std_For 1'000'000 (work)"); false) {
             GL::stopwatch_group timer2;
             for (int loops = 0; loops < 100; ++loops) {
                 GL::parallel_generic_array_allocator alloc;

@@ -14,6 +14,7 @@
 
 namespace GL {
     template <void (*Func)(void), int MicrosecondWait = 50> class Taskable {
+    protected:
         std::atomic<bool>
             alive;
         std::condition_variable
@@ -22,12 +23,24 @@ namespace GL {
             wakeMutex;
         std::thread
             thread;
-
+        std::wstring
+            name;
     public:
-        Taskable()
-            : alive{ 1 }, wakeMutex{}, wakeCondition{}
+        Taskable(std::wstring Name = L"unspecified")
+            : alive{ 0 }, wakeMutex{}, wakeCondition{}, name{Name}
         {
             thread = std::thread{ [this] {
+                while (!this->alive.load()) {};
+
+#ifdef _WIN32
+                // Do Windows-specific thread setup:
+                HANDLE handle = (HANDLE)this->thread.native_handle();
+
+                // Name the thread:
+                std::wstring wthreadname = L"Taskable_" + name;
+                HRESULT hr = SetThreadDescription(handle, wthreadname.c_str());
+#endif
+
                 // pre-warm this thread's heap
                 for (int i = 0; i < 100000; i++) delete (new int(i));
 
@@ -41,6 +54,8 @@ namespace GL {
                     this->wakeCondition.wait_for(lock, std::chrono::microseconds(MicrosecondWait)); // std::chrono::microseconds(500)
                 }
             } };
+
+            alive.exchange(true);
         }
         Taskable(Taskable const&) = delete;
         Taskable(Taskable&&) = delete;
@@ -83,11 +98,11 @@ namespace GL {
                 while (Continue) {
                     Continue = false;
                     while (element_t* ptr = aba_problem::Pop(head.head_1)) {
-                        ::free(ptr);
+                        ::_aligned_free(ptr);
                         Continue = true;
                     }
                     while (element_t* ptr = aba_problem::Pop(head.head_2)) {
-                        ::free(ptr);
+                        ::_aligned_free(ptr);
                         Continue = true;
                     }
                 }
@@ -99,11 +114,11 @@ namespace GL {
                 Continue = false;
                 head.for_each([&Continue](container& this_head) {
                     while (element_t* ptr = aba_problem::Pop(this_head.head_1)) {
-                        ::free(ptr);
+                        ::_aligned_free(ptr);
                         Continue = true;
                     }
                     while (element_t* ptr = aba_problem::Pop(this_head.head_2)) {
-                        ::free(ptr);
+                        ::_aligned_free(ptr);
                         Continue = true;
                     }
                 });
@@ -134,83 +149,57 @@ namespace GL {
         };
         void free_all() {
             head.for_each([](container& this_head) {
+                element_t* ptr;
                 if (InterlockedExchangeNoFence8(reinterpret_cast<volatile char*>(&this_head.which), !this_head.which) == 0)
-                    while (element_t* ptr = aba_problem::Pop(this_head.head_1)) ::free(ptr);
+                    while (ptr = aba_problem::Pop(this_head.head_1)) ::_aligned_free(ptr);
                 else
-                    while (element_t* ptr = aba_problem::Pop(this_head.head_2)) ::free(ptr);
-                });
+                    while (ptr = aba_problem::Pop(this_head.head_2)) ::_aligned_free(ptr);
+            });
         };
         void free_fast() {
             container& this_head = *head;
             bool Continue = true;
+            element_t* ptr;
             if (InterlockedExchangeNoFence8(reinterpret_cast<volatile char*>(&this_head.which), !this_head.which) == 0)
                 while (Continue) {
                     Continue = false;
-                    if (element_t* ptr = aba_problem::Pop(this_head.head_1)) {
-                        ::free(ptr);
+                    if (ptr = aba_problem::Pop(this_head.head_1)) {
+                        ::_aligned_free(ptr);
                         Continue = true;
                     }
                 }
             else
                 while (Continue) {
                     Continue = false;
-                    if (element_t* ptr = aba_problem::Pop(this_head.head_2)) {
-                        ::free(ptr);
+                    if (ptr = aba_problem::Pop(this_head.head_2)) {
+                        ::_aligned_free(ptr);
                         Continue = true;
                     }
                 }
         };
         void free_some() {
             head.for_each([](container& this_head) {
+                element_t* ptr;
                 // if (this_head.which = !this_head.which)
                 if (InterlockedExchangeNoFence8(reinterpret_cast<volatile char*>(&this_head.which), !this_head.which) == 0)
-                    if (element_t* ptr = aba_problem::Pop(this_head.head_1)) ::free(ptr);
-                    else
-                        if (element_t* ptr = aba_problem::Pop(this_head.head_2)) ::free(ptr);
+                    if (ptr = aba_problem::Pop(this_head.head_1)) ::_aligned_free(ptr);
+                    else if (ptr = aba_problem::Pop(this_head.head_2)) ::_aligned_free(ptr);
                 });
         };
     };
 
     GL::atomic_parallel_void_stack
         freed_pointers; // only works because allocations are guarranteed to be aligned to 16-bytes. 
-    std::atomic<long long>
-        freed_pointers_count = 0;
-    std::atomic<short>
-        doing_free = 0;
 
-    void* malloc(size_t bytes) {         
-        //void* out = ::malloc(bytes + sizeof(long long));
-        //if (out) *reinterpret_cast<long long*>(out) = bytes + sizeof(long long);
-        //return reinterpret_cast<void*>(reinterpret_cast<unsigned char*>(out) + sizeof(long long));
-
-        return ::_aligned_malloc(bytes, 16);
+    void* malloc(size_t bytes) {
+        if (bytes > (std::hardware_destructive_interference_size / 2))
+            return ::_aligned_malloc(bytes, std::hardware_destructive_interference_size);
+        else 
+            return ::_aligned_malloc(bytes, sizeof(void*));
     };
     void mfree(void* ptr) {
-        //if (!ptr) return;
-        //long long* p = reinterpret_cast<long long*>(reinterpret_cast<unsigned char*>(ptr) - sizeof(long long));
-        //if (*p < 64) {
-        //    ::free(p);
-        //}
-        //else {            
-        //    auto prev_locked_count = freed_pointers_count.load();
-        //    if ((freed_pointers_count += *p) > (2 << 11)) {
-        //        short expect = 0;
-        //        if (doing_free.compare_exchange_strong(expect, 1)) {
-        //            freed_pointers_count -= (prev_locked_count + *p);
-        //            freed_pointers.push(p);
-        //            freed_pointers.free_all();
-        //            doing_free.exchange(0);
-        //        }
-        //        else {
-        //            freed_pointers.push(p);
-        //        }
-        //    }
-        //    else {
-        //        freed_pointers.push(p);
-        //    }
-        //}
-
-        if (ptr) ::_aligned_free(ptr);
+        if (ptr) freed_pointers.push(ptr);
+        // if (ptr) ::_aligned_free(ptr);
     };
 
     namespace util {
@@ -477,33 +466,33 @@ namespace GL {
         };
 
         static long long _epoch = 0;
-        static double _global_random = 0;
+        /*thread_local*/ static double _global_random = rand_impl().random_base();
         struct Wrap {
             static void UpdateEpoch(void) {
                 InterlockedExchangeNoFence64(reinterpret_cast<volatile long long*>(&_epoch), clock::ms());
                 double new_rand = rand_impl().random_base();
                 InterlockedExchangeNoFence64(reinterpret_cast<volatile long long*>(&_global_random), *reinterpret_cast<long long*>(&new_rand));
             };
-            //static void PerformFree(void) {
-            //    freed_pointers.free_all();
-            //};
+            static void PerformFree(void) {
+                freed_pointers.free_all();
+            };
         };
-        static Taskable<Wrap::UpdateEpoch, 500> _update_thread;
-        // static Taskable<Wrap::PerformFree, 1> _free_thread;
+        static Taskable<Wrap::UpdateEpoch, 50> _update_thread(L"TimeAndRandom");
+        static Taskable<Wrap::PerformFree, 1> _free_thread(L"MemoryFree");
         long long get_current_epoch() {
             return _epoch;
         };
         // 0..1
         double rand_very_fast() {
-            return _global_random;
+            return _global_random;// = (*reinterpret_cast<unsigned long long*>(&_global_random) ^ ((*reinterpret_cast<unsigned long long*>(&_global_random) + 10101010101010) >> 11)) * 0x1.0p-53;
         };
         // 0..max or max..0
         double rand_very_fast(double max) {
-            return max * _global_random;
+            return _global_random;// = (*reinterpret_cast<unsigned long long*>(&_global_random) ^ ((*reinterpret_cast<unsigned long long*>(&_global_random) + 10101010101010) >> 11)) * 0x1.0p-53 * max;
         };
         // min..max or max..min
         double rand_very_fast(double min, double max) {
-            return min + ((max - min) * _global_random);
+            return _global_random;// = min + (*reinterpret_cast<unsigned long long*>(&_global_random) ^ ((*reinterpret_cast<unsigned long long*>(&_global_random) + 10101010101010) >> 11)) * 0x1.0p-53 * (max - min);
         };
 
 

@@ -895,7 +895,7 @@ namespace GL {
 		// task(0, 1'000'000, [](size_t index) -> int { return index + 10; })
 		// returning values from a for-loop task will only return the value from the first call. Returns from future calls will be discarded.
 		template<typename F, typename Parent = void> __forceinline decltype(auto) task(size_t start, size_t end, F&& ToDo, Parent* parent = nullptr) {
-			auto out = std::make_shared < impl::jobs<F, Parent> >(start, end, std::move(ToDo), std::move(parent));
+			auto out = std::make_shared<impl::jobs<F, Parent>>(start, end, std::move(ToDo), std::move(parent));
 			out->self = out;
 			if constexpr (!std::is_same_v<void, Parent>) parent->children.push_back(out);			
 			else out->dispatch();			
