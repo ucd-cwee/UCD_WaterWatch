@@ -311,14 +311,29 @@ namespace GL {
         };
 
     public:
+        aba_problem::stack<size_t>
+            shared_queue;
         GL::thread_object_no_default<std::deque<size_t>>
-            queue{};
+            queue;
         std::atomic<size_t>
             indexes{ 0 };
         std::atomic<size_t>
             count{ 0 };
 
     public:
+        fast_ticket_dispensor() {
+            queue._before_destruction = [this](std::deque<size_t>& rhs) {
+                while (rhs.size() > 0) {
+                    shared_queue.push(rhs.front());
+                    rhs.pop_front();
+                }
+            };
+        }
+        fast_ticket_dispensor(fast_ticket_dispensor const&) = delete;
+        fast_ticket_dispensor(fast_ticket_dispensor &&) noexcept = delete;
+        fast_ticket_dispensor& operator=(fast_ticket_dispensor const&) = delete;
+        fast_ticket_dispensor& operator=(fast_ticket_dispensor&&) noexcept = delete;
+        ~fast_ticket_dispensor() = default;
         size_t num_tickets() const {
             if constexpr (perform_count) {
                 return count.load();
@@ -338,8 +353,7 @@ namespace GL {
                 out = this_q.front();
                 this_q.pop_front();
             }
-            else {
-                //this_q.first.unlock();
+            else if (!shared_queue.try_pop(out)) {
                 out = ++indexes;
             }
             if constexpr (perform_count) {
