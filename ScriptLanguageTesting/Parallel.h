@@ -782,44 +782,40 @@ namespace GL {
 				};
 
 				static void DoTask(impl::job_argument const& _args) {
-					jobs* data = reinterpret_cast<jobs*>(_args.task_memory);
-
 					if constexpr (this_num_args == 0) {
-						if constexpr (this_returns_void) (void)data->todo();
+						if constexpr (this_returns_void) (void)static_cast<jobs*>(_args.task_memory)->todo();
 						else {
-							if (_args.job_index == 0) data->result = GL::any::fast_any::instance(data->todo());
-							else (void)data->todo();
+							if (_args.job_index == 0) static_cast<jobs*>(_args.task_memory)->result = GL::any::fast_any::instance(static_cast<jobs*>(_args.task_memory)->todo());
+							else (void)static_cast<jobs*>(_args.task_memory)->todo();
 						}
 					}
 					else {
-						size_t t{ static_cast<size_t>(_args.job_index) + data->start };
 						// first item must be the size_t
-						using arg = typename std::tuple_element_t<0, typename functionType::arguments>;
-						if constexpr (!std::is_same_v<std::decay_t<arg>, size_t>) {
-							if constexpr (!std::is_constructible_v<arg, size_t>) {
+						if constexpr (!std::is_same_v<std::decay_t<typename std::tuple_element_t<0, typename functionType::arguments>>, size_t>) {
+							if constexpr (!std::is_constructible_v<typename std::tuple_element_t<0, typename functionType::arguments>, size_t>) {
 								static_assert("The [optional] first argument to a jobs task must be a size_t index or castable from a size_t index.");
 							}
 						}
 
 						if constexpr (this_num_args == 1) {
-							if constexpr (this_returns_void) (void)data->todo(t);
+							if constexpr (this_returns_void) (void)static_cast<jobs*>(_args.task_memory)->todo(_args.job_index + static_cast<jobs*>(_args.task_memory)->start);
 							else {
-								if (_args.job_index == 0) data->result = GL::any::fast_any::instance(data->todo(t));
-								else (void)data->todo(t);
+								if (_args.job_index == 0) static_cast<jobs*>(_args.task_memory)->result = GL::any::fast_any::instance(static_cast<jobs*>(_args.task_memory)->todo(_args.job_index + static_cast<jobs*>(_args.task_memory)->start));
+								else (void)static_cast<jobs*>(_args.task_memory)->todo(_args.job_index + static_cast<jobs*>(_args.task_memory)->start);
 							}
 						}
 						else if constexpr (this_num_args == 2) {
-							if constexpr (this_returns_void) (void)data->todo(t, Argument<1>(_args));
+							if constexpr (this_returns_void) (void)static_cast<jobs*>(_args.task_memory)->todo(_args.job_index + static_cast<jobs*>(_args.task_memory)->start, Argument<1>(_args));
 							else {
-								if (_args.job_index == 0) data->result = GL::any::fast_any::instance(data->todo(t, Argument<1>(_args)));
-								else (void)data->todo(t, Argument<1>(_args));
+								if (_args.job_index == 0) static_cast<jobs*>(_args.task_memory)->result = GL::any::fast_any::instance(static_cast<jobs*>(_args.task_memory)->todo(_args.job_index + static_cast<jobs*>(_args.task_memory)->start, Argument<1>(_args)));
+								else (void)static_cast<jobs*>(_args.task_memory)->todo(_args.job_index + static_cast<jobs*>(_args.task_memory)->start, Argument<1>(_args));
 							}
 						}
 						else if constexpr (this_num_args == 3) {
-							if constexpr (this_returns_void) (void)data->todo(t, Argument<1>(_args), Argument<2>(_args));
+							if constexpr (this_returns_void) (void)static_cast<jobs*>(_args.task_memory)->todo(_args.job_index + static_cast<jobs*>(_args.task_memory)->start, Argument<1>(_args), Argument<2>(_args));
 							else {
-								if (_args.job_index == 0) data->result = GL::any::fast_any::instance(data->todo(t, Argument<1>(_args), Argument<2>(_args)));
-								else (void)data->todo(t, Argument<1>(_args), Argument<2>(_args));
+								if (_args.job_index == 0) static_cast<jobs*>(_args.task_memory)->result = GL::any::fast_any::instance(static_cast<jobs*>(_args.task_memory)->todo(_args.job_index + static_cast<jobs*>(_args.task_memory)->start, Argument<1>(_args), Argument<2>(_args)));
+								else (void)static_cast<jobs*>(_args.task_memory)->todo(_args.job_index + static_cast<jobs*>(_args.task_memory)->start, Argument<1>(_args), Argument<2>(_args));
 							}
 						}
 						else {

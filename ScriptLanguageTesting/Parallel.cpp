@@ -228,17 +228,35 @@ namespace GL {
 						}
 
 						// ... and do this group's jobs ...
-						try { 
-							for (args.job_index = task.group_job_offset, args.group_index = 0;
-								args.job_index < task.group_job_end;
-								++args.job_index, ++args.group_index
-							) {
-								task.task(args);
+						// 1. Copy to local register-friendly variables
+						size_t local_job_index = task.group_job_offset;
+						size_t local_group_index = 0;
+						size_t end_index = task.group_job_end;
+						//try { 
+							for (; local_job_index < end_index; ++local_job_index, ++local_group_index) {
+								// You may still need to pass these if task.task requires them updated inside
+								args.job_index = local_job_index;
+								args.group_index = local_group_index;
+								try {
+									task.task(args);
+								}
+								catch (...) {
+									task.ctx->catch_exception();
+									break;
+								}
 							}
-						} 
-						catch (...) {
-							task.ctx->catch_exception();
-						}
+							args.job_index = local_job_index;
+							args.group_index = local_group_index;
+
+							//for (args.job_index = task.group_job_offset, args.group_index = 0;
+							//	args.job_index < task.group_job_end;
+							//	++args.job_index, ++args.group_index
+							//) {
+							//	task.task(args);
+							//}
+						// } catch (...) {
+						//	task.ctx->catch_exception();
+						//}
 
 						// ... and finally deallocate the shared group memory
 						if (args.group_memory && task.group_end_job) task.group_end_job(args.group_memory);

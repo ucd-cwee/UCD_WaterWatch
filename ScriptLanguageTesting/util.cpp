@@ -188,8 +188,8 @@ namespace GL {
         };
     };
 
-    GL::atomic_parallel_void_stack
-        freed_pointers; // only works because allocations are guarranteed to be aligned to 16-bytes. 
+    // GL::atomic_parallel_void_stack
+        // freed_pointers; // only works because allocations are guarranteed to be aligned to 16-bytes. 
 
     void* malloc(size_t bytes) {
         if (bytes > (std::hardware_destructive_interference_size / 2))
@@ -198,8 +198,8 @@ namespace GL {
             return ::_aligned_malloc(bytes, sizeof(void*));
     };
     void mfree(void* ptr) {
-        if (ptr) freed_pointers.push(ptr);
-        // if (ptr) ::_aligned_free(ptr);
+        // if (ptr) freed_pointers.push(ptr);
+        if (ptr) ::_aligned_free(ptr);
     };
 
     namespace util {
@@ -473,12 +473,12 @@ namespace GL {
                 double new_rand = rand_impl().random_base();
                 InterlockedExchangeNoFence64(reinterpret_cast<volatile long long*>(&_global_random), *reinterpret_cast<long long*>(&new_rand));
             };
-            static void PerformFree(void) {
-                freed_pointers.free_all();
-            };
+            //static void PerformFree(void) {
+            //    freed_pointers.free_all();
+            //};
         };
         static Taskable<Wrap::UpdateEpoch, 50> _update_thread(L"TimeAndRandom");
-        static Taskable<Wrap::PerformFree, 1> _free_thread(L"MemoryFree");
+        // static Taskable<Wrap::PerformFree, 1> _free_thread(L"MemoryFree");
         long long get_current_epoch() {
             return _epoch;
         };
@@ -488,11 +488,12 @@ namespace GL {
         };
         // 0..max or max..0
         double rand_very_fast(double max) {
-            return _global_random;// = (*reinterpret_cast<unsigned long long*>(&_global_random) ^ ((*reinterpret_cast<unsigned long long*>(&_global_random) + 10101010101010) >> 11)) * 0x1.0p-53 * max;
+            return _global_random * max;// = (*reinterpret_cast<unsigned long long*>(&_global_random) ^ ((*reinterpret_cast<unsigned long long*>(&_global_random) + 10101010101010) >> 11)) * 0x1.0p-53 * max;
         };
         // min..max or max..min
         double rand_very_fast(double min, double max) {
-            return _global_random;// = min + (*reinterpret_cast<unsigned long long*>(&_global_random) ^ ((*reinterpret_cast<unsigned long long*>(&_global_random) + 10101010101010) >> 11)) * 0x1.0p-53 * (max - min);
+            return min + ((max - min) * _global_random);
+            // return _global_random;// = min + (*reinterpret_cast<unsigned long long*>(&_global_random) ^ ((*reinterpret_cast<unsigned long long*>(&_global_random) + 10101010101010) >> 11)) * 0x1.0p-53 * (max - min);
         };
 
 
