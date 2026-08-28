@@ -416,7 +416,8 @@ namespace GL {
                     return u(rand);
                 };
                 __declspec(noinline) double FastRandom_Impl() const noexcept {
-                    return u_fast.operator()(*randFast);
+                    return static_cast<double>(static_cast<uint64_t>(randFast->operator()()) * 0x1.0p-32);
+                    // return u_fast.operator()(*randFast);
                 };
                 double Random_HighRes(double t1, double t2) const noexcept {
                     t2 -= t1;
@@ -484,14 +485,21 @@ namespace GL {
         };
         // 0..1
         double rand_very_fast() {
+            //return rand_impl().FastRandom(0.0, 1.0);
             return _global_random;// = (*reinterpret_cast<unsigned long long*>(&_global_random) ^ ((*reinterpret_cast<unsigned long long*>(&_global_random) + 10101010101010) >> 11)) * 0x1.0p-53;
         };
         // 0..max or max..0
         double rand_very_fast(double max) {
+            //if (max >= 0) return rand_impl().FastRandom(0.0, max);
+            //else return rand_impl().FastRandom(max, 0.0);
+
             return _global_random * max;// = (*reinterpret_cast<unsigned long long*>(&_global_random) ^ ((*reinterpret_cast<unsigned long long*>(&_global_random) + 10101010101010) >> 11)) * 0x1.0p-53 * max;
         };
         // min..max or max..min
         double rand_very_fast(double min, double max) {
+            //if (max >= min) return rand_impl().FastRandom(min, max);
+            //else return rand_impl().FastRandom(max, min);
+
             return min + ((max - min) * _global_random);
             // return _global_random;// = min + (*reinterpret_cast<unsigned long long*>(&_global_random) ^ ((*reinterpret_cast<unsigned long long*>(&_global_random) + 10101010101010) >> 11)) * 0x1.0p-53 * (max - min);
         };
