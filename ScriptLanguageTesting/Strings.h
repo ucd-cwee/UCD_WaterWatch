@@ -435,6 +435,9 @@ namespace GL {
         string remove_leading_and_trailing(char _Right) const {
             return remove_trailing(_Right).remove_leading(_Right);
         };
+        string remove_leading_and_trailing_whitespace() const {
+            return remove_leading_and_trailing('\n').remove_leading_and_trailing('\r').remove_leading_and_trailing('\t').remove_leading_and_trailing(' ');
+        };
         static std::string_view empty_string() {
             return "";
         };
@@ -1117,7 +1120,11 @@ namespace GL {
             return buffer;
         }
     };
-
+    // formatted string to text with variadric inputs
+    template<typename... T>
+    string prints(string const& format, T&&... arguments) {
+        return printf(format.c_str().data(), arguments...);
+    };
 };
 
 namespace std {

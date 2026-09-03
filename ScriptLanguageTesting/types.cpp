@@ -161,10 +161,10 @@ namespace GL {
     };
 
     auto& get_base(type const& from) {
-        //if (from.get_hash() == 0) {
-        //    return impl::get_impl(GL::type_of<void>().get_base_hash());
-        //}
-        if (from.is_cpp_type()) {
+        if (from.get_hash() == 0) {
+            return impl::get_impl(GL::type_of<void>().get_base_hash());
+        }
+        else if (from.is_cpp_type()) {
             return impl::get_impl(from.get_base_hash());
         }
         else {

@@ -286,11 +286,17 @@ namespace GL {
             for (int i = 0; i < BlockSize - 1; ++i) {
                 block.elements[i].epoch = 0;
                 block.elements[i].m_pNext = &block.elements[i + 1];
-                ((T*)&block.elements[i].data[0])->~T();
+                if (on_delete) on_delete((T*)&block.elements[i].data[0]);
+                if constexpr (!std::is_pod_v<T>) {
+                    ((T*)&block.elements[i].data[0])->~T();
+                }
             }
             block.elements[BlockSize - 1].epoch = 0;
             block.elements[BlockSize - 1].m_pNext = nullptr;
-            ((T*)&block.elements[BlockSize - 1].data[0])->~T();
+            if (on_delete) on_delete(((T*)&block.elements[BlockSize - 1].data[0]));
+            if constexpr (!std::is_pod_v<T>) {
+                ((T*)&block.elements[BlockSize - 1].data[0])->~T();
+            }
             block.count_free = BlockSize;
 
             // push pNode onto head of list.
@@ -306,6 +312,7 @@ namespace GL {
                     for (int element_i = 0; element_i < BlockSize; ++element_i) {
                         auto& element = ptr->elements[element_i];
                         if (element.epoch > 0) {
+                            if (on_delete) on_delete(reinterpret_cast<T*>(&element.data[0]));
                             reinterpret_cast<T*>(&element.data[0])->~T();
                             element.epoch = 0;
                         }
@@ -317,6 +324,12 @@ namespace GL {
             }
             else {
                 if (ptr) {
+                    if (on_delete)
+                        for (int element_i = 0; element_i < BlockSize; ++element_i) {
+                            auto& element = ptr->elements[element_i];
+                            if (element.epoch > 0)                             
+                                on_delete(reinterpret_cast<T*>(&element.data[0]));                        
+                        }
                     this->blocks[ptr->block_position] = nullptr;
                     this->blocks_tickets.return_ticket(ptr->block_position);
                     PopBlock(ptr);
@@ -422,6 +435,11 @@ namespace GL {
         void ReleaseBlocks() noexcept {
             for (block_t*& ptr : blocks) {
                 if (ptr) {
+                    if (on_delete) 
+                        for (int element_i = 0; element_i < BlockSize; ++element_i) {
+                            auto& element = ptr->elements[element_i];
+                            if (element.epoch > 0) on_delete(reinterpret_cast<T*>(&element.data[0]));                            
+                        }
                     if constexpr (!std::is_pod_v<T>) {
                         for (int element_i = 0; element_i < BlockSize; ++element_i) {
                             auto& element = ptr->elements[element_i];
@@ -633,6 +651,9 @@ namespace GL {
         [[nodiscard]] GuardType guard_critical_section() {
             return states->guard_critical_section();
         };
+
+    public:
+        void (*on_delete)(T*) = nullptr;
 
     private:
         struct cmp {

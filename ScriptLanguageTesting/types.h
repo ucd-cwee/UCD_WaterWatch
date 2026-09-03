@@ -133,6 +133,7 @@ namespace GL {
             static GL::type_hash_t out{ util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2 };
             return out;
         };
+    public:
         static constexpr GL::type_hash_t default_hash_code = (0ull & impl::cached_type::MAGIC_MASK2) | ((GL::type_hash_t)CppType << impl::cached_type::OFFSET);
         //static GL::type_hash_t const& default_hash_code() {
         //    static GL::type_hash_t out{ (util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2) | ((GL::type_hash_t)CppType << impl::cached_type::OFFSET) };

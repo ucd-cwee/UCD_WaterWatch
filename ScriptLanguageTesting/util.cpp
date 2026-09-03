@@ -298,7 +298,7 @@ namespace GL {
                         xorshift32_state& operator=(xorshift32_state&&) = delete;
                         ~xorshift32_state() = default;
 
-                        std::atomic<uint32_t> a;
+                        /*std::atomic<*/uint32_t/*>*/ a;
                     }; /* The state must be initialized to non-zero */
                     __declspec(noinline) static uint32_t xorshift32(xorshift32_state* state) {
                         /* Algorithm "xor" from p. 4 of Marsaglia, "Xorshift RNGs" */
@@ -322,7 +322,7 @@ namespace GL {
                         xorshift64_state& operator=(xorshift64_state&&) = delete;
                         ~xorshift64_state() = default;
 
-                        std::atomic < uint64_t> a;
+                        /*std::atomic < */uint64_t/*>*/ a;
                     };
                     static uint64_t xorshift64(xorshift64_state* state) {
                         uint64_t x = state->a;

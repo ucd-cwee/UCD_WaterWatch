@@ -311,8 +311,8 @@ namespace GL {
         };
 
     public:
-        //aba_problem::stack<size_t>
-        //    shared_queue;
+        aba_problem::stack<size_t>
+            shared_queue;
         GL::thread_object_no_default<std::deque<size_t>>
             queue;
         std::atomic<size_t>
@@ -322,12 +322,12 @@ namespace GL {
 
     public:
         fast_ticket_dispensor() {
-            //queue._before_destruction = [this](std::deque<size_t>& rhs) {
-            //    while (rhs.size() > 0) {
-            //        shared_queue.push(rhs.front());
-            //        rhs.pop_front();
-            //    }
-            //};
+            queue._before_destruction = [this](std::deque<size_t>& rhs) {
+                while (rhs.size() > 0) {
+                    shared_queue.push(rhs.front());
+                    rhs.pop_front();
+                }
+            };
         }
         fast_ticket_dispensor(fast_ticket_dispensor const&) = delete;
         fast_ticket_dispensor(fast_ticket_dispensor &&) noexcept = delete;
@@ -346,16 +346,16 @@ namespace GL {
             return ScopedTicket(get_ticket(), *this);
         };
         size_t get_ticket() {
-            size_t out;
+            size_t out{ 0 };
 
             auto& this_q = *queue;
             if (this_q.size() > 0) {
                 out = this_q.front();
                 this_q.pop_front();
             }
-            //else if (!shared_queue.try_pop(out)) {
-            //    out = ++indexes;
-            //}
+            else if (!shared_queue.try_pop(out)) {
+                out = ++indexes;
+            }
             if constexpr (perform_count) {
                 ++count;
             }
@@ -382,7 +382,7 @@ namespace GL {
     };
 #endif
     // Manages tickets in the range of [1, INF) and assumes ticket 0 is already given to the owner of ticket_dispensor
-// Prints new tickets as needed, but recycles old tickets as much as possible. 
+    // Prints new tickets as needed, but recycles old tickets as much as possible. 
     template <bool perform_count = false> class single_threaded_ticket_dispensor {
     public:
         class ScopedTicket {

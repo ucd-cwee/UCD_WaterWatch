@@ -31,34 +31,54 @@
 
 // Declaration
 namespace uuid {
+    static constexpr unsigned long TEMPORARY = 0x1000'0000;
     static constexpr unsigned long FLAGS = 0xF000'0000;
     static constexpr unsigned long INV_FLAGS = ~FLAGS;
+
     struct uuid_ticket {
         size_t count{ 0 };
         GL::shared_ptr<GL::type_erasure::any_data> data{ nullptr };
     };
     static unsigned long new_uuid(GL::shared_ptr<GL::type_erasure::any_data>&& rhs) noexcept;
     static void free_uuid(unsigned long uuid) noexcept;
-    static uuid_ticket& get_uuid(unsigned long rhs) noexcept;
+    static uuid_ticket& get_uuid(unsigned long uuid) noexcept;
 };
+
+class atomic_any;
+class Function;
+class Function_Caller;
 
 // not thread-safe. Should only be accessed in a single-threaded fashion.
 class any {
-public:
-    void* m_ptr;    
-    GL::type m_type;
-    unsigned long m_uuid;
+    friend class atomic_any;
+
+    void* 
+        m_ptr; 
+    GL::type 
+        m_type;
+    unsigned long 
+        m_uuid; 
 
 public:
+    auto& uuid() const {
+        return m_uuid;
+    };
+    auto& ptr() const {
+        return m_ptr;
+    };
+    auto& type() const {
+        return m_type;
+    };
+
     any(unsigned long&& uuid, void* data, GL::type const& type) noexcept : m_uuid{ std::forward<unsigned long>(uuid) }, m_type{ type }, m_ptr{ data } {};
     any() noexcept : m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
     any(std::nullptr_t) noexcept : m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
     any(any const& rhs) : m_uuid{ rhs.m_uuid & uuid::INV_FLAGS }, m_type{ rhs.m_type }, m_ptr{ rhs.m_ptr } { if (m_uuid > 0) GL::interlocked::increment(uuid::get_uuid(m_uuid).count); };
     // declares that the parent will NOT go out-of-scope before this child does. That guarrantee allows us to skip a increment and decrement call to the counter. 
-    any(any const& rhs, bool) : m_uuid{ rhs.m_uuid | 0x1000'0000 }, m_type{ rhs.m_type }, m_ptr{ rhs.m_ptr } {};
+    any(any const& rhs, bool) : m_uuid{ rhs.m_uuid | uuid::TEMPORARY }, m_type{ rhs.m_type }, m_ptr{ rhs.m_ptr } {};
     any(any && rhs) noexcept : m_uuid{ std::move(rhs.m_uuid) }, m_type{ std::move(rhs.m_type) }, m_ptr{ rhs.m_ptr } { rhs.m_uuid = 0; };
     any const& operator=(any const& rhs) {
-        if ((m_uuid & 0x1000'0000) == 0)
+        if ((m_uuid & uuid::TEMPORARY) == 0)
             if ((m_uuid & uuid::INV_FLAGS) > 0)
                 if (GL::interlocked::decrement(uuid::get_uuid(m_uuid).count) == 0)
                     uuid::free_uuid(m_uuid);
@@ -70,7 +90,7 @@ public:
         return *this;
     };
     any const& operator=(any&& rhs) noexcept {
-        if ((m_uuid & 0x1000'0000) == 0)
+        if ((m_uuid & uuid::TEMPORARY) == 0)
             if ((m_uuid & uuid::INV_FLAGS) > 0)
                 if (GL::interlocked::decrement(uuid::get_uuid(m_uuid).count) == 0)
                     uuid::free_uuid(m_uuid);
@@ -81,8 +101,12 @@ public:
         rhs.m_uuid = 0;
         return *this;
     };
+
+    any(atomic_any const& rhs);
+    any(atomic_any&& rhs) noexcept;
+
     ~any() {
-        if ((m_uuid & 0x1000'0000) == 0) 
+        if ((m_uuid & uuid::TEMPORARY) == 0) 
             if ((m_uuid & uuid::INV_FLAGS) > 0) 
                 if (GL::interlocked::decrement(uuid::get_uuid(m_uuid).count) == 0)
                     uuid::free_uuid(m_uuid);
@@ -107,6 +131,9 @@ public:
     static any const& instance(const any& value) noexcept {
         return value;
     };
+    static any instance(atomic_any&& value) noexcept;
+    static any instance(atomic_any& value) noexcept;
+    static any instance(const atomic_any& value) noexcept;
 
     operator bool() const noexcept {
         return m_ptr;
@@ -272,7 +299,7 @@ public:
 
     /// \todo it is a performance increase to allow the return value to be "referenced" rather than incremented/decremented properly, however, is this safe in practice?
     template <typename T> __declspec(noinline) static any wrap_member(any const& parent, T const& ref) noexcept {       
-        if ((parent.m_uuid & 0x1000'0000) > 0) {
+        if ((parent.m_uuid & uuid::TEMPORARY) > 0) {
             return any((unsigned long)parent.m_uuid, &const_cast<T&>(ref), GL::type_of<T const&>());
         }
         else {
@@ -283,7 +310,7 @@ public:
     };
     /// \todo it is a performance increase to allow the return value to be "referenced" rather than incremented/decremented properly, however, is this safe in practice?
     template <typename T> __declspec(noinline) static any wrap_member(any const& parent, T& ref) noexcept {
-        if ((parent.m_uuid & 0x1000'0000) > 0) {
+        if ((parent.m_uuid & uuid::TEMPORARY) > 0) {
             return any((unsigned long)parent.m_uuid, &ref, GL::type_of<T&>());
         }
         else {
@@ -295,9 +322,357 @@ public:
 
 };
 
+// thread-safe alternative for 'any', with interop. Can be safely accessed in a multi-threaded fashion, including changing the type info.
+class atomic_any {
+    friend class any;
+
+protected:
+    GL::fast_shared_mutex
+        mut; 
+    void* 
+        m_ptr;
+    GL::type 
+        m_type;
+    unsigned long 
+        m_uuid;
+
+public:
+    auto uuid() const {
+        std::shared_lock locked(mut);
+        return m_uuid;
+    };
+    auto ptr() const {
+        std::shared_lock locked(mut);
+        return m_ptr;
+    };
+    auto type() const {
+        return m_type;
+    };
+
+    atomic_any(unsigned long&& uuid, void* data, GL::type const& type) noexcept : mut(), m_uuid{ std::forward<unsigned long>(uuid) }, m_type{ type }, m_ptr{ data } {};
+    atomic_any() noexcept : mut(), m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
+    atomic_any(std::nullptr_t) noexcept : mut(), m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
+    atomic_any(atomic_any const& rhs) : mut(), m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr }
+    {
+        if (1) {
+            std::shared_lock locked(rhs.mut);
+            m_uuid = rhs.m_uuid & uuid::INV_FLAGS;
+            m_type = rhs.m_type;
+            m_ptr = rhs.m_ptr;
+        }
+        if (m_uuid > 0) GL::interlocked::increment(uuid::get_uuid(m_uuid).count);
+    };
+    // declares that the parent will NOT go out-of-scope before this child does. That guarrantee allows us to skip a increment and decrement call to the counter. 
+    atomic_any(atomic_any const& rhs, bool) : mut(), m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr }
+    {
+        std::shared_lock locked(rhs.mut);
+        m_uuid = rhs.m_uuid | uuid::TEMPORARY;
+        m_type = rhs.m_type;
+        m_ptr = rhs.m_ptr;
+    };
+    atomic_any(atomic_any&& rhs) noexcept : mut(), m_uuid{ std::move(rhs.m_uuid) }, m_type{ std::move(rhs.m_type) }, m_ptr{ rhs.m_ptr } { rhs.m_uuid = 0; };
+    atomic_any const& operator=(atomic_any const& rhs) {
+        if (this == &rhs) return *this;
+
+        std::unique_lock locked1(mut);
+        std::shared_lock locked2(rhs.mut);
+
+        if ((m_uuid & uuid::TEMPORARY) == 0)
+            if ((m_uuid & uuid::INV_FLAGS) > 0)
+                if (GL::interlocked::decrement(uuid::get_uuid(m_uuid).count) == 0)
+                    uuid::free_uuid(m_uuid);
+
+        m_uuid = rhs.m_uuid & uuid::INV_FLAGS;
+        m_type = rhs.m_type;
+        m_ptr = rhs.m_ptr;
+        if (m_uuid > 0) GL::interlocked::increment(uuid::get_uuid(m_uuid).count);
+        return *this;
+    };
+    atomic_any const& operator=(atomic_any&& rhs) noexcept {
+        std::unique_lock locked1(mut);
+
+        if ((m_uuid & uuid::TEMPORARY) == 0)
+            if ((m_uuid & uuid::INV_FLAGS) > 0)
+                if (GL::interlocked::decrement(uuid::get_uuid(m_uuid).count) == 0)
+                    uuid::free_uuid(m_uuid);
+
+        m_uuid = std::move(rhs.m_uuid);
+        m_type = std::move(rhs.m_type);
+        m_ptr = rhs.m_ptr;
+        rhs.m_uuid = 0;
+        return *this;
+    };
+    atomic_any(any const& rhs);
+    atomic_any(any&& rhs) noexcept;
+
+    ~atomic_any() {
+        if ((m_uuid & uuid::TEMPORARY) == 0)
+            if ((m_uuid & uuid::INV_FLAGS) > 0)
+                if (GL::interlocked::decrement(uuid::get_uuid(m_uuid).count) == 0)
+                    uuid::free_uuid(m_uuid);
+    };
+
+    template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<atomic_any, std::decay_t<ValueType>>>> static atomic_any instance(const ValueType& value) noexcept {
+        auto wrapped = GL::type_erasure::wrap(value);
+        auto* ptr = wrapped->get();
+        return atomic_any(uuid::new_uuid(std::move(wrapped)), ptr, GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>());
+    };
+    template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<atomic_any, std::decay_t<ValueType>>>> static atomic_any instance(ValueType&& value) noexcept {
+        auto wrapped = GL::type_erasure::wrap(std::forward<ValueType>(value));
+        auto* ptr = wrapped->get();
+        return atomic_any(uuid::new_uuid(std::move(wrapped)), ptr, GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>());
+    };
+    static atomic_any instance(atomic_any&& value) noexcept {
+        return std::forward<atomic_any>(value);
+    };
+    static atomic_any& instance(atomic_any& value) noexcept {
+        return value;
+    };
+    static atomic_any const& instance(const atomic_any& value) noexcept {
+        return value;
+    };
+    static atomic_any instance(any&& value) noexcept;
+    static atomic_any instance(any& value) noexcept;
+    static atomic_any instance(const any& value) noexcept;
+
+    operator bool() const noexcept {
+        return m_ptr;
+    };
+    bool empty() const noexcept {
+        return !m_ptr;
+    };
+    friend bool operator==(const atomic_any& a, const atomic_any& b) noexcept { return a.m_ptr == b.m_ptr; };
+    friend bool operator!=(const atomic_any& a, const atomic_any& b) noexcept { return a.m_ptr != b.m_ptr; };
+    friend bool operator<(const atomic_any& a, const atomic_any& b) noexcept { return a.m_ptr < b.m_ptr; };
+    friend bool operator<=(const atomic_any& a, const atomic_any& b) noexcept { return a.m_ptr <= b.m_ptr; };
+    friend bool operator>(const atomic_any& a, const atomic_any& b) noexcept { return a.m_ptr > b.m_ptr; };
+    friend bool operator>=(const atomic_any& a, const atomic_any& b) noexcept { return a.m_ptr >= b.m_ptr; };
+
+    bool operator&(int p_modifiers) const noexcept {
+        return m_type & p_modifiers;
+    };
+    atomic_any operator|(int p_modifiers) const noexcept {
+        atomic_any out(*this);
+        out.m_type |= p_modifiers;
+        return out;
+    };
+    atomic_any operator+(int p_modifiers) const noexcept {
+        atomic_any out(*this);
+        out.m_type |= p_modifiers;
+        return out;
+    };
+    atomic_any operator-(int p_modifiers) const noexcept {
+        atomic_any out(*this);
+        out.m_type -= p_modifiers;
+        return out;
+    };
+    atomic_any& operator|=(int p_modifiers) noexcept {
+        std::unique_lock locked1(mut);
+        m_type |= p_modifiers;
+        return *this;
+    };
+    atomic_any& operator+=(int p_modifiers) noexcept {
+        std::unique_lock locked1(mut);
+        m_type += p_modifiers;
+        return *this;
+    };
+    atomic_any& operator-=(int p_modifiers) noexcept {
+        std::unique_lock locked1(mut);
+        m_type -= p_modifiers;
+        return *this;
+    };
+
+protected:
+    GL::shared_ptr<GL::type_erasure::any_data>& get_underlying_ptr() const noexcept {
+        std::shared_lock locked1(mut);
+        if ((m_uuid & uuid::INV_FLAGS) > 0)
+            return uuid::get_uuid(m_uuid).data;
+        else {
+            static GL::shared_ptr<GL::type_erasure::any_data> out{ nullptr };
+            return out;
+        }
+    };
+    class DataCaster {
+    public:
+        template<typename T> struct is_stdSharedPtr_class { typedef std::false_type type; };
+        template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>> { typedef std::true_type type; };
+        template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>&> { typedef std::true_type type; };
+        template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>*> { typedef std::true_type type; };
+        template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>> { typedef std::true_type type; };
+        template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>&> { typedef std::true_type type; };
+        template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>*> { typedef std::true_type type; };
+        template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>&&> { typedef std::true_type type; };
+
+        template<typename T> struct is_SharedPtr_class { typedef std::false_type type; };
+        template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>> { typedef std::true_type type; };
+        template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>&> { typedef std::true_type type; };
+        template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>*> { typedef std::true_type type; };
+        template<typename T> struct is_SharedPtr_class<const GL::shared_ptr<T>> { typedef std::true_type type; };
+        template<typename T> struct is_SharedPtr_class<const GL::shared_ptr<T>&> { typedef std::true_type type; };
+        template<typename T> struct is_SharedPtr_class<const GL::shared_ptr<T>*> { typedef std::true_type type; };
+        template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>&&> { typedef std::true_type type; };
+
+    private:
+        template <class VType> static decltype(auto) DoCast_Shared_fast(GL::shared_ptr<GL::type_erasure::any_data>& ptr) noexcept {
+            return GL::static_pointer_cast<VType>(ptr->get(GL::shared_ptr<GL::type_erasure::any_data>(ptr)));
+        };
+        template <class VType> static decltype(auto) DoCast_StdShared_fast(GL::shared_ptr<GL::type_erasure::any_data>& ptr) noexcept {
+            return std::static_pointer_cast<VType>(ptr->get_std(GL::shared_ptr<GL::type_erasure::any_data>(ptr)));
+        };
+        template<typename VType> static decltype(auto) DoCast_Unshared_fast(void* container) /*noexcept*/ {
+            static constexpr bool is_ptr{ std::is_pointer_v<VType> };
+
+            if constexpr (is_ptr) {
+                return reinterpret_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(container);
+            }
+            else {
+                return *reinterpret_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(container);
+            }
+        };
+
+    public:
+        template<typename T> static decltype(auto) DoCast(atomic_any* p) /*noexcept*/ {
+            typedef typename is_SharedPtr_class<T>::type isShared;
+            typedef typename is_stdSharedPtr_class<T>::type isStdShared;
+
+            static constexpr bool is_shared_ptr{ isShared::value };
+            static constexpr bool is_std_shared_ptr{ isStdShared::value };
+            static constexpr bool is_ptr{ std::is_pointer_v<T> };
+            static constexpr bool is_ref{ std::is_reference_v<T> };
+            static constexpr bool is_const{ std::is_const_v<T> };
+            static constexpr bool is_atomic_any{ std::is_same_v<atomic_any, std::decay_t<T>> };
+
+            if (!p) {
+                if constexpr (is_atomic_any) {
+                    static atomic_any out;
+                    return *&out;
+                }
+                else {
+                    if constexpr (is_shared_ptr) {
+                        return GL::shared_ptr<typename GL::type_erasure::get_type<T>::type>(nullptr);
+                    }
+                    else if constexpr (is_std_shared_ptr) {
+                        return std::shared_ptr<typename GL::type_erasure::get_type<T>::type>(nullptr);
+                    }
+                    else {
+                        if constexpr (is_ptr) {
+                            return static_cast<typename std::remove_reference<typename std::remove_pointer<T>::type>::type*>(nullptr);
+                        }
+                        else {
+                            auto err = "Cannot cast from `void` to `" + GL::type_of<typename std::remove_reference<typename std::remove_pointer<T>::type>::type>().name() + "`";
+                            throw std::runtime_error(err.to_string());
+                        }
+                    }
+                }
+            }
+            else {
+                if constexpr (is_atomic_any) return *p;
+                else {
+                    if constexpr (is_shared_ptr) {
+                        if constexpr (is_ptr) throw("Casting atomic_any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
+                        else if constexpr (is_ref) throw("Casting atomic_any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
+                        return DoCast_Shared_fast<typename GL::type_erasure::get_type<T>::type>(p->get_underlying_ptr());
+                    }
+                    else if constexpr (is_std_shared_ptr) {
+                        if constexpr (is_ptr) {
+                            throw("Casting atomic_any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
+                        }
+                        else if constexpr (is_ref) {
+                            throw("Casting atomic_any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
+                        }
+                        return DoCast_StdShared_fast<typename GL::type_erasure::get_type<T>::type>(p->get_underlying_ptr());
+                    }
+                    else {
+                        std::shared_lock locked1(p->mut);
+                        return DoCast_Unshared_fast<T>(p->m_ptr);
+                    }
+                }
+            }
+        };
+
+    };
+
+public:
+    template<typename VType, typename = std::enable_if_t<!std::is_same_v<atomic_any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
+    decltype(auto) cast() const noexcept { return DataCaster::DoCast<VType>(const_cast<atomic_any*>(this)); };
+
+    template<typename VType, typename = std::enable_if_t<!std::is_pointer<VType>::value&& std::is_same_v<atomic_any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
+    atomic_any& cast() const noexcept { return *const_cast<atomic_any*>(this); };
+
+    template<typename VType, typename = std::enable_if_t<std::is_pointer<VType>::value&& std::is_same_v<atomic_any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
+    atomic_any* cast() const noexcept { return const_cast<atomic_any*>(this); };
+
+    /// \todo it is a performance increase to allow the return value to be "referenced" rather than incremented/decremented properly, however, is this safe in practice?
+    template <typename T> __declspec(noinline) static atomic_any wrap_member(atomic_any const& parent, T const& ref) noexcept {
+        std::shared_lock locked1(parent.mut);
+
+        if ((parent.m_uuid & uuid::TEMPORARY) > 0) {
+            return atomic_any((unsigned long)parent.m_uuid, &const_cast<T&>(ref), GL::type_of<T const&>());
+        }
+        else {
+            unsigned long uuid = parent.m_uuid & uuid::INV_FLAGS;
+            if (uuid > 0) GL::interlocked::increment(uuid::get_uuid(uuid).count);
+            return atomic_any(std::move(uuid), &const_cast<T&>(ref), GL::type_of<T const&>());
+        }
+    };
+    /// \todo it is a performance increase to allow the return value to be "referenced" rather than incremented/decremented properly, however, is this safe in practice?
+    template <typename T> __declspec(noinline) static atomic_any wrap_member(atomic_any const& parent, T& ref) noexcept {
+        std::shared_lock locked1(parent.mut);
+
+        if ((parent.m_uuid & uuid::TEMPORARY) > 0) {
+            return atomic_any((unsigned long)parent.m_uuid, &ref, GL::type_of<T&>());
+        }
+        else {
+            unsigned long uuid = parent.m_uuid & uuid::INV_FLAGS;
+            if (uuid > 0) GL::interlocked::increment(uuid::get_uuid(uuid).count);
+            return atomic_any(std::move(uuid), &ref, GL::type_of<T&>());
+        }
+    };
+
+};
+
+any::any(atomic_any const& rhs) : m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } { 
+    std::shared_lock locked(rhs.mut);
+
+    m_uuid = rhs.m_uuid & uuid::INV_FLAGS;
+    m_type = rhs.m_type;
+    m_ptr = rhs.m_ptr;
+
+    if (m_uuid > 0) GL::interlocked::increment(uuid::get_uuid(m_uuid).count); 
+};
+any::any(atomic_any&& rhs) noexcept : m_uuid{ std::move(rhs.m_uuid) }, m_type{ std::move(rhs.m_type) }, m_ptr{ rhs.m_ptr } { rhs.m_uuid = 0; };
+any any::instance(atomic_any&& value) noexcept {
+    return std::forward<atomic_any>(value);
+};
+any any::instance(atomic_any& value) noexcept {
+    return value;
+};
+any any::instance(const atomic_any& value) noexcept {
+    return value;
+};
+atomic_any::atomic_any(any const& rhs) : mut(), m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {
+    if (1) {
+        m_uuid = rhs.m_uuid & uuid::INV_FLAGS;
+        m_type = rhs.m_type;
+        m_ptr = rhs.m_ptr;
+    }
+    if (m_uuid > 0) GL::interlocked::increment(uuid::get_uuid(m_uuid).count);
+};
+atomic_any::atomic_any(any&& rhs) noexcept : mut(), m_uuid{ std::move(rhs.m_uuid) }, m_type{ std::move(rhs.m_type) }, m_ptr{ rhs.m_ptr } { rhs.m_uuid = 0; };
+atomic_any atomic_any::instance(any&& value) noexcept {
+    return std::forward<any>(value);
+};
+atomic_any atomic_any::instance(any& value) noexcept {
+    return value;
+};
+atomic_any atomic_any::instance(const any& value) noexcept {
+    return value;
+};
+
+
 // Definition
 namespace uuid {
-    static GL::fast_ticket_dispensor tickets;
+    static GL::fast_ticket_dispensor<false> tickets;
     static GL::atomic_vector< uuid_ticket > slots; 
     unsigned long new_uuid(GL::shared_ptr<GL::type_erasure::any_data>&& rhs) noexcept {
         unsigned long uuid = (unsigned long)tickets.get_ticket();
@@ -319,6 +694,12 @@ namespace uuid {
         return slots.at(uuid & INV_FLAGS);
     };
 };
+
+
+
+
+
+
 
 template <typename R, typename Class, typename... T> class Const_Member_Function_Traits {
 public:
@@ -851,300 +1232,6 @@ public:
         };
     };
 
-#if 0
-    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
-    void call(
-        const any& p0, const any& p1, const any& p2, const any& p3,
-        const any& p4, const any& p5, const any& p6, const any& p7,
-        const any& p8, const any& p9, const any& p10, const any& p11,
-        const any& p12, const any& p13, const any& p14, const any& p15
-        , any* out) const {
-        unsigned char buf[sizeof(any) * 16];
-        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
-        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
-        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
-        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
-        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
-        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
-        new (&reinterpret_cast<any*>(&buf[0])[6]) any(p6, true);
-        new (&reinterpret_cast<any*>(&buf[0])[7]) any(p7, true);
-        new (&reinterpret_cast<any*>(&buf[0])[8]) any(p8, true);
-        new (&reinterpret_cast<any*>(&buf[0])[9]) any(p9, true);
-        new (&reinterpret_cast<any*>(&buf[0])[10]) any(p10, true);
-        new (&reinterpret_cast<any*>(&buf[0])[11]) any(p11, true);
-        new (&reinterpret_cast<any*>(&buf[0])[12]) any(p12, true);
-        new (&reinterpret_cast<any*>(&buf[0])[13]) any(p13, true);
-        new (&reinterpret_cast<any*>(&buf[0])[14]) any(p14, true);
-        new (&reinterpret_cast<any*>(&buf[0])[15]) any(p15, true);
-        call(reinterpret_cast<any*>(&buf[0]), out);
-    };
-    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
-    void call(
-        const any& p0, const any& p1, const any& p2, const any& p3,
-        const any& p4, const any& p5, const any& p6, const any& p7,
-        const any& p8, const any& p9, const any& p10, const any& p11,
-        const any& p12, const any& p13, const any& p14
-        , any* out) const {
-        unsigned char buf[sizeof(any) * 15];
-        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
-        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
-        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
-        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
-        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
-        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
-        new (&reinterpret_cast<any*>(&buf[0])[6]) any(p6, true);
-        new (&reinterpret_cast<any*>(&buf[0])[7]) any(p7, true);
-        new (&reinterpret_cast<any*>(&buf[0])[8]) any(p8, true);
-        new (&reinterpret_cast<any*>(&buf[0])[9]) any(p9, true);
-        new (&reinterpret_cast<any*>(&buf[0])[10]) any(p10, true);
-        new (&reinterpret_cast<any*>(&buf[0])[11]) any(p11, true);
-        new (&reinterpret_cast<any*>(&buf[0])[12]) any(p12, true);
-        new (&reinterpret_cast<any*>(&buf[0])[13]) any(p13, true);
-        new (&reinterpret_cast<any*>(&buf[0])[14]) any(p14, true);
-        call(reinterpret_cast<any*>(&buf[0]), out);
-    };
-    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
-    void call(
-        const any& p0, const any& p1, const any& p2, const any& p3,
-        const any& p4, const any& p5, const any& p6, const any& p7,
-        const any& p8, const any& p9, const any& p10, const any& p11,
-        const any& p12, const any& p13
-        , any* out) const {
-        unsigned char buf[sizeof(any) * 14];
-        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
-        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
-        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
-        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
-        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
-        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
-        new (&reinterpret_cast<any*>(&buf[0])[6]) any(p6, true);
-        new (&reinterpret_cast<any*>(&buf[0])[7]) any(p7, true);
-        new (&reinterpret_cast<any*>(&buf[0])[8]) any(p8, true);
-        new (&reinterpret_cast<any*>(&buf[0])[9]) any(p9, true);
-        new (&reinterpret_cast<any*>(&buf[0])[10]) any(p10, true);
-        new (&reinterpret_cast<any*>(&buf[0])[11]) any(p11, true);
-        new (&reinterpret_cast<any*>(&buf[0])[12]) any(p12, true);
-        new (&reinterpret_cast<any*>(&buf[0])[13]) any(p13, true);
-        call(reinterpret_cast<any*>(&buf[0]), out);
-    };
-    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
-    void call(
-        const any& p0, const any& p1, const any& p2, const any& p3,
-        const any& p4, const any& p5, const any& p6, const any& p7,
-        const any& p8, const any& p9, const any& p10, const any& p11,
-        const any& p12
-        , any* out) const {
-        unsigned char buf[sizeof(any) * 13];
-        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
-        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
-        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
-        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
-        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
-        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
-        new (&reinterpret_cast<any*>(&buf[0])[6]) any(p6, true);
-        new (&reinterpret_cast<any*>(&buf[0])[7]) any(p7, true);
-        new (&reinterpret_cast<any*>(&buf[0])[8]) any(p8, true);
-        new (&reinterpret_cast<any*>(&buf[0])[9]) any(p9, true);
-        new (&reinterpret_cast<any*>(&buf[0])[10]) any(p10, true);
-        new (&reinterpret_cast<any*>(&buf[0])[11]) any(p11, true);
-        new (&reinterpret_cast<any*>(&buf[0])[12]) any(p12, true);
-        call(reinterpret_cast<any*>(&buf[0]), out);
-    };
-    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
-    void call(
-        const any& p0, const any& p1, const any& p2, const any& p3,
-        const any& p4, const any& p5, const any& p6, const any& p7,
-        const any& p8, const any& p9, const any& p10, const any& p11
-        , any* out) const {
-        unsigned char buf[sizeof(any) * 12];
-        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
-        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
-        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
-        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
-        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
-        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
-        new (&reinterpret_cast<any*>(&buf[0])[6]) any(p6, true);
-        new (&reinterpret_cast<any*>(&buf[0])[7]) any(p7, true);
-        new (&reinterpret_cast<any*>(&buf[0])[8]) any(p8, true);
-        new (&reinterpret_cast<any*>(&buf[0])[9]) any(p9, true);
-        new (&reinterpret_cast<any*>(&buf[0])[10]) any(p10, true);
-        new (&reinterpret_cast<any*>(&buf[0])[11]) any(p11, true);
-        call(reinterpret_cast<any*>(&buf[0]), out);
-    };
-    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
-    void call(
-        const any& p0, const any& p1, const any& p2, const any& p3,
-        const any& p4, const any& p5, const any& p6, const any& p7,
-        const any& p8, const any& p9, const any& p10
-        , any* out) const {
-        unsigned char buf[sizeof(any) * 11];
-        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
-        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
-        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
-        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
-        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
-        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
-        new (&reinterpret_cast<any*>(&buf[0])[6]) any(p6, true);
-        new (&reinterpret_cast<any*>(&buf[0])[7]) any(p7, true);
-        new (&reinterpret_cast<any*>(&buf[0])[8]) any(p8, true);
-        new (&reinterpret_cast<any*>(&buf[0])[9]) any(p9, true);
-        new (&reinterpret_cast<any*>(&buf[0])[10]) any(p10, true);
-        call(reinterpret_cast<any*>(&buf[0]), out);
-    };
-    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
-    void call(
-        const any& p0, const any& p1, const any& p2, const any& p3,
-        const any& p4, const any& p5, const any& p6, const any& p7,
-        const any& p8, const any& p9
-        , any* out) const {
-        unsigned char buf[sizeof(any) * 10];
-        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
-        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
-        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
-        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
-        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
-        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
-        new (&reinterpret_cast<any*>(&buf[0])[6]) any(p6, true);
-        new (&reinterpret_cast<any*>(&buf[0])[7]) any(p7, true);
-        new (&reinterpret_cast<any*>(&buf[0])[8]) any(p8, true);
-        new (&reinterpret_cast<any*>(&buf[0])[9]) any(p9, true);
-        call(reinterpret_cast<any*>(&buf[0]), out);
-    };
-    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
-    void call(
-        const any& p0, const any& p1, const any& p2, const any& p3,
-        const any& p4, const any& p5, const any& p6, const any& p7,
-        const any& p8
-        , any* out) const {
-        unsigned char buf[sizeof(any) * 9];
-        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
-        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
-        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
-        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
-        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
-        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
-        new (&reinterpret_cast<any*>(&buf[0])[6]) any(p6, true);
-        new (&reinterpret_cast<any*>(&buf[0])[7]) any(p7, true);
-        new (&reinterpret_cast<any*>(&buf[0])[8]) any(p8, true);
-        call(reinterpret_cast<any*>(&buf[0]), out);
-    };
-    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
-    void call(
-        const any& p0, const any& p1, const any& p2, const any& p3,
-        const any& p4, const any& p5, const any& p6, const any& p7
-        , any* out) const {
-        unsigned char buf[sizeof(any) * 8];
-        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
-        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
-        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
-        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
-        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
-        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
-        new (&reinterpret_cast<any*>(&buf[0])[6]) any(p6, true);
-        new (&reinterpret_cast<any*>(&buf[0])[7]) any(p7, true);
-        call(reinterpret_cast<any*>(&buf[0]), out);
-    };
-    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
-    void call(
-        const any& p0, const any& p1, const any& p2, const any& p3,
-        const any& p4, const any& p5, const any& p6
-        , any* out) const {
-        unsigned char buf[sizeof(any) * 7];
-        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
-        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
-        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
-        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
-        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
-        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
-        new (&reinterpret_cast<any*>(&buf[0])[6]) any(p6, true);
-        call(reinterpret_cast<any*>(&buf[0]), out);
-    };
-    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
-    void call(
-        const any& p0, const any& p1, const any& p2, const any& p3,
-        const any& p4, const any& p5
-        , any* out) const {
-        unsigned char buf[sizeof(any) * 6];
-        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
-        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
-        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
-        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
-        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
-        new (&reinterpret_cast<any*>(&buf[0])[5]) any(p5, true);
-        call(reinterpret_cast<any*>(&buf[0]), out);
-    };
-    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
-    void call(
-        const any& p0, const any& p1, const any& p2, const any& p3,
-        const any& p4
-        , any* out) const {
-        unsigned char buf[sizeof(any) * 5];
-        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
-        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
-        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
-        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
-        new (&reinterpret_cast<any*>(&buf[0])[4]) any(p4, true);
-        call(reinterpret_cast<any*>(&buf[0]), out);
-    };
-    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
-    void call(
-        const any& p0, const any& p1, const any& p2, const any& p3
-        , any* out) const {
-        unsigned char buf[sizeof(any) * 4];
-        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
-        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
-        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
-        new (&reinterpret_cast<any*>(&buf[0])[3]) any(p3, true);
-        call(reinterpret_cast<any*>(&buf[0]), out);
-    };
-    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
-    void call(
-        const any& p0, const any& p1, const any& p2
-        , any* out) const {
-        unsigned char buf[sizeof(any) * 3];
-        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
-        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
-        new (&reinterpret_cast<any*>(&buf[0])[2]) any(p2, true);
-        call(reinterpret_cast<any*>(&buf[0]), out);
-    };
-    /// Convenience function for easier calling syntax. Adds a small overhead due to the need to make an array per-call. 
-    void call(
-        const any& p0, const any& p1
-        , any* out) const {
-        unsigned char buf[sizeof(any) * 2];
-        new (&reinterpret_cast<any*>(&buf[0])[0]) any(p0, true);
-        new (&reinterpret_cast<any*>(&buf[0])[1]) any(p1, true);
-        call(reinterpret_cast<any*>(&buf[0]), out);
-    };
-    /// Convenience function for easier calling syntax. No overhead is added to make this call.
-    void call(
-        const any& p0
-        , any* out) const {
-        call(&p0, out);
-    };
-    /// Convenience function for easier calling syntax. No overhead is added to make this call.
-    void call(
-        any* out) const {
-        call(nullptr, out);
-    };
-
-    // convenience function that will allow the user to easily call a proxy function with arguments. Best performance achieved if passing-in boxed any{} objects already. 
-    template<typename T = void, typename... Args> decltype(auto) do_call(Args&&... args) const {
-        if constexpr (std::is_same_v<void, T>) {
-            call(any::instance(std::forward<Args>(args))..., nullptr);
-        }
-        else {
-            any out;
-            call(any::instance(std::forward<Args>(args))..., &out);
-            if constexpr (std::is_same_v<any, T>) {
-                return out;
-            }
-            else {
-                return (T)out.cast<T>();
-            }
-        }
-    };
-#endif
 };
 namespace {
     template <typename Function> class Const_Member_Function_Caller final : public Function_Caller {
@@ -1164,17 +1251,17 @@ namespace {
             else {
                 if (out) {
 #if 1
-                    if ((out->m_uuid & 0x1000'0000) == 0) {
-                        if ((out->m_uuid & uuid::INV_FLAGS) > 0) {
-                            auto& ref = uuid::get_uuid(out->m_uuid);
+                    if ((out->uuid() & uuid::TEMPORARY) == 0) {
+                        if ((out->uuid() & uuid::INV_FLAGS) > 0) {
+                            auto& ref = uuid::get_uuid(out->uuid());
                             if (GL::interlocked::decrement(ref.count) == 0) {
                                 ref.count = 1;
                                 ref.data = GL::type_erasure::wrap(call(begin));
-                                out->m_ptr = ref.data->get();
-                                out->m_type = GL::type_of<typename traits::returnType>();
+                                const_cast<void*&>(out->ptr()) = ref.data->get();
+                                const_cast<GL::type&>(out->type()) = GL::type_of<typename traits::returnType>();
                             }
                             else {
-                                out->m_uuid = 0;
+                                const_cast<unsigned long&>(out->uuid()) = 0;
                                 *out = any::instance(call(begin));
                             }
                         }
@@ -1258,17 +1345,17 @@ namespace {
             else {
                 if (out) {
 #if 1
-                    if ((out->m_uuid & 0x1000'0000) == 0) {
-                        if ((out->m_uuid & uuid::INV_FLAGS) > 0) {
-                            auto& ref = uuid::get_uuid(out->m_uuid);
+                    if ((out->uuid() & uuid::TEMPORARY) == 0) {
+                        if ((out->uuid() & uuid::INV_FLAGS) > 0) {
+                            auto& ref = uuid::get_uuid(out->uuid());
                             if (GL::interlocked::decrement(ref.count) == 0) {
                                 ref.count = 1;
                                 ref.data = GL::type_erasure::wrap(call(begin));
-                                out->m_ptr = ref.data->get();
-                                out->m_type = GL::type_of<typename traits::returnType>();
+                                const_cast<void*&>(out->ptr()) = ref.data->get();
+                                const_cast<GL::type&>(out->type()) = GL::type_of<typename traits::returnType>();
                             }
                             else {
-                                out->m_uuid = 0;
+                                const_cast<unsigned long&>(out->uuid()) = 0;
                                 *out = any::instance(call(begin));
                             }
                         }
@@ -1357,16 +1444,16 @@ namespace {
             if (out) {
                 if constexpr (std::is_same_v<GL::any, std::decay_t<typename traits::returnType>> || std::is_same_v<any, std::decay_t<typename traits::returnType>>) {
                     *out = call(begin);
-                    if (begin->m_type.is_const()) *out |= (GL::type::Const | GL::type::Reference);
+                    if (begin->type().is_const()) *out |= (GL::type::Const | GL::type::Reference);
                     else *out |= GL::type::Reference;
                 }
                 else if constexpr (std::is_pointer<typename traits::returnType>::value) {
                     *out = any::wrap_member(*begin, *call(begin));
-                    if (begin->m_type.is_const()) *out |= GL::type::Const;
+                    if (begin->type().is_const()) *out |= GL::type::Const;
                 }
                 else {
                     *out = any::wrap_member(*begin, call(begin));
-                    if (begin->m_type.is_const()) *out |= GL::type::Const;
+                    if (begin->type().is_const()) *out |= GL::type::Const;
                 }
             }
         };
@@ -1395,16 +1482,16 @@ namespace {
             if (out) {
                 if constexpr (std::is_same_v<GL::any, std::decay_t<typename traits::returnType>> || std::is_same_v<any, std::decay_t<typename traits::returnType>>) {
                     *out = call(begin);
-                    if (begin->m_type.is_const()) *out |= (GL::type::Const | GL::type::Reference);                    
+                    if (begin->type().is_const()) *out |= (GL::type::Const | GL::type::Reference);
                     else *out |= GL::type::Reference;                    
                 }
                 else if constexpr (std::is_pointer<typename traits::returnType>::value) {
                     *out = any::wrap_member(*begin, *call(begin));
-                    if (begin->m_type.is_const()) *out |= GL::type::Const;                    
+                    if (begin->type().is_const()) *out |= GL::type::Const;
                 }
                 else {
                     *out = any::wrap_member(*begin, call(begin));
-                    if (begin->m_type.is_const()) *out |= GL::type::Const;                    
+                    if (begin->type().is_const()) *out |= GL::type::Const;
                 }
             }
         };
@@ -1437,17 +1524,17 @@ namespace {
             else {
                 if (out) {
 #if 1
-                    if ((out->m_uuid & 0x1000'0000) == 0){
-                        if ((out->m_uuid & uuid::INV_FLAGS) > 0) {
-                            auto& ref = uuid::get_uuid(out->m_uuid);
+                    if ((out->uuid() & uuid::TEMPORARY) == 0){
+                        if ((out->uuid() & uuid::INV_FLAGS) > 0) {
+                            auto& ref = uuid::get_uuid(out->uuid());
                             if (GL::interlocked::decrement(ref.count) == 0) {
                                 ref.count = 1;
                                 ref.data = GL::type_erasure::wrap(call(begin));
-                                out->m_ptr = ref.data->get();
-                                out->m_type = GL::type_of<typename traits::returnType>();
+                                const_cast<void*&>(out->ptr()) = ref.data->get();
+                                const_cast<GL::type&>(out->type()) = GL::type_of<typename traits::returnType>();
                             }
                             else {
-                                out->m_uuid = 0;
+                                const_cast<unsigned long&>(out->uuid()) = 0;
                                 *out = any::instance(call(begin));
                             }
                         }
@@ -1541,17 +1628,17 @@ namespace {
             else {
                 if (out) {
 #if 1
-                    if ((out->m_uuid & 0x1000'0000) == 0) {
-                        if ((out->m_uuid & uuid::INV_FLAGS) > 0) {
-                            auto& ref = uuid::get_uuid(out->m_uuid);
+                    if ((out->uuid() & uuid::TEMPORARY) == 0) {
+                        if ((out->uuid() & uuid::INV_FLAGS) > 0) {
+                            auto& ref = uuid::get_uuid(out->uuid());
                             if (GL::interlocked::decrement(ref.count) == 0) {
                                 ref.count = 1;
                                 ref.data = GL::type_erasure::wrap(call(begin));
-                                out->m_ptr = ref.data->get();
-                                out->m_type = GL::type_of<typename traits::returnType>();
+                                const_cast<void*&>(out->ptr()) = ref.data->get();
+                                const_cast<GL::type&>(out->type()) = GL::type_of<typename traits::returnType>();
                             }
                             else {
-                                out->m_uuid = 0;
+                                const_cast<unsigned long&>(out->uuid()) = 0;
                                 *out = any::instance(call(begin));
                             }
                         }
@@ -1616,33 +1703,6 @@ namespace {
             return GL::type_of<typename traits::returnType>();
         };
     };
-};
-template <typename Function> GL::shared_ptr<Function_Caller> make_callable(Function&& func) {
-    typedef decltype(GL::details::detail::function_signature(func)) function_header;
-    if constexpr (function_header::is_object) { // function objects, e.g. auto x = [](){};
-        if constexpr (std::is_empty_v< Function >) {
-            using Type = decltype(Static_Function_Caller(+std::move(func)));
-            return GL::make_shared<Type>(+std::move(func));
-        }
-        else {
-            using Type = decltype(Lambda_Function_Caller(std::move(func)));
-            return GL::make_shared<Type>(std::move(func));
-        }
-    }
-    else if constexpr (function_header::is_member_object) { // member objects, e.g. return object.member;    
-        using Type = decltype(Attribute_Function_Caller(std::move(func)));
-        return GL::make_shared<Type>(std::move(func));
-    }
-    else if constexpr (function_header::is_member && !function_header::is_member_object) { // member functions, e.g. return object.member();
-        return Member_Function_Caller_Impl(std::move(func));
-    }
-    else if constexpr (function_header::is_static_member_function) { // static function pointers, e.g. static foo(){};   
-        using Type = decltype(Static_Function_Caller(std::move(func)));
-        return GL::make_shared<Type>(std::move(func));
-    }
-    else {
-        throw std::runtime_error("Did not handle conversion of provided function.");
-    }
 };
 
 #if 0
@@ -1724,28 +1784,72 @@ public:
 };
 #endif
 
+// Manager for wrapped functions, adding support for default parameters.
 class Function {
 public:
-    const GL::shared_ptr<Function_Caller> ptr;
-    GL::string name;
-    const size_t num_arguments;
-    std::array<GL::type, 16> arguments;
-    const GL::type* returns;
-    std::array<any, 16> defaults;
+    // Wrap any function (static, lambda, member function, attribute access, etc.) into a callable. Types and aritys must match when calling. 
+    template <typename Func> 
+    static GL::shared_ptr<Function_Caller> make_callable(Func&& func) {
+        typedef decltype(GL::details::detail::function_signature(func)) function_header;
+        if constexpr (function_header::is_object) { // function objects, e.g. auto x = [](){};
+            if constexpr (std::is_empty_v< Func >) {
+                using Type = decltype(Static_Function_Caller(+std::move(func)));
+                return GL::make_shared<Type>(+std::move(func));
+            }
+            else {
+                using Type = decltype(Lambda_Function_Caller(std::move(func)));
+                return GL::make_shared<Type>(std::move(func));
+            }
+        }
+        else if constexpr (function_header::is_member_object) { // member objects, e.g. return object.member;    
+            using Type = decltype(Attribute_Function_Caller(std::move(func)));
+            return GL::make_shared<Type>(std::move(func));
+        }
+        else if constexpr (function_header::is_member && !function_header::is_member_object) { // member functions, e.g. return object.member();
+            return Member_Function_Caller_Impl(std::move(func));
+        }
+        else if constexpr (function_header::is_static_member_function) { // static function pointers, e.g. static foo(){};   
+            using Type = decltype(Static_Function_Caller(std::move(func)));
+            return GL::make_shared<Type>(std::move(func));
+        }
+        else {
+            throw std::runtime_error("Did not handle conversion of provided function.");
+        }
+    };
+    struct function_wrapper_s {
+        struct argument_wrapper_s {
+            GL::string argument_name;
+            any argument_default;
+        };
+        GL::string name;
+        std::vector<argument_wrapper_s> arguments;
+        GL::string description;
+    };
+
+public:
+    const GL::shared_ptr<Function_Caller> ptr; // 
+    const size_t num_arguments; // 
+    const GL::type* returns; // 
+    std::array<GL::type, 16> arguments; //   
+    std::array<any, 16> defaults; // 
+    GL::string name; // 
+    GL::string description; // 
+    std::array<GL::string, 16> argument_names; // 
 
     Function(GL::shared_ptr<Function_Caller>&& rhs)
         : ptr{ std::forward<GL::shared_ptr<Function_Caller>>(rhs) }
-        , name{ "undeclared" }
         , num_arguments{ ptr->num_arguments() }
-        , arguments{}
         , returns{ &ptr->returns() }
+        , arguments{}
         , defaults{}
+        , name{ GL::string::empty_string() }
+        , description{ GL::string::empty_string() }   
+        , argument_names{}
     {
         auto actual_args = ptr->arguments();
         for (int i = 0; i < 16; ++i)
             if (actual_args[i]) arguments[i] = *actual_args[i];
             else arguments[i] = GL::type_of<GL::undefined>();
-
     };
 
 private:
@@ -1774,7 +1878,42 @@ public:
         return (returns_string() + " " + name + "(" + arguments_string() + ")").remove_leading_and_trailing(' ');
     };
 
-private:
+public:
+    // Evaluate the error or delta between the provided arguments and the expected arguments. 
+    // Values less than 1 are safe to call using the provided arguments. 
+    template<typename... Args> double argument_error(Args&&... args) const {
+        double error = 0;
+        int position = 0;
+        ([&] { // unwrap the parameter pack and copy the relevant data
+            if constexpr (std::is_same_v<decltype(args), any const&>)
+                error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
+            else if constexpr (std::is_same_v<decltype(args), any&>)
+                error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
+            else if constexpr (std::is_same_v<decltype(args), any&&>)
+                error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
+            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>)
+                error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
+            else if constexpr (std::is_same_v<decltype(args), atomic_any const&>)
+                error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
+            else if constexpr (std::is_same_v<decltype(args), atomic_any&>)
+                error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
+            else if constexpr (std::is_same_v<decltype(args), atomic_any&&>)
+                error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
+            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, atomic_any>)
+                error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
+            else
+                error += 1'000'000.0 * !GL::type_of<std::remove_reference_t<decltype(args)>>().can_free_cast(arguments[position++], true);
+        }(), ...);
+
+        for (; position < num_arguments; ++position)
+            if (defaults[position].empty() || !defaults[position].type().can_free_cast(arguments[position], true))
+                error += 1'000'000.0;
+            else 
+                error += 0.5 / num_arguments;
+
+        return error;
+    };
+
 public:
     // Convenience function that will allow the user to easily call a proxy function with arguments.
     // Will automatically add default parameters if the number of arguments is less than required. 
@@ -1783,20 +1922,38 @@ public:
         unsigned char buf[sizeof(any) * 16];
         int position = 0;
         ([&] { // unwrap the parameter pack and copy the relevant data
-            if constexpr (std::is_same_v<decltype(args), any const&>) 
-                std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));            
-            else if constexpr (std::is_same_v<decltype(args), any&>) 
-                std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));            
-            else if constexpr (std::is_same_v<decltype(args), any&&>) 
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<any>(args));            
-            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>) 
-                std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));            
+            if constexpr (std::is_same_v<decltype(args), any const&>)
+                std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));
+            else if constexpr (std::is_same_v<decltype(args), any&>)
+                std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));
+            else if constexpr (std::is_same_v<decltype(args), any&&>)
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<any>(args));
+            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>)
+                std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));
+            else if constexpr (std::is_same_v<decltype(args), atomic_any const&>)
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
+            else if constexpr (std::is_same_v<decltype(args), atomic_any&>)
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
+            else if constexpr (std::is_same_v<decltype(args), atomic_any&&>)
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<atomic_any>(args));
+            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, atomic_any>)
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
             else 
                 new (&reinterpret_cast<any*>(&buf[0])[position++]) any(any::instance(std::forward<decltype(args)>(args)));            
         }(), ...);
 
         for (; position < num_arguments; ++position) 
-            std::memcpy((&reinterpret_cast<any*>(&buf[0])[position]), &defaults[position], sizeof(any));
+            if (!defaults[position].empty())
+                std::memcpy((&reinterpret_cast<any*>(&buf[0])[position]), &defaults[position], sizeof(any));
+            else 
+                if (GL::string err_str = GL::prints(GL::string(R"(
+Arity error at call of Function "%.*s" at Argument #%i "%.*s". Number of provided arguments did not match the number of required arguments, and a default was not located to fill the gap.
+                )").remove_leading_and_trailing_whitespace(),
+                    name.length(), name.c_str().data(),
+                    position,
+                    argument_names[position].length(), argument_names[position].c_str().data()
+                ); err_str.length() > 0)
+                    throw std::runtime_error(err_str.to_string());
         
         defer(position = 0; ([&] { // unwrap the parameter pack and unload the non-reference data
             if constexpr (std::is_same_v<decltype(args), any const&>) 
@@ -1806,7 +1963,15 @@ public:
             else if constexpr (std::is_same_v<decltype(args), any&&>) 
                 reinterpret_cast<any*>(&buf[0])[position++].~any();            
             else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>) 
-                position++;            
+                position++;    
+            else if constexpr (std::is_same_v<decltype(args), atomic_any const&>)
+                reinterpret_cast<any*>(&buf[0])[position++].~any();
+            else if constexpr (std::is_same_v<decltype(args), atomic_any&>)
+                reinterpret_cast<any*>(&buf[0])[position++].~any();
+            else if constexpr (std::is_same_v<decltype(args), atomic_any&&>)
+                reinterpret_cast<any*>(&buf[0])[position++].~any();
+            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, atomic_any>)
+                reinterpret_cast<any*>(&buf[0])[position++].~any();
             else 
                 reinterpret_cast<any*>(&buf[0])[position++].~any();            
         }(), ...));
@@ -1819,12 +1984,8 @@ public:
             if constexpr (std::is_same_v<any, T>) return std::move(out);            
             else {
                 T to_return = out.cast<T>();
-                if ((out.m_uuid & 0x1000'0000) == 0) // if not temporary, then potentially call the destructor                    
-                    if ((out.m_uuid & uuid::INV_FLAGS) > 0) {
-                        auto& ref = uuid::get_uuid(out.m_uuid);
-                        // if (!ref.data->is_pod()) 
-                            out = nullptr;                        
-                    }                
+                if ((out.uuid() & uuid::TEMPORARY) == 0) // if not temporary, then potentially call the destructor                    
+                    out = nullptr;
                 return to_return;
             }
         }
@@ -1843,15 +2004,33 @@ public:
             else if constexpr (std::is_same_v<decltype(args), any&&>) 
                 new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<any>(args));            
             else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>) 
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);            
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);        
+            else if constexpr (std::is_same_v<decltype(args), atomic_any const&>)
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
+            else if constexpr (std::is_same_v<decltype(args), atomic_any&>)
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
+            else if constexpr (std::is_same_v<decltype(args), atomic_any&&>)
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<atomic_any>(args));
+            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, atomic_any>)
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
             else 
                 new (&reinterpret_cast<any*>(&buf[0])[position++]) any(any::instance(std::forward<decltype(args)>(args)));            
         }(), ...);
         for (; position < num_arguments; ++position) 
-            new (&reinterpret_cast<any*>(&buf[0])[position]) any(defaults[position]);
+            if (!defaults[position].empty())
+                new (&reinterpret_cast<any*>(&buf[0])[position]) any(defaults[position]);
+            else
+                if (GL::string err_str = GL::prints(GL::string(R"(
+Arity error at call of Function "%.*s" at Argument #%i "%.*s". Number of provided arguments did not match the number of required arguments, and a default was not located to fill the gap.
+                )").remove_leading_and_trailing_whitespace(),
+                    name.length(), name.c_str().data(),
+                    position,
+                    argument_names[position].length(), argument_names[position].c_str().data()
+                ); err_str.length() > 0)
+                    throw std::runtime_error(err_str.to_string());
             
         // copies the buffer directly, and copies the shared_ptr with its normal protections for the underlying function
-        return GL::parallel::async([buf, Ptr = (GL::shared_ptr<Function_Caller>)(this->ptr)]() {
+        auto out = GL::parallel::async([buf, Ptr = (GL::shared_ptr<Function_Caller>)(this->ptr)]() {
             defer(int position = 0; ([&] { // unwrap the parameter pack and unload the non-reference data
                 if constexpr (std::is_same_v<decltype(args), any const&>)  // this constexpr if statement forces the unroll to happen without impacting performance 
                     const_cast<any&>(reinterpret_cast<const any*>(&buf[0])[position++]).~any();                
@@ -1869,19 +2048,67 @@ public:
                     return std::move(out);                
                 else {
                     T to_return = out.cast<T>();
-                    if ((out.m_uuid & 0x1000'0000) == 0) 
+                    if ((out.uuid() & uuid::TEMPORARY) == 0)
                         // if not temporary, then potentially call the destructor
-                        if ((out.m_uuid & uuid::INV_FLAGS) > 0) {
-                            auto& ref = uuid::get_uuid(out.m_uuid);
-                            // if (!ref.data->is_pod()) 
-                                out = nullptr;                            
-                        }                    
+                        if ((out.uuid() & uuid::INV_FLAGS) > 0)
+                            out = nullptr;
                     return to_return;
                 }
-            }            
+            }
         });
+        if constexpr (std::is_same_v<void, T>) {
+            return out.as_promise();
+        }
+        else if constexpr (std::is_same_v<any, T>) {
+            return out.as_promise();
+        }
+        else {
+            return out;
+        }
     };
 
+};
+template <typename Func> Function wrap_function(Function::function_wrapper_s const& info, Func&& func) {
+    Function out(Function::make_callable(std::forward<Func>(func)));
+    out.name = info.name;
+    out.description = info.description;
+    bool provided_default_parameter = false;
+    for (int i = 0; (i < info.arguments.size()) && (i < out.argument_names.size()) && (i < out.defaults.size()); ++i) {
+        out.argument_names[i] = info.arguments[i].argument_name;
+        out.defaults[i] = info.arguments[i].argument_default;
+                
+        if (!out.defaults[i].empty()) {
+            // validate that the default parameter is correctly matching the type information. If it does not, this is a major risk for corruption and crashing.
+            provided_default_parameter = true;
+            if (!out.defaults[i].type().can_free_cast(out.arguments[i], true))
+                if (GL::string err_str = GL::prints(GL::string(R"(
+Argument #%i "%.*s" of Function "%.*s" was provided a default parameter of type "%.*s", but expected type "%.*s".
+                )").remove_leading_and_trailing_whitespace(),
+                    i,
+                    out.argument_names[i].length(), out.argument_names[i].c_str().data(),
+                    out.name.length(), out.name.c_str().data(),
+                    out.defaults[i].type().name().length(), out.defaults[i].type().name().c_str().data(),
+                    out.arguments[i].name().length(), out.arguments[i].name().c_str().data()
+                ); err_str.length() > 0)
+                    throw std::runtime_error(err_str.to_string());
+        }
+        else {
+            // validate that when using default parameters, a default must be provided for all arguments following the first-provided default.
+            if (provided_default_parameter)
+                if (GL::string err_str2 = GL::prints(GL::string(R"(
+Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but expected one of type "%.*s".
+                )").remove_leading_and_trailing_whitespace(),
+                    i,
+                    out.argument_names[i].length(), out.argument_names[i].c_str().data(),
+                    out.name.length(), out.name.c_str().data(),
+                    out.arguments[i].name().length(), out.arguments[i].name().c_str().data()
+                ); err_str2.length() > 0)
+                    throw std::runtime_error(err_str2.to_string());
+        }
+
+        
+    }
+    return out;
 };
 
 namespace GL {
@@ -2045,6 +2272,289 @@ int main() {
         ////std::cout << cache.current<3>()->cast<GL::string&>() << std::endl;
     };
 #endif
+
+    while (true) {
+        using namespace GL::literals;
+        if (1) {
+            Function unix_s = wrap_function({}, [](GL::second x, GL::minute y) -> GL::hour { return x + y; });
+            Function unix_s_1Default = wrap_function({ "", { { "x", nullptr }, { "y", any::instance(1_min) } } }, [](GL::second x, GL::minute y) -> GL::hour { return x + y; });
+            Function unix_s_2Default = wrap_function({ "", { { "x", any::instance(1_s) }, { "y", any::instance(1_min) } } }, [](GL::second x, GL::minute y) -> GL::hour { return x + y; });
+
+            std::cout << unix_s.do_call<GL::hour>(1_s, 1_min) << std::endl;
+            std::cout << unix_s.do_call<GL::hour>(any::instance(1_s), any::instance(1_min)) << std::endl;
+            std::cout << unix_s.do_call<GL::hour>(atomic_any::instance(1_s), atomic_any::instance(1_min)) << std::endl;
+
+            std::cout << unix_s.async_call<GL::hour>(1_s, 1_min).get() << std::endl;
+            std::cout << unix_s.async_call<GL::hour>(any::instance(1_s), any::instance(1_min)).get() << std::endl;
+            std::cout << unix_s.async_call<GL::hour>(atomic_any::instance(1_s), atomic_any::instance(1_min)).get() << std::endl;
+
+            std::cout << GL::prints(GL::string(R"(
+Argument Error(s): 
+Correct Inputs:
+    Standard:   %f; 
+    Any:        %f; 
+    Atomic Any: %f; 
+1 Wrong Input:
+    Standard:   %f; 
+    Any:        %f; 
+    Atomic Any: %f;
+2 Wrong Inputs:
+    Standard:   %f; 
+    Any:        %f; 
+    Atomic Any: %f;
+Missing Input (No Default):
+    Standard:   %f; 
+    Any:        %f; 
+    Atomic Any: %f;
+2 Missing Inputs (No Default):
+    All:        %f;
+Missing Input (1 Default):
+    Standard:   %f; 
+    Any:        %f; 
+    Atomic Any: %f;
+2 Missing Inputs (1 Default):
+    All:        %f;
+Missing Input (2 Default):
+    Standard:   %f; 
+    Any:        %f; 
+    Atomic Any: %f;
+2 Missing Inputs (2 Default):
+    All:        %f;
+)").remove_leading_and_trailing_whitespace(),
+                unix_s.argument_error(1_s, 1_min),
+                unix_s.argument_error(any::instance(1_s), any::instance(1_min)),
+                unix_s.argument_error(atomic_any::instance(1_s), atomic_any::instance(1_min)),
+
+                unix_s.argument_error(1_min, 1_min),
+                unix_s.argument_error(any::instance(1_min), any::instance(1_min)),
+                unix_s.argument_error(atomic_any::instance(1_min), atomic_any::instance(1_min)),
+
+                unix_s.argument_error(1_min, 1_s),
+                unix_s.argument_error(any::instance(1_min), any::instance(1_s)),
+                unix_s.argument_error(atomic_any::instance(1_min), atomic_any::instance(1_s)),
+
+                unix_s.argument_error(1_s),
+                unix_s.argument_error(any::instance(1_s)),
+                unix_s.argument_error(atomic_any::instance(1_s)),
+                unix_s.argument_error(),
+
+                unix_s_1Default.argument_error(1_s),
+                unix_s_1Default.argument_error(any::instance(1_s)),
+                unix_s_1Default.argument_error(atomic_any::instance(1_s)),
+                unix_s_1Default.argument_error(),
+
+                unix_s_2Default.argument_error(1_s),
+                unix_s_2Default.argument_error(any::instance(1_s)),
+                unix_s_2Default.argument_error(atomic_any::instance(1_s)),
+                unix_s_2Default.argument_error()
+            );
+        }
+        if (1) {
+            Function unix_s = wrap_function({}, [](GL::second x, GL::minute y) -> any { return any::instance<GL::hour>(x + y); });
+            std::cout << unix_s.do_call<GL::hour>(1_s, 1_min) << std::endl;
+            std::cout << unix_s.do_call<GL::hour>(any::instance(1_s), any::instance(1_min)) << std::endl;
+            std::cout << unix_s.do_call<GL::hour>(atomic_any::instance(1_s), atomic_any::instance(1_min)) << std::endl;
+
+            std::cout << unix_s.async_call<GL::hour>(1_s, 1_min).get() << std::endl;
+            std::cout << unix_s.async_call<GL::hour>(any::instance(1_s), any::instance(1_min)).get() << std::endl;
+            std::cout << unix_s.async_call<GL::hour>(atomic_any::instance(1_s), atomic_any::instance(1_min)).get() << std::endl;
+        }
+        if (1) {
+            Function unix_s = wrap_function({}, [](GL::second x, GL::minute y) -> atomic_any { return atomic_any::instance<GL::hour>(x + y); });
+            std::cout << unix_s.do_call<GL::hour>(1_s, 1_min) << std::endl;
+            std::cout << unix_s.do_call<GL::hour>(any::instance(1_s), any::instance(1_min)) << std::endl;
+            std::cout << unix_s.do_call<GL::hour>(atomic_any::instance(1_s), atomic_any::instance(1_min)) << std::endl;
+
+            std::cout << unix_s.async_call<GL::hour>(1_s, 1_min).get() << std::endl;
+            std::cout << unix_s.async_call<GL::hour>(any::instance(1_s), any::instance(1_min)).get() << std::endl;
+            std::cout << unix_s.async_call<GL::hour>(atomic_any::instance(1_s), atomic_any::instance(1_min)).get() << std::endl;
+        }
+
+        if (1) {
+            Function unix_s = wrap_function({}, [](GL::second x, GL::datetime y) -> GL::hour { return x + (GL::minute)y; });
+            auto N = GL::datetime::Now();
+            std::cout << unix_s.do_call<GL::hour>(0_s, N) << std::endl;
+            std::cout << unix_s.do_call<GL::hour>(120_s, N) << std::endl;
+            std::cout << unix_s.do_call<GL::hour>(12000_s, N) << std::endl;
+            std::cout << unix_s.do_call<GL::hour>(120000000000_s, N) << std::endl;
+        }
+        if (1) {
+            Function unix_s = wrap_function({}, [](GL::datetime y, GL::second x) -> GL::datetime { return y + x; });
+            auto N = GL::datetime::Now();
+            std::cout << unix_s.do_call<GL::datetime>(N, 0_s) << std::endl;
+            std::cout << unix_s.do_call<GL::datetime>(N, 120_s) << std::endl;
+            std::cout << unix_s.do_call<GL::datetime>(N, 1_d) << std::endl;
+            std::cout << unix_s.do_call<GL::datetime>(N, 12000_s) << std::endl;
+            std::cout << unix_s.do_call<GL::datetime>(N, 1200000_s) << std::endl;
+            std::cout << unix_s.do_call<GL::datetime>(N, 120000000_s) << std::endl;
+        }
+
+        try {
+            Function unix_s = wrap_function({ "", { { "x", nullptr }, { "y", nullptr } } }, [](GL::second x, GL::minute y) -> GL::hour { return x + y; });
+            GL::stopwatch_group timer2;
+            GL::parallel::For(0, 1'000'000, [&](size_t i) {
+                auto timer = timer2.debug_timer();
+                if (unix_s.async_call<GL::hour>(GL::second(i), GL::minute(i)).get() != unix_s.do_call<GL::hour>(GL::second(i), GL::minute(i))) {
+                    throw "DID NOT EQUAL";
+                }
+            });
+        }
+        catch (std::exception& e) {
+            std::cout << e.what() << std::endl;
+        }
+
+
+
+
+
+
+
+
+
+
+
+        std::cout << "Linear:\n";
+        if (1) {
+            GL::stopwatch_group timer2;
+            GL::parallel::Std_For(0, 1'000'000, [&](size_t i) {
+                auto timer = timer2.debug_timer();
+
+                any temp;
+                switch (i % 3) {
+                case 0: temp = any::instance(100); break;
+                case 1: temp = any::instance(100.0); break;
+                case 2: temp = any::instance(100.0f); break;
+                }
+            });
+        }
+        if (1) {
+            GL::stopwatch_group timer2;
+            GL::parallel::Std_For(0, 1'000'000, [&](size_t i) {
+                auto timer = timer2.debug_timer();
+
+                any temp = any::instance(std::string("TEST"));
+                temp = any::instance(100);
+                temp.cast<int>() += 100;
+                if (temp.cast<int>() != 200) throw "SHOULD HAVE MATCHED";
+            });
+        }
+        if (1) {
+            GL::stopwatch_group timer2;
+            any temp = any::instance(GL::meter(0));
+            GL::parallel::Std_For(0, 1'000'000, [&](size_t i) {
+                auto timer = timer2.debug_timer();
+
+                temp.cast<GL::meter>() += GL::meter(100);
+            });
+        }
+
+        std::cout << "Atomic, Linearly:\n";
+        if (1) {
+            GL::stopwatch_group timer2;
+            GL::parallel::Std_For(0, 1'000'000, [&](size_t i) {
+                auto timer = timer2.debug_timer();
+
+                atomic_any temp;
+                switch (i % 3) {
+                case 0: temp = atomic_any::instance(100); break;
+                case 1: temp = atomic_any::instance(100.0); break;
+                case 2: temp = atomic_any::instance(100.0f); break;
+                }
+            });
+        }
+        if (1) {
+            GL::stopwatch_group timer2;
+            GL::parallel::Std_For(0, 1'000'000, [&](size_t i) {
+                auto timer = timer2.debug_timer();
+
+                atomic_any temp = atomic_any::instance(std::string("TEST"));
+                temp = atomic_any::instance(100);
+                temp.cast<int>() += 100;
+                if (temp.cast<int>() != 200) throw "SHOULD HAVE MATCHED";
+            });
+        }
+        if (1) {
+            GL::stopwatch_group timer2;
+            atomic_any temp = atomic_any::instance(GL::meter(0));
+            GL::parallel::Std_For(0, 1'000'000, [&](size_t i) {
+                auto timer = timer2.debug_timer();
+
+                temp.cast<GL::meter>() += GL::meter(100);
+            });
+        }
+
+        std::cout << "Atomic, In Parallel:\n";
+        if (1) {
+            GL::stopwatch_group timer2;
+            atomic_any temp;
+            GL::parallel::Std_For(0, 1'000'000, [&](size_t i) {
+                auto timer = timer2.debug_timer();
+                
+                switch (i % 3) {
+                case 0: temp = atomic_any::instance(100); break;
+                case 1: temp = atomic_any::instance(100.0); break;
+                case 2: temp = atomic_any::instance(100.0f); break;
+                }
+            });
+        }
+        if (1) {
+            GL::stopwatch_group timer2;
+            atomic_any temp = atomic_any::instance(100);
+            GL::parallel::Std_For(0, 1'000'000, [&](size_t i) {
+                auto timer = timer2.debug_timer();
+
+                switch (i % 3) {
+                case 0: temp = temp + GL::type::Const; break;
+                case 1: temp = temp + GL::type::Reference; break;
+                case 2: temp = temp + GL::type::Temporary; break;
+                }
+            });
+        }
+        if (1) {
+            GL::stopwatch_group timer2;
+            atomic_any temp = atomic_any::instance(GL::meter(0));
+            GL::parallel::Std_For(0, 1'000'000, [&](size_t i) {
+                auto timer = timer2.debug_timer();
+                temp.cast<GL::meter>() += GL::meter(100);
+            });
+        }
+
+        std::cout << "Linear with Atomics:\n";
+        if (1) {
+            GL::stopwatch_group timer2;
+            GL::parallel::Std_For(0, 1'000'000, [&](size_t i) {
+                auto timer = timer2.debug_timer();
+
+                atomic_any temp;
+                switch (i % 3) {
+                case 0: temp = any::instance(100); break;
+                case 1: temp = any::instance(100.0); break;
+                case 2: temp = any::instance(100.0f); break;
+                }
+            });
+        }
+        if (1) {
+            GL::stopwatch_group timer2;
+            GL::parallel::Std_For(0, 1'000'000, [&](size_t i) {
+                auto timer = timer2.debug_timer();
+
+                any temp = any::instance(std::string("TEST"));
+                temp = any::instance(100);
+                temp.cast<int>() += 100;
+                if (temp.cast<int>() != 200) throw "SHOULD HAVE MATCHED";
+            });
+        }
+        if (1) {
+            GL::stopwatch_group timer2;
+            atomic_any temp = any::instance(GL::meter(0));
+            GL::parallel::Std_For(0, 1'000'000, [&](size_t i) {
+                auto timer = timer2.debug_timer();
+                temp.cast<GL::meter>() += GL::meter(100);
+            });
+        }
+
+        std::cout << "\n";
+    }
 
     while (true) {
         std::cout << "\n";
@@ -3369,11 +3879,11 @@ int main() {
 #if 1
     using namespace GL::literals;
     if (1) {
-        Function unix_s = make_callable([](GL::second x, GL::minute y) -> GL::hour { return x + y; });
+        Function unix_s = wrap_function({}, [](GL::second x, GL::minute y) -> GL::hour { return x + y; });
         std::cout << unix_s.do_call<GL::hour>(1_s, 1_min) << std::endl;
     }
     if (1) {
-        Function unix_s = make_callable([](GL::second x, GL::datetime y) -> GL::hour { return x + (GL::minute)y; });
+        Function unix_s = wrap_function({}, [](GL::second x, GL::datetime y) -> GL::hour { return x + (GL::minute)y; });
         auto N = GL::datetime::Now();
         std::cout << unix_s.do_call<GL::hour>(0_s, N) << std::endl;
         std::cout << unix_s.do_call<GL::hour>(120_s, N) << std::endl;
@@ -3381,7 +3891,7 @@ int main() {
         std::cout << unix_s.do_call<GL::hour>(120000000000_s, N) << std::endl;
     }
     if (1) {
-        Function unix_s = make_callable([](GL::datetime y, GL::second x) -> GL::datetime { return y + x; });
+        Function unix_s = wrap_function({}, [](GL::datetime y, GL::second x) -> GL::datetime { return y + x; });
         auto N = GL::datetime::Now();
         std::cout << unix_s.do_call<GL::datetime>(N, 0_s) << std::endl;
         std::cout << unix_s.do_call<GL::datetime>(N, 120_s) << std::endl;
@@ -3467,7 +3977,7 @@ int main() {
             }
         } break;
         case 7: {
-            Function callable{ make_callable(&GL::string::begins_with) };
+            Function callable{ wrap_function({}, &GL::string::begins_with) };
             //std::cout << callable.to_string() << std::endl;
             std::array<any, 2> example{
                 any::instance(GL::string("this")),
@@ -3481,7 +3991,7 @@ int main() {
             }
         } break;
         case 9: {
-            Function callable{ make_callable([](GL::string const& LHS, GL::string const& RHS) -> auto { return LHS.begins_with(RHS); }) };
+            Function callable{ wrap_function({},[](GL::string const& LHS, GL::string const& RHS) -> auto { return LHS.begins_with(RHS); }) };
             //std::cout << callable.to_string() << std::endl;
             std::array<any, 2> example{
                 any::instance(GL::string("this")),
@@ -3495,7 +4005,7 @@ int main() {
             }
         } break;
         case 10: {
-            Function callable{ make_callable([](GL::string const& LHS, GL::string const& RHS) -> bool { return LHS.begins_with(RHS); }) };
+            Function callable{ wrap_function({}, [](GL::string const& LHS, GL::string const& RHS) -> bool { return LHS.begins_with(RHS); }) };
             //std::cout << callable.to_string() << std::endl;
             std::array<any, 2> example{
                 any::instance(GL::string("this")),
@@ -3518,7 +4028,7 @@ int main() {
             std::array<any, 1> example{
                 any::instance(TEST{ GL::string("this"), GL::string("that") })
             };
-            Function callable{ make_callable(&TEST::obj2) };
+            Function callable{ wrap_function({}, &TEST::obj2) };
             //std::cout << callable.to_string() << std::endl;
             if (auto timer = GL::stopwatch().debug_timer("TEST::obj, w/o return")) {
                 //for (int i = 0; i < 1'000'000; ++i) {
@@ -3535,7 +4045,7 @@ int main() {
             std::array<any, 1> example{
                 any::instance(TEST{ GL::string("this"), GL::string("that") })
             };
-            Function callable{ make_callable(&TEST::obj2) };
+            Function callable{ wrap_function({}, &TEST::obj2) };
             //std::cout << callable.to_string() << std::endl;
             if (auto timer = GL::stopwatch().debug_timer("TEST::obj, w/ return")) {
                 //for (int i = 0; i < 1'000'000; ++i) {
@@ -3546,7 +4056,7 @@ int main() {
             }
         } break;
         case 13: {
-            Function callable{ make_callable([](GL::string const& LHS, GL::string const& RHS) -> bool { return LHS.begins_with(RHS); }) };
+            Function callable{ wrap_function({}, [](GL::string const& LHS, GL::string const& RHS) -> bool { return LHS.begins_with(RHS); }) };
             callable.name = "begins_with";
             callable.defaults[1] = any::instance(GL::string("this"));
             // std::cout << callable.to_string() << std::endl;
@@ -3562,7 +4072,7 @@ int main() {
         } break;
         case 14: {
             GL::script_type Custom_Type("Custom");
-            Function callable{ make_callable([](any const& LHS, any const& RHS) -> bool {
+            Function callable{ wrap_function({}, [](any const& LHS, any const& RHS) -> bool {
                 return LHS.cast<GL::string const&>().begins_with(RHS.cast<GL::string const&>());
             }) };
             callable.name = "begins_with";
@@ -3583,7 +4093,7 @@ int main() {
         } break;
         case 15: {
             Function callable{ []() { 
-                Function out { make_callable([](GL::string const& LHS, GL::string const& RHS) -> bool { return LHS.begins_with(RHS); }) }; 
+                Function out { wrap_function({}, [](GL::string const& LHS, GL::string const& RHS) -> bool { return LHS.begins_with(RHS); }) };
                 out.name = "begins_with";
                 out.defaults[1] = any::instance(GL::string("this"));
                 return out; 
@@ -3594,7 +4104,7 @@ int main() {
             if (auto timer = GL::stopwatch().debug_timer("GL::string::begins_with() with async_call w/o return w/ default value")) {
                 std::vector<GL::parallel::promise> jobs(1'000'000ull, GL::parallel::promise{});
                 GL::parallel::For(0, 1'000'000, [&](size_t i) {
-                    jobs[i] = callable.async_call<void>(example[0]).as_promise();
+                    jobs[i] = callable.async_call(example[0]);
                 });
             }
         } break;

@@ -513,7 +513,7 @@ namespace GL {
 
     class fast_exclusive_mutex {
     private:
-        RTL_CRITICAL_SECTION mut;
+        mutable RTL_CRITICAL_SECTION mut;
 
     public:
         fast_exclusive_mutex() : mut{ 0 } {
@@ -531,10 +531,10 @@ namespace GL {
             DeleteCriticalSection(&mut);
         };
 
-        void lock() {
+        void lock() const {
             EnterCriticalSection(&mut);
         };
-        void unlock() {
+        void unlock() const {
             LeaveCriticalSection(&mut);
         };
     };
