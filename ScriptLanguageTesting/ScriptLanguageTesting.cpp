@@ -70,7 +70,7 @@ public:
         return m_type;
     };
 
-    any(unsigned long&& uuid, void* data, GL::type const& type) noexcept : m_uuid{ std::forward<unsigned long>(uuid) }, m_type{ type }, m_ptr{ data } {};
+    any(unsigned long uuid, void* data, GL::type const& type) noexcept : m_uuid{ uuid }, m_type{ type }, m_ptr{ data } {};
     any() noexcept : m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
     any(std::nullptr_t) noexcept : m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
     any(any const& rhs) : m_uuid{ rhs.m_uuid & uuid::INV_FLAGS }, m_type{ rhs.m_type }, m_ptr{ rhs.m_ptr } { if (m_uuid > 0) GL::interlocked::increment(uuid::get_uuid(m_uuid).count); };
@@ -349,7 +349,7 @@ public:
         return m_type;
     };
 
-    atomic_any(unsigned long&& uuid, void* data, GL::type const& type) noexcept : mut(), m_uuid{ std::forward<unsigned long>(uuid) }, m_type{ type }, m_ptr{ data } {};
+    atomic_any(unsigned long uuid, void* data, GL::type const& type) noexcept : mut(), m_uuid{ uuid }, m_type{ type }, m_ptr{ data } {};
     atomic_any() noexcept : mut(), m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
     atomic_any(std::nullptr_t) noexcept : mut(), m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
     atomic_any(atomic_any const& rhs) : mut(), m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr }
@@ -1217,9 +1217,16 @@ public:
 
 class Function_Caller {
 public:
+    bool UseSimplifiedArguments = false;
+
     virtual ~Function_Caller() = default;
-    // implimentation-specific function
+    // implimentation-specific function that may include a reference, a shared pointer, a value-type, etc. 
     virtual void call(const any* const begin, any* const out) const = 0;
+    // implimentation-specific function specifically intended copy-out the return value without wrapping it as an 'any'
+    virtual void call(const any* const begin, void* out_destination, size_t out_size) const = 0;
+    // returns true if the underlying, real function return of the underlying function exactly matches the provided type.
+    virtual bool return_type_explicit_match(std::type_info const& match) const = 0;
+
     virtual size_t num_arguments() const = 0;
     virtual GL::type const& argument(size_t index) const = 0;
     virtual GL::type const& returns() const = 0;
@@ -1231,8 +1238,8 @@ public:
                 & argument(12), & argument(13), & argument(14), & argument(15)
         };
     };
-
 };
+
 namespace {
     template <typename Function> class Const_Member_Function_Caller final : public Function_Caller {
     public:
@@ -1280,6 +1287,34 @@ namespace {
                     call(begin);
                 }
             }
+        };
+        void call(const any* const begin, void* out_destination, size_t out_size) const override {
+            if constexpr (std::is_same_v<void, typename traits::returnType>) {
+                call(begin);
+            }
+            else {
+                if (out_destination && (out_size >= sizeof(std::decay_t<typename traits::returnType>)))
+                    if constexpr (std::is_pod_v<std::decay_t<typename traits::returnType>>) {
+                        decltype(auto) recieved = call(begin);
+                        std::memcpy(out_destination, &recieved, sizeof(std::decay_t<typename traits::returnType>));
+                    }
+                    else {
+                        new (out_destination) std::decay_t<typename traits::returnType>(call(begin));
+                    }
+                else
+                    if (GL::string err_str = GL::prints(GL::string(R"(
+Call to function "%s" with explicit value return failed due to incorrect parameter sizing (%zu, expected %zu for return type of "%s").
+                )").remove_leading_and_trailing_whitespace(),
+                        typeid(Function).name(),
+                        out_size,
+                        sizeof(std::decay_t<typename traits::returnType>),
+                        typeid(std::decay_t<typename traits::returnType>).name()
+                    ); err_str.length() > 0)
+                        throw std::runtime_error(err_str.to_string());
+            }
+        };
+        bool return_type_explicit_match(std::type_info const& match) const override {
+            return typeid(typename traits::returnType) == match;
         };
         size_t num_arguments() const override {
             return traits::numArgs + 1;
@@ -1375,6 +1410,34 @@ namespace {
                 }
             }
         };
+        void call(const any* const begin, void* out_destination, size_t out_size) const override {
+            if constexpr (std::is_same_v<void, typename traits::returnType>) {
+                call(begin);
+            }
+            else {
+                if (out_destination && (out_size >= sizeof(std::decay_t<typename traits::returnType>)))
+                    if constexpr (std::is_pod_v<std::decay_t<typename traits::returnType>>) {
+                        decltype(auto) recieved = call(begin);
+                        std::memcpy(out_destination, &recieved, sizeof(std::decay_t<typename traits::returnType>));
+                    }
+                    else {
+                        new (out_destination) std::decay_t<typename traits::returnType>(call(begin));
+                    }
+                else
+                    if (GL::string err_str = GL::prints(GL::string(R"(
+Call to function "%s" with explicit value return failed due to incorrect parameter sizing (%zu, expected %zu for return type of "%s").
+                )").remove_leading_and_trailing_whitespace(),
+                        typeid(Function).name(),
+                        out_size,
+                        sizeof(std::decay_t<typename traits::returnType>),
+                        typeid(std::decay_t<typename traits::returnType>).name()
+                    ); err_str.length() > 0)
+                        throw std::runtime_error(err_str.to_string());
+            }
+        };
+        bool return_type_explicit_match(std::type_info const& match) const override {
+            return typeid(typename traits::returnType) == match;
+        };
         size_t num_arguments() const override {
             return traits::numArgs + 1;
         };
@@ -1457,6 +1520,30 @@ namespace {
                 }
             }
         };
+        void call(const any* const begin, void* out_destination, size_t out_size) const override {
+            if (out_destination && (out_size >= sizeof(std::decay_t<typename traits::returnType>))) {
+                typename traits::returnType& ref = call(begin);
+                if constexpr (std::is_pod_v<std::decay_t<typename traits::returnType>>) {
+                    std::memcpy(out_destination, &ref, sizeof(std::decay_t<typename traits::returnType>));
+                }
+                else {
+                    new (out_destination) std::decay_t<typename traits::returnType>(ref);
+                }
+            }
+            else
+                if (GL::string err_str = GL::prints(GL::string(R"(
+Call to function "%s" with explicit value return failed due to incorrect parameter sizing (%zu, expected %zu for return type of "%s").
+                )").remove_leading_and_trailing_whitespace(),
+                    typeid(Function).name(),
+                    out_size,
+                    sizeof(std::decay_t<typename traits::returnType>),
+                    typeid(std::decay_t<typename traits::returnType>).name()
+                ); err_str.length() > 0)
+                    throw std::runtime_error(err_str.to_string());
+        };
+        bool return_type_explicit_match(std::type_info const& match) const override {
+            return typeid(typename traits::returnType) == match;
+        };
         size_t num_arguments() const override {
             return 1;
         };
@@ -1494,6 +1581,30 @@ namespace {
                     if (begin->type().is_const()) *out |= GL::type::Const;
                 }
             }
+        };
+        void call(const any* const begin, void* out_destination, size_t out_size) const override {
+            if (out_destination && (out_size >= sizeof(std::decay_t<typename traits::returnType>))) {
+                typename traits::returnType& ref = call(begin);
+                if constexpr (std::is_pod_v<std::decay_t<typename traits::returnType>>) {
+                    std::memcpy(out_destination, &ref, sizeof(std::decay_t<typename traits::returnType>));
+                }
+                else {
+                    new (out_destination) std::decay_t<typename traits::returnType>(ref);
+                }
+            }
+            else
+                if (GL::string err_str = GL::prints(GL::string(R"(
+Call to function "%s" with explicit value return failed due to incorrect parameter sizing (%zu, expected %zu for return type of "%s").
+                )").remove_leading_and_trailing_whitespace(),
+                    typeid(Function).name(),
+                    out_size,
+                    sizeof(std::decay_t<typename traits::returnType>),
+                    typeid(std::decay_t<typename traits::returnType>).name()
+                ); err_str.length() > 0)
+                    throw std::runtime_error(err_str.to_string());
+        };
+        bool return_type_explicit_match(std::type_info const& match) const override {
+            return typeid(typename traits::returnType) == match;
         };
         size_t num_arguments() const override {
             return 1;
@@ -1554,6 +1665,34 @@ namespace {
                     call(begin);
     }
 }
+        };
+        void call(const any* const begin, void* out_destination, size_t out_size) const override {
+            if constexpr (std::is_same_v<void, typename traits::returnType>) {
+                call(begin);
+            }
+            else {
+                if (out_destination && (out_size >= sizeof(std::decay_t<typename traits::returnType>)))
+                    if constexpr (std::is_pod_v<std::decay_t<typename traits::returnType>>) {
+                        decltype(auto) recieved = call(begin);
+                        std::memcpy(out_destination, &recieved, sizeof(std::decay_t<typename traits::returnType>));
+                    }
+                    else {
+                        new (out_destination) std::decay_t<typename traits::returnType>(call(begin));
+                    }
+                else
+                    if (GL::string err_str = GL::prints(GL::string(R"(
+Call to function "%s" with explicit value return failed due to incorrect parameter sizing (%zu, expected %zu for return type of "%s").
+                )").remove_leading_and_trailing_whitespace(),
+                        typeid(Function).name(),
+                        out_size,
+                        sizeof(std::decay_t<typename traits::returnType>),
+                        typeid(std::decay_t<typename traits::returnType>).name()
+                    ); err_str.length() > 0)
+                        throw std::runtime_error(err_str.to_string());
+            }
+        };
+        bool return_type_explicit_match(std::type_info const& match) const override {
+            return typeid(typename traits::returnType) == match;
         };
         size_t num_arguments() const override {
             return traits::numArgs;
@@ -1657,6 +1796,34 @@ namespace {
                     call(begin);
                 }
             }
+        };
+        void call(const any* const begin, void* out_destination, size_t out_size) const override {
+            if constexpr (std::is_same_v<void, typename traits::returnType>) {
+                call(begin);
+            }
+            else {
+                if (out_destination && (out_size >= sizeof(std::decay_t<typename traits::returnType>)))
+                    if constexpr (std::is_pod_v<std::decay_t<typename traits::returnType>>) {
+                        decltype(auto) recieved = call(begin);
+                        std::memcpy(out_destination, &recieved, sizeof(std::decay_t<typename traits::returnType>));
+                    }
+                    else {
+                        new (out_destination) std::decay_t<typename traits::returnType>(call(begin));
+                    }
+                else
+                    if (GL::string err_str = GL::prints(GL::string(R"(
+Call to function "%s" with explicit value return failed due to incorrect parameter sizing (%zu, expected %zu for return type of "%s").
+                )").remove_leading_and_trailing_whitespace(),
+                        typeid(Function).name(),
+                        out_size,
+                        sizeof(std::decay_t<typename traits::returnType>),
+                        typeid(std::decay_t<typename traits::returnType>).name()
+                    ); err_str.length() > 0)
+                        throw std::runtime_error(err_str.to_string());
+            }
+        };
+        bool return_type_explicit_match(std::type_info const& match) const override {
+            return typeid(typename traits::returnType) == match;
         };
         size_t num_arguments() const override {
             return traits::numArgs;
@@ -1818,12 +1985,13 @@ public:
     };
     struct function_wrapper_s {
         struct argument_wrapper_s {
-            GL::string argument_name;
-            any argument_default;
+            GL::string argument_name = GL::string::empty_string(); // argument name
+            any argument_default = nullptr; // argument's default value. Must exactly match the expected type of the function. 
         };
-        GL::string name;
-        std::vector<argument_wrapper_s> arguments;
-        GL::string description;
+        GL::string name = GL::string::empty_string(); // function name
+        std::vector<argument_wrapper_s> arguments; // list of function arguments
+        GL::string description = GL::string::empty_string(); // function description
+        bool UseSimplifiedArguments = false; // true will result in faster code, but requires strict management of the lifetime of argument data, and dis-allows any type conversion of the argument data. 
     };
 
 public:
@@ -1921,6 +2089,7 @@ public:
     template<typename T = void, typename... Args> decltype(auto) do_call(Args&&... args) const {
         unsigned char buf[sizeof(any) * 16];
         int position = 0;
+        bool UseSimplifiedArguments = ptr->UseSimplifiedArguments;
         ([&] { // unwrap the parameter pack and copy the relevant data
             if constexpr (std::is_same_v<decltype(args), any const&>)
                 std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));
@@ -1938,7 +2107,9 @@ public:
                 new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<atomic_any>(args));
             else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, atomic_any>)
                 new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
-            else 
+            else if (UseSimplifiedArguments)
+                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(0, &args, GL::type_of<decltype(args)>());            
+            else
                 new (&reinterpret_cast<any*>(&buf[0])[position++]) any(any::instance(std::forward<decltype(args)>(args)));            
         }(), ...);
 
@@ -1956,14 +2127,14 @@ Arity error at call of Function "%.*s" at Argument #%i "%.*s". Number of provide
                     throw std::runtime_error(err_str.to_string());
         
         defer(position = 0; ([&] { // unwrap the parameter pack and unload the non-reference data
-            if constexpr (std::is_same_v<decltype(args), any const&>) 
-                position++;            
-            else if constexpr (std::is_same_v<decltype(args), any&>) 
-                position++;            
-            else if constexpr (std::is_same_v<decltype(args), any&&>) 
-                reinterpret_cast<any*>(&buf[0])[position++].~any();            
-            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>) 
-                position++;    
+            if constexpr (std::is_same_v<decltype(args), any const&>)
+                position++;
+            else if constexpr (std::is_same_v<decltype(args), any&>)
+                position++;
+            else if constexpr (std::is_same_v<decltype(args), any&&>)
+                reinterpret_cast<any*>(&buf[0])[position++].~any();
+            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>)
+                position++;
             else if constexpr (std::is_same_v<decltype(args), atomic_any const&>)
                 reinterpret_cast<any*>(&buf[0])[position++].~any();
             else if constexpr (std::is_same_v<decltype(args), atomic_any&>)
@@ -1972,24 +2143,39 @@ Arity error at call of Function "%.*s" at Argument #%i "%.*s". Number of provide
                 reinterpret_cast<any*>(&buf[0])[position++].~any();
             else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, atomic_any>)
                 reinterpret_cast<any*>(&buf[0])[position++].~any();
+            else if (UseSimplifiedArguments)
+                position++;
             else 
-                reinterpret_cast<any*>(&buf[0])[position++].~any();            
+                reinterpret_cast<any*>(&buf[0])[position++].~any();
         }(), ...));
                
         if constexpr (std::is_same_v<void, T>) 
             ptr->call(reinterpret_cast<any*>(&buf[0]), nullptr);        
         else {
-            thread_local any out;
-            ptr->call(reinterpret_cast<any*>(&buf[0]), &out);
-            if constexpr (std::is_same_v<any, T>) return std::move(out);            
+            /*thread_local*/ any out;
+            thread_local unsigned char arr[sizeof(std::decay_t<T>)];
+
+            if constexpr (std::is_same_v<any, T>) {                
+                ptr->call(reinterpret_cast<any*>(&buf[0]), &out);
+                return /*std::move(*/out/*)*/;
+            }
             else {
-                T to_return = out.cast<T>();
-                if ((out.uuid() & uuid::TEMPORARY) == 0) // if not temporary, then potentially call the destructor                    
-                    out = nullptr;
-                return to_return;
+                if (UseSimplifiedArguments && ptr->return_type_explicit_match(typeid(T))) {
+                    ptr->call(reinterpret_cast<any*>(&buf[0]), reinterpret_cast<void*>(&arr[0]), sizeof(arr));                    
+                    defer(if (!std::is_pod_v<std::decay_t<T>>) std::destroy_at(reinterpret_cast<std::decay_t<T>*>(&arr[0])));
+                    return (T)*reinterpret_cast<std::decay_t<T>*>(&arr[0]);
+                }
+                else {
+                    ptr->call(reinterpret_cast<any*>(&buf[0]), &out);
+                    T to_return = out.cast<T>();
+                    //if ((out.uuid() & uuid::TEMPORARY) == 0) // if not temporary, then potentially call the destructor                    
+                        //out = nullptr;
+                    return to_return;
+                }
             }
         }
     };
+
     // Convenience function that will allow the user to easily call a proxy function with arguments asynchronously.
     // Will automatically add default parameters if the number of arguments is less than required. 
     // Does NOT handle type-conversions and assumes perfect type matches, INCLUDING WITH THE DEFAULT VALUES.
@@ -2068,10 +2254,12 @@ Arity error at call of Function "%.*s" at Argument #%i "%.*s". Number of provide
     };
 
 };
+// wrap any function (such as lambdas, static, member functions, etc.) into a callable object
 template <typename Func> Function wrap_function(Function::function_wrapper_s const& info, Func&& func) {
-    Function out(Function::make_callable(std::forward<Func>(func)));
+    Function out(Function::make_callable(std::forward<Func>(func)));    
     out.name = info.name;
     out.description = info.description;
+    out.ptr->UseSimplifiedArguments = info.UseSimplifiedArguments;
     bool provided_default_parameter = false;
     for (int i = 0; (i < info.arguments.size()) && (i < out.argument_names.size()) && (i < out.defaults.size()); ++i) {
         out.argument_names[i] = info.arguments[i].argument_name;
@@ -2110,14 +2298,79 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
     }
     return out;
 };
+// generate a callable object to convert from one type to another, supporting polymorphic types. 
+template <typename From, typename To> Function wrap_converter(bool UseSimplifiedArguments = true) {
+    Function::function_wrapper_s info{
+        GL::type_of<From>().name() + "_to_" + GL::type_of<To>().name(),
+        { { "from", nullptr } },
+        GL::string("Compiled function to convert from ") + GL::type_of<From>().name() + " to " + GL::type_of<To>().name() + ".",
+        UseSimplifiedArguments
+    };
+        
+    if constexpr (std::is_base_of_v< To, From>) {
+        // we are attempting to cast from a Derived type to a Base type. 
+        info.UseSimplifiedArguments = false;
+        Function out = wrap_function(info, [](any const& x) -> any {
+            // uuid::get_uuid(x.uuid()).data->get_type(); // gets the actual, underlying type of the shared object. 
+
+            any out = x;
+            const_cast<GL::type&>(out.type()) = GL::type_of<To>();
+            return out;
+            // return any::wrap_member(x, *dynamic_cast<To*>(reinterpret_cast<From*>(x.ptr())));
+        });
+        out.arguments[0] = GL::type_of<From>() + GL::type::Reference;
+        const_cast<GL::type&>(out.ptr->returns()) = GL::type_of<To>() + (GL::type::Reference + GL::type_of<From>().get_qualifiers());
+        return out;
+    }
+    if constexpr (std::is_base_of_v< From, To>) {
+        // we are attempting to cast from a Base type to a Derived type. 
+        info.UseSimplifiedArguments = false;
+        Function out = wrap_function(info, [](any const& x) -> any {
+            any out = x;
+            const_cast<GL::type&>(out.type()) = GL::type_of<To>();
+            return out;
+            // return any::wrap_member(x, *dynamic_cast<To*>(reinterpret_cast<From*>(x.ptr())));
+        });
+        out.arguments[0] = GL::type_of<From>() + GL::type::Reference;
+        const_cast<GL::type&>(out.ptr->returns()) = GL::type_of<To>() + (GL::type::Reference + GL::type_of<From>().get_qualifiers());
+        return out;
+    }
+
+    // idea: if the To object cannot be assigned normally, we could create it as a shared_ptr and return an 'any' object? Would simply need to un-set the UseSimplifiedArguments argument in that case. 
+    if constexpr (std::is_pod_v<From> && std::is_constructible_v<To, From>) {
+        return wrap_function(info, [](From x) -> To { return x; });
+    }
+    else if constexpr (std::is_constructible_v<To, From const&>) {
+        return wrap_function(info, [](From const& x) -> To { return x; });
+    }
+    else if constexpr (std::is_pod_v<From>  && std::is_constructible_v<To> && std::is_assignable_v<To, From>) {
+        return wrap_function(info, [](From x) -> To { To out; out = x; return out; });
+    }
+    else if constexpr (std::is_constructible_v<To> && std::is_assignable_v<To, From const&>) {
+        return wrap_function(info, [](From const& x) -> To { To out; out = x; return out; });
+    }
+    else {
+        static_assert(false, "Attempted to create a conversion function from but failed. Objects were not convertable.");
+    }
+};
+
+
+
+
+
 
 namespace GL {
     class stopwatch_group {
     protected:
         GL::thread_object_no_default<std::map<long long, long long>>
             time_results;
+        GL::string 
+            name;
 
     public:
+        stopwatch_group(GL::string Name = GL::string::empty_string())
+            : name(Name) 
+        {};
         ~stopwatch_group() {   
             std::map<long long, long double> quantile;
             long double total_count = 0;
@@ -2134,9 +2387,11 @@ namespace GL {
                 long long trd = -1;
                 long long max = -1;
                 long double totalizer = 0.0;
+                long long Total = 0;
 
                 for (auto& pair : quantile) {
                     pair.second /= total_count;
+                    Total += pair.first;
                     totalizer += pair.second;
                     pair.second = totalizer;
 
@@ -2163,15 +2418,30 @@ namespace GL {
                     GL::millisecond(GL::nanosecond(fst)).to_string(),
                     GL::millisecond(GL::nanosecond(mid)).to_string(),
                     GL::millisecond(GL::nanosecond(trd)).to_string(),
-                    GL::millisecond(GL::nanosecond(max)).to_string()
+                    GL::millisecond(GL::nanosecond(max)).to_string(),
+                    GL::millisecond(GL::nanosecond(Total)).to_string()
                 };
-                std::cout << GL::printf("[ Min: %s, 25%: %s, 50%: %s, 75%: %s, Max: %s ]\n",
-                    out[0].c_str().data(),
-                    out[1].c_str().data(),
-                    out[2].c_str().data(),
-                    out[3].c_str().data(),
-                    out[4].c_str().data()
-                );
+                if (name.length() > 0) {
+                    std::cout << GL::printf("%.*s: [ Min: %.*s, 25%: %.*s, 50%: %.*s, 75%: %.*s, Max: %.*s ] Over %.*s\n",
+                        name.length(), name.c_str().data(),
+                        out[0].length(), out[0].c_str().data(),
+                        out[1].length(), out[1].c_str().data(),
+                        out[2].length(), out[2].c_str().data(),
+                        out[3].length(), out[3].c_str().data(),
+                        out[4].length(), out[4].c_str().data(),
+                        out[5].length(), out[5].c_str().data()
+                    );
+                }
+                else {
+                    std::cout << GL::printf("[ Min: %.*s, 25%: %.*s, 50%: %.*s, 75%: %.*s, Max: %.*s ] Over %.*s\n",
+                        out[0].length(), out[0].c_str().data(),
+                        out[1].length(), out[1].c_str().data(),
+                        out[2].length(), out[2].c_str().data(),
+                        out[3].length(), out[3].c_str().data(),
+                        out[4].length(), out[4].c_str().data(),
+                        out[5].length(), out[5].c_str().data()
+                    );
+                }
             }
         };
         class wrapper {
@@ -2272,8 +2542,52 @@ int main() {
         ////std::cout << cache.current<3>()->cast<GL::string&>() << std::endl;
     };
 #endif
-
+     // experiemnting with a (unlikely) memory leak associated with epoch_btree_map? Or just a design flaw?
     while (true) {
+        GL::epoch_btree_map<
+            GL::shared_ptr<GL::value> // object
+            , size_t> // version
+        typed_cache;
+
+        auto InsertFunc = [&](size_t cache_version, GL::shared_ptr<GL::value> result) {
+            auto g{ typed_cache.guard_critical_section() };
+            auto& versioned_object = typed_cache.get_or_make(cache_version, []() -> GL::shared_ptr<GL::value> { return GL::make_shared<GL::value>(GL::foot(0)); });
+            if (versioned_object.compare_exchange(nullptr, result.release_control_block())) {
+                while (typed_cache.pop_front_if([&](size_t version, GL::shared_ptr<GL::value> const& obj) {
+                    return version < cache_version;
+                })) {};
+            }
+        };
+        auto LoadFunc = [&](size_t cache_version) -> GL::shared_ptr<GL::value> {
+            GL::shared_ptr<GL::value> out{ nullptr };
+            auto g{ typed_cache.guard_critical_section() };
+            (void)typed_cache.do_at_end([&](size_t version, GL::shared_ptr<GL::value> const& obj) {
+                out = obj;
+            });
+            return out;
+        };
+
+        std::atomic<long> version = 0;
+        while (true) {            
+            GL::parallel::For(0, 1'000'000, [&](int i) {
+                if (i % 10'000 == 0) version++;
+
+                InsertFunc(version.load(), GL::make_shared<GL::value>(GL::foot(i)));
+                if (auto p = LoadFunc(version.load()); p) {
+                    p->operator+=(GL::foot(1));
+                }
+            });
+            if (auto p = LoadFunc(version.load()); p) {
+                std::cout << *p << std::endl;
+            }
+        }
+    }
+
+
+
+
+
+    while (false) {
         using namespace GL::literals;
         if (1) {
             Function unix_s = wrap_function({}, [](GL::second x, GL::minute y) -> GL::hour { return x + y; });
@@ -2290,36 +2604,36 @@ int main() {
 
             std::cout << GL::prints(GL::string(R"(
 Argument Error(s): 
-Correct Inputs:
-    Standard:   %f; 
-    Any:        %f; 
-    Atomic Any: %f; 
-1 Wrong Input:
-    Standard:   %f; 
-    Any:        %f; 
-    Atomic Any: %f;
-2 Wrong Inputs:
-    Standard:   %f; 
-    Any:        %f; 
-    Atomic Any: %f;
-Missing Input (No Default):
-    Standard:   %f; 
-    Any:        %f; 
-    Atomic Any: %f;
-2 Missing Inputs (No Default):
-    All:        %f;
-Missing Input (1 Default):
-    Standard:   %f; 
-    Any:        %f; 
-    Atomic Any: %f;
-2 Missing Inputs (1 Default):
-    All:        %f;
-Missing Input (2 Default):
-    Standard:   %f; 
-    Any:        %f; 
-    Atomic Any: %f;
-2 Missing Inputs (2 Default):
-    All:        %f;
+    Correct Inputs:
+        Standard:   %f; 
+        Any:        %f; 
+        Atomic Any: %f; 
+    1 Wrong Input:
+        Standard:   %f; 
+        Any:        %f; 
+        Atomic Any: %f;
+    2 Wrong Inputs:
+        Standard:   %f; 
+        Any:        %f; 
+        Atomic Any: %f;
+    Missing Input (No Default):
+        Standard:   %f; 
+        Any:        %f; 
+        Atomic Any: %f;
+    2 Missing Inputs (No Default):
+        All:        %f;
+    Missing Input (1 Default):
+        Standard:   %f; 
+        Any:        %f; 
+        Atomic Any: %f;
+    2 Missing Inputs (1 Default):
+        All:        %f;
+    Missing Input (2 Default):
+        Standard:   %f; 
+        Any:        %f; 
+        Atomic Any: %f;
+    2 Missing Inputs (2 Default):
+        All:        %f;
 )").remove_leading_and_trailing_whitespace(),
                 unix_s.argument_error(1_s, 1_min),
                 unix_s.argument_error(any::instance(1_s), any::instance(1_min)),
@@ -2389,18 +2703,71 @@ Missing Input (2 Default):
             std::cout << unix_s.do_call<GL::datetime>(N, 120000000_s) << std::endl;
         }
 
-        try {
-            Function unix_s = wrap_function({ "", { { "x", nullptr }, { "y", nullptr } } }, [](GL::second x, GL::minute y) -> GL::hour { return x + y; });
-            GL::stopwatch_group timer2;
+        while (true){
+            if (1) {
+                Function converter = wrap_converter<GL::foot, GL::value>();
+                GL::stopwatch_group timer2("wrap_converter<GL::foot, GL::value>");
+                GL::parallel::For(0, 1'000'000, [&](size_t i) {
+                    auto timer = timer2.debug_timer();
+                    if (converter.do_call<GL::value>(GL::foot(i)) != GL::foot(i)) throw "DID NOT EQUAL";
+                });
+            }
+            if (1) {
+                Function converter = wrap_converter<GL::foot, GL::value>();
+                GL::stopwatch_group timer2("wrap_converter<GL::foot, GL::value>");
+                GL::parallel::For(0, 1'000'000, [&](size_t i) {
+                    auto timer = timer2.debug_timer();
+                    if (converter.do_call<::any>(GL::foot(i)).cast<GL::value>() != GL::foot(i)) throw "DID NOT EQUAL";
+                });
+            }
+            if (1) {
+                auto converter = GL::make_converter< GL::foot, GL::value>();
+                GL::stopwatch_group timer2("GL::make_converter< GL::foot, GL::value>");
+                GL::parallel::For(0, 1'000'000, [&](size_t i) {
+                    auto timer = timer2.debug_timer();
+                    if (converter->operator()(GL::any::fast_any::instance(GL::foot(i))).cast<GL::value>() != GL::foot(i)) throw "DID NOT EQUAL";
+                });
+            }
+        }
+        
+
+
+
+
+        if (1) {
+            Function converter = wrap_converter<GL::value, GL::foot>();
+            GL::stopwatch_group timer2("wrap_converter<GL::value, GL::foot>");
             GL::parallel::For(0, 1'000'000, [&](size_t i) {
                 auto timer = timer2.debug_timer();
-                if (unix_s.async_call<GL::hour>(GL::second(i), GL::minute(i)).get() != unix_s.do_call<GL::hour>(GL::second(i), GL::minute(i))) {
-                    throw "DID NOT EQUAL";
-                }
+                if (converter.do_call<GL::foot>(GL::value(GL::foot(i))) != GL::foot(i)) throw "DID NOT EQUAL";
             });
         }
-        catch (std::exception& e) {
-            std::cout << e.what() << std::endl;
+
+        
+
+        if (1) {
+            Function converter = wrap_function({ "int_to_double", { { "from", nullptr } }, "Compiled function to convert between types.", true }, [](int x) -> double { return x; });
+            GL::stopwatch_group timer2("int_to_double FAST");
+            GL::parallel::For(0, 1'000'000, [&](size_t i) {
+                auto timer = timer2.debug_timer();
+                if (converter.do_call<double>((int)i) != (double)(int)i) throw "DID NOT EQUAL";
+            });
+        }       
+        if (1) {
+            Function converter = wrap_converter<int, double>();
+            GL::stopwatch_group timer2("wrap_converter<int, double>");
+            GL::parallel::For(0, 1'000'000, [&](size_t i) {
+                auto timer = timer2.debug_timer();
+                if (converter.do_call<double>((int)i) != (double)(int)i) throw "DID NOT EQUAL";
+            });
+        }
+        if (1) {
+            Function converter = wrap_function({ "int_to_double", { { "from", nullptr } }, "Compiled function to convert between types.", false }, [](int const& x) -> double { return x; });
+            GL::stopwatch_group timer2("int_to_double SLOW");
+            GL::parallel::For(0, 1'000'000, [&](size_t i) {
+                auto timer = timer2.debug_timer();
+                if (converter.do_call<double>((int)i) != (double)(int)i) throw "DID NOT EQUAL";
+            });
         }
 
 
@@ -2556,7 +2923,7 @@ Missing Input (2 Default):
         std::cout << "\n";
     }
 
-    while (true) {
+    while (false) {
         std::cout << "\n";
 
         //for (int i = 0; i < 100; ++i)
@@ -3079,7 +3446,7 @@ Missing Input (2 Default):
     }
 
     while(true){
-        while (1) {
+        while (0) {
             //GL::fast_atomic_general_allocator alloc;            
             //if (auto timer = GL::stopwatch::debug_timer("fast_atomic_general_allocator"); true) {
             //    for (int i = 0; i < 1'000'000; ++i) {
@@ -3423,8 +3790,8 @@ Missing Input (2 Default):
         if (1) {
             GL::epoch_btree_map<int, int>
                 tree;
-            GL::stopwatch_group grp;
-            if (auto timer = GL::stopwatch::debug_timer("epoch_btree_map 1"); true) {
+            GL::stopwatch_group grp("epoch_btree_map 1");
+            if (true) {
                 GL::parallel::For(0, 1'000'000, [&](int i) {
                     auto time = grp.debug_timer();
                     auto g{ tree.guard_critical_section() };
@@ -3435,8 +3802,8 @@ Missing Input (2 Default):
         if (1) {
             GL::epoch_btree_map<GL::value, int>
                 tree;
-            GL::stopwatch_group grp;
-            if (auto timer = GL::stopwatch::debug_timer("epoch_btree_map 2"); true) {
+            GL::stopwatch_group grp("epoch_btree_map 2");
+            if (true) {
                 GL::parallel::For(0, 1'000'000, [&](int i) {
                     auto time = grp.debug_timer();
                     auto g{ tree.guard_critical_section() };
@@ -3448,8 +3815,8 @@ Missing Input (2 Default):
         if (1) {
             GL::epoch_btree_map<GL::value, int>
                 tree;
-            GL::stopwatch_group grp;
-            if (auto timer = GL::stopwatch::debug_timer("epoch_btree_map 3"); true) {
+            GL::stopwatch_group grp("epoch_btree_map 3");
+            if (true) {
                 GL::parallel::For(0, 1'000'000, [&](int i) {
                     auto time = grp.debug_timer();
                     tree.erase(i % 100);
@@ -3461,8 +3828,8 @@ Missing Input (2 Default):
         if (1) {
             GL::epoch_btree_map<int, int>
                 tree;
-            GL::stopwatch_group grp;
-            if (auto timer = GL::stopwatch::debug_timer("epoch_btree_map 1 linear"); true) {
+            GL::stopwatch_group grp("epoch_btree_map 1 linear");
+            if (true) {
                 for (auto i = 0; i < 1'000'000; ++i) {
                     auto time = grp.debug_timer();
                     auto g{ tree.guard_critical_section() };
@@ -3473,8 +3840,8 @@ Missing Input (2 Default):
         if (1) {
             GL::epoch_btree_map<GL::value, int>
                 tree;
-            GL::stopwatch_group grp;
-            if (auto timer = GL::stopwatch::debug_timer("epoch_btree_map 2 linear"); true) {
+            GL::stopwatch_group grp("epoch_btree_map 2 linear");
+            if (true) {
                 for (auto i = 0; i < 1'000'000; ++i) {
                     auto time = grp.debug_timer();
                     auto g{ tree.guard_critical_section() };
@@ -3486,8 +3853,8 @@ Missing Input (2 Default):
         if (1) {
             GL::epoch_btree_map<GL::value, int>
                 tree;
-            GL::stopwatch_group grp;
-            if (auto timer = GL::stopwatch::debug_timer("epoch_btree_map 3 linear"); true) {
+            GL::stopwatch_group grp("epoch_btree_map 3 linear");
+            if (true) {
                 for (auto i = 0; i < 1'000'000; ++i) {
                     auto time = grp.debug_timer();
                     tree.erase(i % 100);

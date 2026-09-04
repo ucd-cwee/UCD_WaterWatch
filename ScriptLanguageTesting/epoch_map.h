@@ -1194,6 +1194,20 @@ namespace GL {
             }
             return nullptr;
         };
+        objType* // returns nullptr if the key is not found. 
+            try_at_smallest_larger_or_equal(const keyType& time) const {
+            auto g{ guard_critical_section() };
+            if (auto [node, locker] = tree.NodeFindSmallestLargerEqual(time); node) return node->ptr;
+            if (auto [node, locker] = tree.NodeFind_ForRemoval(time); node) return node->ptr;
+            else {
+                if constexpr (std::is_copy_constructible_v< objType > && std::is_constructible_v< objType >) {
+                    if (node = tree.Add({}, time, locker); node)
+                        return node->ptr;
+                }
+            }
+            throw std::range_error("Could not find key");
+            return nullptr;
+        };
         objType& // if already exists, returns the value. Otherwise, creates the value (default init) and returns the value. May throw under heavy conflict. 
             operator[](const keyType& time) {
             auto g = guard_critical_section();
@@ -1253,7 +1267,16 @@ namespace GL {
             size() const {
             return tree.size();
         };
-
+        template <typename Func> bool // calls func(key, object) on the last (largest key) node in the map
+            do_at_end(Func const& func) {
+            auto g{ guard_critical_section() };
+            return tree.do_at_end(func);
+        };
+        template <typename Func> bool // removes the first (smallest key) node in the map if func(key, object) returns true
+            pop_front_if(Func const& func) {
+            auto g{ guard_critical_section() };
+            return tree.pop_front_if(func);            
+        };
         class Iterator {
         public:
             using iterator_category = std::forward_iterator_tag;
