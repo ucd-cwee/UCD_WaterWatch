@@ -163,6 +163,7 @@ namespace GL {
         };
 
     public:
+        // FixedAtomicUnsignedStack
         aba_problem::stack<size_t>
             queue{};
         std::atomic<size_t>
@@ -311,6 +312,7 @@ namespace GL {
         };
 
     public:
+        //FixedAtomicUnsignedStack
         aba_problem::stack<size_t>
             shared_queue;
         GL::thread_object_no_default<std::deque<size_t>>

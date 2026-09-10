@@ -82,6 +82,97 @@ namespace GL {
 				double relative_speed;
 			};
 
+			template <typename T>
+			class threaded_queue {	
+			public:
+				GL::fast_exclusive_mutex mut;
+				std::vector<T> queue;
+				long start = 0;
+				long end = 0;
+
+				void push(T && obj) {
+					std::unique_lock locked(mut);
+					if (queue.size() <= end) queue.resize(end + 1024);
+					queue[end++] = std::forward<T>(obj);
+				};
+				void push(T const& obj) {
+					std::unique_lock locked(mut);
+					if (queue.size() <= end) queue.resize(end + 1024);
+					queue[end++] = obj;
+				};
+				bool try_pop(T& out) {
+					std::unique_lock locked(mut);
+					if (end > start) {
+						out = std::move(queue[start++]);						
+						return true;
+					}
+					else {
+						start = end = 0;
+						return false;
+					}
+				};
+			};
+
+			template <typename T>
+			class unthreaded_queue {
+			public:
+				GL::atomic_vector<T> queue;
+				union start_end_t {
+					size_t both;
+					struct combination {
+						long start;
+						long end;
+					} either;
+				} start_end;
+
+				unthreaded_queue() {
+					start_end.both = 0ull;
+				}
+
+				void push(T&& obj) {
+					start_end_t a1, a2;
+					while (true) {
+						a1 = a2 = start_end;
+						a2.either.end++;
+						if (GL::interlocked::compare_exchange(start_end.both, a1.both, a2.both)) {
+							queue.get_or_make(a1.either.end) = std::forward<T>(obj);
+							break;
+						}
+					}
+				};
+				void push(T const& obj) {
+					start_end_t a1, a2;
+					while (true) {
+						a1 = a2 = start_end;
+						a2.either.end++;
+						if (GL::interlocked::compare_exchange(start_end.both, a1.both, a2.both)) {
+							queue.get_or_make(a1.either.end) = obj;
+							break;
+						}
+					}
+				};
+				bool try_pop(T& out) {
+					start_end_t a1, a2;
+					while (true) {
+						a1 = start_end;
+						if (a1.either.end == a1.either.start) {							
+							a2.both = 0ull;
+							if (GL::interlocked::compare_exchange(start_end.both, a1.both, a2.both)) {
+								return false;
+							}
+						}
+						else {
+							a2 = a1;
+							a2.either.start++;
+							if (GL::interlocked::compare_exchange(start_end.both, a1.both, a2.both)) {
+								out = std::move(queue[a1.either.start]);
+								return true;
+							}
+						}
+					}
+				};
+			};
+
 			template<typename T>
 			struct locking_queue {
 				std::mutex mut;
@@ -124,19 +215,22 @@ namespace GL {
 
 			template<typename T>
 			struct parallel_queue {
-				GL::thread_object_no_default< locking_queue<T> > q;
+				GL::thread_object_no_default< 
+					//locking_queue
+					threaded_queue
+					<T>> q;
 
-				size_t push(T const& obj) {
-					return q->push(obj);
+				void push(T const& obj) {
+					q->push(obj);
 				};
-				size_t push(T&& obj) {
-					return q->push(std::move(obj));
+				void push(T&& obj) {
+					q->push(std::move(obj));
 				};
-				size_t push(size_t thread_index, T const& obj) {
-					return q[thread_index].push(obj);
+				void push(size_t thread_index, T const& obj) {
+					q[thread_index].push(obj);
 				};
-				size_t push(size_t thread_index, T&& obj) {
-					return q[thread_index].push(std::move(obj));
+				void push(size_t thread_index, T&& obj) {
+					q[thread_index].push(std::move(obj));
 				};
 				bool try_pop(T& out) {
 					if (q.for_each_cancellable([&out](auto& Q) -> bool {
@@ -156,6 +250,7 @@ namespace GL {
 				size_t 
 					numThreads{ 0 };
 				//GL::atomic_queue< thread_task >
+				//unthreaded_queue<thread_task>
 				parallel_queue< thread_task > // locking_queue > atomic_parallel_stack > atomic_parallel_queue > parallel_queue
 					jobQueue{};
 				std::atomic<alive_state> 
@@ -466,7 +561,7 @@ namespace GL {
 							long long previousSuccess = GL::clock::ns();
 							while ((internal_state.alive == alive_state::is_alive) && (internal_state.threads[my_final_index].thread_alive == is_alive)) {
 								work(); // Work until no more jobs are found		
-								if (long long check = GL::clock::ns(); check - previousSuccess > 16000) {
+								if (long long check = GL::clock::ns(); (check - previousSuccess) > 16000) {
 									auto lock{ std::unique_lock(internal_state.wakeMutex) };
 									internal_state.wakeCondition.wait(lock);
 									previousSuccess = GL::clock::ns();

@@ -2470,6 +2470,121 @@ namespace GL {
 
     };
 
+    class FixedAtomicUnsignedStack {
+    private:
+        // Fits into a standard 64-bit atomic integer on modern platforms
+        struct TaggedIndex {
+            unsigned int index;
+            unsigned int tag; // Prevents ABA problem
+        };
+
+        struct Node {
+            unsigned int data;
+            unsigned int next; // Stores index of next node, or INVALID
+        };
+
+        static constexpr unsigned int INVALID = 0xFFFFFFFF;
+        GL::atomic_constructable_batch_vector<Node> nodes;
+        std::atomic<TaggedIndex> head;
+    public:
+        std::atomic<TaggedIndex> free_head;
+
+        // Helper to push to a generic list (either main stack or freelist)
+        void push_to_list(std::atomic<TaggedIndex>& list_head, unsigned int node_idx) {
+            TaggedIndex old_head = list_head.load(std::memory_order_relaxed);
+            TaggedIndex new_head;
+            do {
+                nodes[node_idx].next = old_head.index;
+                new_head.index = node_idx;
+                new_head.tag = old_head.tag + 1; // Increment tag to avoid ABA
+            } while (!list_head.compare_exchange_weak(
+                old_head, new_head,
+                std::memory_order_release,
+                std::memory_order_relaxed));
+        }
+
+        // Helper to pop from a generic list
+        unsigned int pop_from_list(std::atomic<TaggedIndex>& list_head) {
+            TaggedIndex old_head = list_head.load(std::memory_order_relaxed);
+            TaggedIndex new_head;
+            do {
+                if (old_head.index == INVALID) {
+                    return INVALID;
+                }
+                new_head.index = nodes[old_head.index].next;
+                new_head.tag = old_head.tag + 1;
+            } while (!list_head.compare_exchange_weak(
+                old_head, new_head,
+                std::memory_order_acquire,
+                std::memory_order_relaxed));
+
+            return old_head.index;
+        }
+
+    public:
+        // Initialize stack with a maximum capacity
+        FixedAtomicUnsignedStack()
+            : nodes(
+                [](Node* ptr, size_t count, size_t blockN) -> void {
+                    size_t starting_position = (blockN == 0) ? 0 : decltype(nodes)::block_to_total_allocsize((blockN == 0) ? 0 : blockN - 1);
+                    for (size_t i = 0; i < count; ++i)
+                        ptr[i].next = (i == (count - 1)) ? INVALID : static_cast<unsigned int>(i + 1 + starting_position);
+                },
+                [](Node* ptr, size_t count, size_t blockN, void* _data) -> void {
+                    auto* self = static_cast<FixedAtomicUnsignedStack*>(_data);
+                    size_t starting_position = (blockN == 0) ? 0 : decltype(nodes)::block_to_total_allocsize((blockN == 0) ? 0 : blockN - 1);
+                    for (size_t i = 0; i < count; ++i)
+                        self->push_to_list(self->free_head, starting_position + i);
+                }, 
+                this
+            )
+        {
+            // Link all nodes into the free list initially
+            for (size_t i = 0; i < 1000; ++i) {
+                nodes.get_or_make(i).next = (i == 1000 - 1) ? INVALID : static_cast<unsigned int>(i + 1);
+            }
+
+            head.store({ INVALID, 0 }, std::memory_order_relaxed);
+            free_head.store({ 0, 0 }, std::memory_order_relaxed);
+        }
+
+        // Push a value onto the stack
+        bool push(unsigned int value) {
+            while (true) {
+                // 1. Grab an available node index from the freelist
+                unsigned int node_idx = pop_from_list(free_head);
+                if (node_idx == INVALID) {
+                    nodes.get_or_make(nodes.size() + 1024);
+                    continue;
+                    // return false; // Stack overflow (out of free nodes)
+                }
+
+                // 2. Assign the data
+                nodes[node_idx].data = value;
+
+                // 3. Push it onto the main stack
+                push_to_list(head, node_idx);
+                return true;
+            }
+        }
+
+        // Pop a value from the stack
+        bool try_pop(unsigned int& result) {
+            // 1. Grab a node index from the main stack
+            unsigned int node_idx = pop_from_list(head);
+            if (node_idx == INVALID) {
+                return false; // Stack underflow (empty)
+            }
+
+            // 2. Extract data
+            result = nodes[node_idx].data;
+
+            // 3. Return the node index back to the freelist
+            push_to_list(free_head, node_idx);
+            return true;
+        }
+    };
+
 };
 
 
@@ -2544,25 +2659,53 @@ int main() {
 #endif
      // experiemnting with a (unlikely) memory leak associated with epoch_btree_map? Or just a design flaw?
     while (true) {
+        GL::FixedAtomicUnsignedStack
+            stack;
+        unsigned int j;
+        if (stack.try_pop(j)) {
+            std::cout << j << std::endl;
+        }
+        for (int i = 0; i < 1'000'000; ++i) {
+            stack.push(i);
+        }
+        for (int i = 1'000'000 - 1; i >= 0; --i) {
+            if (stack.try_pop(j)) {
+                if (j != i)
+                    std::cout << j << std::endl;
+            }
+        }
+        if (stack.try_pop(j)) {
+            std::cout << j << std::endl;
+        }
+
+
+
+
+
         GL::epoch_btree_map<
             GL::shared_ptr<GL::value> // object
             , size_t> // version
         typed_cache;
 
-        auto InsertFunc = [&](size_t cache_version, GL::shared_ptr<GL::value> result) {
+        auto InsertFunc = [](decltype(typed_cache)& typed_cache, size_t cache_version, GL::value result) {
             auto g{ typed_cache.guard_critical_section() };
-            auto& versioned_object = typed_cache.get_or_make(cache_version, []() -> GL::shared_ptr<GL::value> { return GL::make_shared<GL::value>(GL::foot(0)); });
-            if (versioned_object.compare_exchange(nullptr, result.release_control_block())) {
+            bool succeeded = false;
+            auto& versioned_object = typed_cache.get_or_make(cache_version, [result, &succeeded]() -> GL::shared_ptr<GL::value> {
+                succeeded = true;
+                return GL::make_shared< GL::value>(result);
+            });
+            if (succeeded) {
                 while (typed_cache.pop_front_if([&](size_t version, GL::shared_ptr<GL::value> const& obj) {
                     return version < cache_version;
                 })) {};
             }
         };
-        auto LoadFunc = [&](size_t cache_version) -> GL::shared_ptr<GL::value> {
+        auto LoadFunc = [](decltype(typed_cache)& typed_cache, size_t cache_version) -> GL::shared_ptr<GL::value> {
             GL::shared_ptr<GL::value> out{ nullptr };
             auto g{ typed_cache.guard_critical_section() };
             (void)typed_cache.do_at_end([&](size_t version, GL::shared_ptr<GL::value> const& obj) {
-                out = obj;
+                if (version >= cache_version)
+                    out = obj;
             });
             return out;
         };
@@ -2570,14 +2713,13 @@ int main() {
         std::atomic<long> version = 0;
         while (true) {            
             GL::parallel::For(0, 1'000'000, [&](int i) {
-                if (i % 10'000 == 0) version++;
-
-                InsertFunc(version.load(), GL::make_shared<GL::value>(GL::foot(i)));
-                if (auto p = LoadFunc(version.load()); p) {
+                if (i % 10'000 == 0) version.fetch_add(1, std::memory_order::memory_order_relaxed);
+                InsertFunc(typed_cache, version.load(), GL::foot(i));
+                if (auto p = LoadFunc(typed_cache, version.load(std::memory_order::memory_order_relaxed)); p) {
                     p->operator+=(GL::foot(1));
                 }
             });
-            if (auto p = LoadFunc(version.load()); p) {
+            if (auto p = LoadFunc(typed_cache, version.load(std::memory_order::memory_order_relaxed)); p) {
                 std::cout << *p << std::endl;
             }
         }

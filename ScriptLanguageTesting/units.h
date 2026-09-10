@@ -418,6 +418,7 @@ namespace GL {
 
         template <typename F> package Update(F const& update_func) {
             package Old, New;
+            int fast_attempt = 0;
             while (true) {
                 Old = load();
                 New.m_n64 = Old.m_n64;
@@ -425,19 +426,20 @@ namespace GL {
                 if (compare_exchange_p(Old, New)) {
                     return Old;
                 }
-                else {
+                else if (++fast_attempt > 40) {
                     std::this_thread::yield();
                 }
             }
         };
         template <typename F> package UpdatePackage(F const& update_func) {
             package Old;
+            int fast_attempt = 0;
             while (true) {
                 Old = load();
                 if (compare_exchange_p(Old, update_func(Old))) {
                     return Old;
                 }
-                else {
+                else if (++fast_attempt > 40) {
                     std::this_thread::yield();
                 }
             }
@@ -464,7 +466,6 @@ namespace GL {
 
                 if (Old.m_bits2.unit_hash == RHS.m_bits2.unit_hash) {
                     toDo(Old.m_bits.val, RHS.m_bits.val);
-                    // Old.m_bits.val += RHS.m_bits.val;
                 }
                 else if (Old.m_bits.si_unit == RHS.m_bits.si_unit) {
                     auto& rhs_impl = impl(RHS);
@@ -479,7 +480,7 @@ namespace GL {
                     toDo(Old.m_bits.val, RHS.m_bits.val);
                 }
                 return Old;
-                });
+            });
         };
         template<typename Func> static void ST_add_or_sub(Func const& toDo, value& lhs, value const& rhs) {
             auto RHS = rhs.load();
