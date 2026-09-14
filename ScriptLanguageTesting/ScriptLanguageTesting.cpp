@@ -2476,9 +2476,31 @@ namespace GL {
     class FixedAtomicUnsignedStack {
     private:
         // Fits into a standard 64-bit atomic integer on modern platforms
-        struct TaggedIndex {
-            unsigned int index; 
-            unsigned int tag; // Prevents ABA problem
+        union TaggedIndex {
+        public:
+            struct bitset {
+            public:
+                uint64_t // must sum to 64
+                    m_nABA : 12, // 8, 12, and 18 work. Larger = less likelihood of crashing due to ABA bug.
+                    m_pNode : 52; // Windows only supports 44 bits addressing anyway.
+            };
+            uint64_t
+                m_n64; // for CAS
+            bitset
+                m_bits;
+
+            static unsigned int Finalize(unsigned int p) noexcept {
+                TaggedIndex out;
+                out.m_bits.m_pNode = (uint64_t)p;
+                out.m_bits.m_nABA = 0;
+                return (uint64_t)out.m_bits.m_pNode;
+            };
+            bool is_null() const noexcept {
+                return m_bits.m_pNode == 0;
+            };
+            unsigned int Node() noexcept { return (uint64_t)m_bits.m_pNode; }
+            // changeing Node bumps aba
+            TaggedIndex* Node(unsigned int p) noexcept { m_bits.m_nABA++; m_bits.m_pNode = (uint64_t)p; return this; }
         };
 
         struct Node {
@@ -2494,12 +2516,11 @@ namespace GL {
 
         // Helper to push to a generic list (either main stack or freelist)
         __declspec(noinline) void push_to_list(std::atomic<TaggedIndex>& list_head, unsigned int node_idx) {
-            TaggedIndex old_head = list_head.load(std::memory_order_relaxed);
-            TaggedIndex new_head;
+            TaggedIndex old_head, new_head;
             do {
-                nodes[node_idx].next = old_head.index;
-                new_head.index = node_idx;
-                new_head.tag = old_head.tag + 1; // Increment tag to avoid ABA
+                new_head.m_n64 = (old_head.m_n64 = list_head.load(std::memory_order_relaxed).m_n64);
+                nodes[node_idx].next = old_head.Node();
+                new_head.Node(node_idx);
             } while (!list_head.compare_exchange_weak(
                 old_head, new_head,
                 std::memory_order_release,
@@ -2509,20 +2530,18 @@ namespace GL {
 
         // Helper to pop from a generic list
         __declspec(noinline) unsigned int pop_from_list(std::atomic<TaggedIndex>& list_head) {
-            TaggedIndex old_head = list_head.load(std::memory_order_relaxed);
-            TaggedIndex new_head;
+            TaggedIndex old_head, new_head;
             do {
-                if (old_head.index == INVALID) {
-                    return INVALID;
-                }
-                new_head.index = nodes[old_head.index].next;
-                new_head.tag = old_head.tag + 1;
+                new_head.m_n64 = old_head.m_n64 = list_head.load(std::memory_order_relaxed).m_n64;
+                if (old_head.Node() == INVALID) 
+                    return INVALID;                
+                new_head.Node(nodes[old_head.Node()].next);
             } while (!list_head.compare_exchange_weak(
                 old_head, new_head,
                 std::memory_order_acquire,
                 std::memory_order_relaxed));
 
-            return old_head.index;
+            return old_head.Node();
         }
 
     public:
@@ -2544,12 +2563,16 @@ namespace GL {
             )
         {
             // Link all nodes into the free list initially
-            size_t i;
+            size_t 
+                i;
+            TaggedIndex
+                temp;
+
             for (i = 0; i < decltype(nodes)::block_to_total_allocsize(4); ++i) 
                 nodes.get_or_make(i).next = static_cast<unsigned int>(i + 1);
             nodes.get_or_make(i).next = INVALID;
-            head.store({ INVALID, 0 }, std::memory_order_relaxed);
-            free_head.store({ 0, 0 }, std::memory_order_relaxed);
+            head.store(*temp.Node(INVALID), std::memory_order_relaxed);
+            free_head.store(*temp.Node(0), std::memory_order_relaxed);
         }
 
         // Push a value onto the stack
@@ -2665,7 +2688,7 @@ int main() {
      // experimenting with an (unlikely) memory leak associated with epoch_btree_map? Or just a design flaw?
     while (true) {
         while (true) {
-            if (GL::stopwatch_group timer("FixedAtomicUnsignedStack"); true) {
+            if (auto timer = GL::stopwatch::debug_timer("FixedAtomicUnsignedStack"); true) {
                 GL::FixedAtomicUnsignedStack
                     stack;
                 unsigned int j;
@@ -2674,11 +2697,9 @@ int main() {
                         std::cout << j << std::endl;
                     }
                     for (int i = 0; i < 1'000'000; ++i) {
-                        auto t1 = timer.debug_timer();
                         stack.push(i);
                     }
                     for (int i = 1'000'000 - 1; i >= 0; --i) {
-                        auto t2 = timer.debug_timer();
                         if (stack.try_pop(j)) {
                             if (j != i)
                                 std::cout << j << std::endl;
@@ -2689,7 +2710,7 @@ int main() {
                     }
                 }
             }
-            if (GL::stopwatch_group timer("aba_problem::stack<unsigned int>"); false) {
+            if (auto timer = GL::stopwatch::debug_timer("aba_problem::stack<unsigned int>"); true) {
                 GL::aba_problem::stack<unsigned int>
                     stack;
                 
@@ -2699,11 +2720,9 @@ int main() {
                         std::cout << j << std::endl;
                     }
                     for (int i = 0; i < 1'000'000; ++i) {
-                        auto t1 = timer.debug_timer();
                         stack.push(i);
                     }
                     for (int i = 1'000'000 - 1; i >= 0; --i) {
-                        auto t2 = timer.debug_timer();
                         if (stack.try_pop(j)) {
                             if (j != i)
                                 std::cout << j << std::endl;
@@ -2715,34 +2734,30 @@ int main() {
                 }
             }
 
-            if (GL::stopwatch_group timer("\tParallel FixedAtomicUnsignedStack"); true) {
+            if (auto timer = GL::stopwatch::debug_timer("\tParallel FixedAtomicUnsignedStack"); true) {
                 GL::FixedAtomicUnsignedStack
                     stack;
                 GL::parallel::For(0, 100, [&](){
                     unsigned int j;
                     for (int i = 0; i < 10'000; ++i) {
-                        auto t1 = timer.debug_timer();
                         stack.push(i);
                     }
                     for (int i = 10'000 - 1; i >= 0; --i) {
-                        auto t2 = timer.debug_timer();
                         if (stack.try_pop(j)) {
 
                         }
                     }
                 });
             }
-            if (GL::stopwatch_group timer("\tParallel aba_problem::stack<unsigned int>"); false) {
+            if (auto timer = GL::stopwatch::debug_timer("\tParallel aba_problem::stack<unsigned int>"); true) {
                 GL::aba_problem::stack<unsigned int>
                     stack;                
                 GL::parallel::For(0, 100, [&](){
                     unsigned int j;
                     for (int i = 0; i < 10'000; ++i) {
-                        auto t1 = timer.debug_timer();
                         stack.push(i);
                     }
                     for (int i = 10'000 - 1; i >= 0; --i) {
-                        auto t2 = timer.debug_timer();
                         if (stack.try_pop(j)) {
 
                         }
