@@ -2473,7 +2473,7 @@ namespace GL {
 
     };
 
-    class FixedAtomicUnsignedStack {
+    class atomic_uint_stack {
     private:
         static constexpr unsigned int INVALID = 0xFFFFFFFF;
 
@@ -2576,7 +2576,7 @@ namespace GL {
 
     public:
         // Initialize stack with a maximum capacity
-        FixedAtomicUnsignedStack()
+        atomic_uint_stack()
             : nodes(
                 [](Node* ptr, size_t count, size_t blockN) -> void {
                     size_t starting_position = (blockN == 0) ? 0 : decltype(nodes)::block_to_total_allocsize((blockN == 0) ? 0 : blockN - 1);
@@ -2584,7 +2584,7 @@ namespace GL {
                         ptr[i].next = (i == (count - 1)) ? INVALID : static_cast<unsigned int>(i + 1 + starting_position);
                 },
                 [](Node* ptr, size_t count, size_t blockN, void* _data) -> void {
-                    auto* self = static_cast<FixedAtomicUnsignedStack*>(_data);
+                    auto* self = static_cast<atomic_uint_stack*>(_data);
                     size_t starting_position = (blockN == 0) ? 0 : decltype(nodes)::block_to_total_allocsize((blockN == 0) ? 0 : blockN - 1);
                     for (size_t i = 0; i < count; ++i)
                         self->Stack_Push(self->free_head, starting_position + i);
@@ -2642,7 +2642,7 @@ namespace GL {
             return true;
         }
     };
-    class ParallelAtomicUnsignedStack {
+    class parallel_atomic_uint_stack {
     private:
         static constexpr unsigned int INVALID = 0xFFFFFFFF;
 
@@ -2743,7 +2743,7 @@ namespace GL {
 
     public:
         // Initialize stack with a maximum capacity
-        ParallelAtomicUnsignedStack()
+        parallel_atomic_uint_stack()
             : nodes(
                 [](Node* ptr, size_t count, size_t blockN) -> void {
                     size_t starting_position = (blockN == 0) ? 0 : decltype(nodes)::block_to_total_allocsize((blockN == 0) ? 0 : blockN - 1);
@@ -2751,7 +2751,7 @@ namespace GL {
                         ptr[i].next = (i == (count - 1)) ? INVALID : static_cast<unsigned int>(i + 1 + starting_position);
                 },
                 [](Node* ptr, size_t count, size_t blockN, void* _data) -> void {
-                    auto* self = static_cast<ParallelAtomicUnsignedStack*>(_data);
+                    auto* self = static_cast<parallel_atomic_uint_stack*>(_data);
                     size_t starting_position = (blockN == 0) ? 0 : decltype(nodes)::block_to_total_allocsize((blockN == 0) ? 0 : blockN - 1);
                     for (size_t i = 0; i < count; ++i)
                         self->Stack_Push(*self->free_head, starting_position + i);
@@ -2779,7 +2779,11 @@ namespace GL {
         bool push(unsigned int value) {
             while (true) {
                 // 1. Grab an available node index from the freelist
-                unsigned int node_idx = Pop(*free_head);
+                unsigned int node_idx = INVALID;
+                free_head.for_each_cancellable([&node_idx, this](auto& _head) -> bool {
+                    node_idx = this->Pop(_head);
+                    return node_idx != INVALID;
+                });
                 if (node_idx == INVALID) {
                     nodes.get_or_make(
                         decltype(nodes)::block_to_total_allocsize(decltype(nodes)::total_allocsize_to_block(nodes.size()) + 1) - 1
@@ -2799,11 +2803,13 @@ namespace GL {
         // Pop a value from the stack
         bool try_pop(unsigned int& result) {
             // 1. Grab a node index from the main stack
-            unsigned int node_idx = Pop(*head);
-            if (node_idx == INVALID) {
-                return false; // Stack underflow (empty)
-            }
-
+            unsigned int node_idx = INVALID;
+            head.for_each_cancellable([&node_idx, this](auto& _head) -> bool {
+                node_idx = this->Pop(_head);
+                return node_idx != INVALID;
+            });
+            if (node_idx == INVALID) return false; // Stack underflow (empty)
+            
             // 2. Extract data
             result = nodes[node_idx].data;
 
@@ -2888,8 +2894,8 @@ int main() {
      // experimenting with an (unlikely) memory leak associated with epoch_btree_map? Or just a design flaw?
     while (true) {
         while (true) {
-            if (auto timer = GL::stopwatch::debug_timer("FixedAtomicUnsignedStack"); true) {
-                GL::FixedAtomicUnsignedStack
+            if (auto timer = GL::stopwatch::debug_timer("atomic_uint_stack"); true) {
+                GL::atomic_uint_stack
                     stack;
                 unsigned int j;
                 for (int k = 0; k < 100; ++k) {
@@ -2910,7 +2916,7 @@ int main() {
                     }
                 }
             }
-            if (auto timer = GL::stopwatch::debug_timer("aba_problem::stack<unsigned int>"); false) {
+            if (auto timer = GL::stopwatch::debug_timer("aba_problem::stack<unsigned int>"); true) {
                 GL::aba_problem::stack<unsigned int>
                     stack;
                 
@@ -2933,8 +2939,8 @@ int main() {
                     }
                 }
             }
-            if (auto timer = GL::stopwatch::debug_timer("ParallelAtomicUnsignedStack"); true) {
-                GL::ParallelAtomicUnsignedStack
+            if (auto timer = GL::stopwatch::debug_timer("parallel_atomic_uint_stack"); true) {
+                GL::parallel_atomic_uint_stack
                     stack;
                 unsigned int j;
                 for (int k = 0; k < 100; ++k) {
@@ -2959,8 +2965,8 @@ int main() {
                 }
             }
 
-            if (auto timer = GL::stopwatch::debug_timer("\tParallel FixedAtomicUnsignedStack"); true) {
-                GL::FixedAtomicUnsignedStack
+            if (auto timer = GL::stopwatch::debug_timer("\tParallel atomic_uint_stack"); true) {
+                GL::atomic_uint_stack
                     stack;
                 GL::parallel::For(0, 100, [&](){
                     unsigned int j;
@@ -2974,7 +2980,7 @@ int main() {
                     }
                 });
             }
-            if (auto timer = GL::stopwatch::debug_timer("\tParallel aba_problem::stack<unsigned int>"); false) {
+            if (auto timer = GL::stopwatch::debug_timer("\tParallel aba_problem::stack<unsigned int>"); true) {
                 GL::aba_problem::stack<unsigned int>
                     stack;                
                 GL::parallel::For(0, 100, [&](){
@@ -2989,8 +2995,8 @@ int main() {
                     }
                 });
             }
-            if (auto timer = GL::stopwatch::debug_timer("\tParallel ParallelAtomicUnsignedStack"); true) {
-                GL::ParallelAtomicUnsignedStack
+            if (auto timer = GL::stopwatch::debug_timer("\tParallel parallel_atomic_uint_stack"); true) {
+                GL::parallel_atomic_uint_stack
                     stack;
                 GL::parallel::For(0, 100, [&]() {
                     unsigned int j;
