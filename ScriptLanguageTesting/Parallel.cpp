@@ -216,8 +216,8 @@ namespace GL {
 			template<typename T>
 			struct parallel_queue {
 				GL::thread_object_no_default< 
-					//locking_queue
-					threaded_queue
+					locking_queue
+					//threaded_queue
 					<T>> q;
 
 				void push(T const& obj) {

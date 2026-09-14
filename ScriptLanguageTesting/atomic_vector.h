@@ -646,7 +646,7 @@ namespace GL {
             56, 45, 25, 31, 35, 16,  9, 12,
             44, 24, 15,  8, 23,  7,  6,  5
         };
-        static short log2_64(uint64_t value) noexcept {
+        static short log2_64_DeBruijn(uint64_t value) noexcept {
             value |= value >> 1;
             value |= value >> 2;
             value |= value >> 4;
@@ -654,7 +654,35 @@ namespace GL {
             value |= value >> 16;
             value |= value >> 32;
             return tab64[((uint64_t)((value - (value >> 1)) * 0x07EDD5E59A4E28C2)) >> 58];
+        };
+        static short log2_64_Intrinsic(uint64_t v) noexcept {
+            // Note: Behavior is undefined if v == 0 for hardware instructions.
+            // If v can be 0, return a fallback value (like -1 or 0) based on your needs.
+            if (v == 0) return 0;
+
+#if defined(__GNUC__) || defined(__clang__)
+            // 63 minus leading zeros gives the index of the highest set bit (log2)
+            return static_cast<short>(63 - __builtin_clzll(v));
+#elif defined(_MSC_VER)
+            unsigned long index;
+            _BitScanReverse64(&index, v); // Finds the most significant bit
+            return static_cast<short>(index);
+#else
+            // Pure software fallback (using your Binary Search version) 
+            // if compiled on an unsupported platform
+            short r = 0;
+            if (v & 0xFFFFFFFF00000000ULL) { v >>= 32; r |= 32; }
+            if (v & 0xFFFF0000) { v >>= 16; r |= 16; }
+            if (v & 0xFF00) { v >>= 8;  r |= 8; }
+            if (v & 0xF0) { v >>= 4;  r |= 4; }
+            if (v & 0xC) { v >>= 2;  r |= 2; }
+            if (v & 0x2) { r |= 1; }
+            return r;
+#endif
         }
+        static short log2_64(uint64_t value) noexcept {
+            return log2_64_Intrinsic(value);
+        };
         // 0 -> 0, 4 -> 1, 8 -> 2, 16 -> 3, etc.
         static short global_index_to_block(size_t index) noexcept {
             if (index <= 3ull) return 0;
@@ -681,6 +709,27 @@ namespace GL {
             if (block_n <= 0) return 4ull;
             else return 2ull << (block_n + 1);
         };
+        static short total_allocsize_to_block(size_t alloc_size) noexcept {
+            return global_index_to_block(alloc_size <= 4 ? 0 : (alloc_size - 1));
+
+//            // 1. Handle the fallback/minimum size condition
+//            if (alloc_size <= 4) return 0;            
+//
+//            // 2. Find the index of the highest set bit
+//#if defined(__GNUC__) || defined(__clang__)    
+//            short log2 = 63 - __builtin_clzll(alloc_size);
+//            return 61 - __builtin_clzll(alloc_size); 
+//#elif defined(_MSC_VER)
+//            unsigned long index;
+//            _BitScanReverse64(&index, alloc_size);
+//            return static_cast<short>(index) - 2; // 3. Subtract 2 to isolate block_n (since size = 2^(block_n + 2))
+//#else     
+//            short log2 = 0;
+//            while (alloc_size > 1) { alloc_size >>= 1; log2++; }
+//            return log2 - 2; // 3. Subtract 2 to isolate block_n (since size = 2^(block_n + 2))
+//#endif      
+        }
+
     private:
         using element_t = T;
         std::array< element_t*, max_num_buckets >

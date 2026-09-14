@@ -110,8 +110,11 @@ namespace GL {
             };
             aba_problem::THead<element_t>
                 head;
+
         public:
-            stack() = default;
+            stack() {
+                head.m_n64 = 0;
+            };
             stack(stack const&) = delete;
             stack(stack&&) = delete;
             stack& operator=(stack const&) = delete;
@@ -126,6 +129,7 @@ namespace GL {
                     }
                 }
             };
+
         public:
             void push(T const& obj) {
                 element_t* new_ptr = new element_t();

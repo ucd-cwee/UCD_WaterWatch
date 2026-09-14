@@ -2366,12 +2366,15 @@ namespace GL {
             time_results;
         GL::string 
             name;
-
+        long long 
+            start;
     public:
         stopwatch_group(GL::string Name = GL::string::empty_string())
             : name(Name) 
+            , start(clock::ns())
         {};
-        ~stopwatch_group() {   
+        ~stopwatch_group() { 
+            long long end = clock::ns();
             std::map<long long, long double> quantile;
             long double total_count = 0;
             time_results.for_each([&](auto const& times) {
@@ -2419,7 +2422,7 @@ namespace GL {
                     GL::millisecond(GL::nanosecond(mid)).to_string(),
                     GL::millisecond(GL::nanosecond(trd)).to_string(),
                     GL::millisecond(GL::nanosecond(max)).to_string(),
-                    GL::millisecond(GL::nanosecond(Total)).to_string()
+                    GL::millisecond(GL::nanosecond(end - start)).to_string()
                 };
                 if (name.length() > 0) {
                     std::cout << GL::printf("%.*s: [ Min: %.*s, 25%: %.*s, 50%: %.*s, 75%: %.*s, Max: %.*s ] Over %.*s\n",
@@ -2474,7 +2477,7 @@ namespace GL {
     private:
         // Fits into a standard 64-bit atomic integer on modern platforms
         struct TaggedIndex {
-            unsigned int index;
+            unsigned int index; 
             unsigned int tag; // Prevents ABA problem
         };
 
@@ -2490,7 +2493,7 @@ namespace GL {
         std::atomic<TaggedIndex> free_head;
 
         // Helper to push to a generic list (either main stack or freelist)
-        void push_to_list(std::atomic<TaggedIndex>& list_head, unsigned int node_idx) {
+        __declspec(noinline) void push_to_list(std::atomic<TaggedIndex>& list_head, unsigned int node_idx) {
             TaggedIndex old_head = list_head.load(std::memory_order_relaxed);
             TaggedIndex new_head;
             do {
@@ -2500,11 +2503,12 @@ namespace GL {
             } while (!list_head.compare_exchange_weak(
                 old_head, new_head,
                 std::memory_order_release,
-                std::memory_order_relaxed));
+                std::memory_order_relaxed
+            ));
         }
 
         // Helper to pop from a generic list
-        unsigned int pop_from_list(std::atomic<TaggedIndex>& list_head) {
+        __declspec(noinline) unsigned int pop_from_list(std::atomic<TaggedIndex>& list_head) {
             TaggedIndex old_head = list_head.load(std::memory_order_relaxed);
             TaggedIndex new_head;
             do {
@@ -2540,23 +2544,24 @@ namespace GL {
             )
         {
             // Link all nodes into the free list initially
-            for (size_t i = 0; i < 1000; ++i) {
-                nodes.get_or_make(i).next = (i == 1000 - 1) ? INVALID : static_cast<unsigned int>(i + 1);
-            }
-
+            size_t i;
+            for (i = 0; i < decltype(nodes)::block_to_total_allocsize(4); ++i) 
+                nodes.get_or_make(i).next = static_cast<unsigned int>(i + 1);
+            nodes.get_or_make(i).next = INVALID;
             head.store({ INVALID, 0 }, std::memory_order_relaxed);
             free_head.store({ 0, 0 }, std::memory_order_relaxed);
         }
 
         // Push a value onto the stack
-        bool push(unsigned int value) {
+        __declspec(noinline) bool push(unsigned int value) {
             while (true) {
                 // 1. Grab an available node index from the freelist
                 unsigned int node_idx = pop_from_list(free_head);
                 if (node_idx == INVALID) {
-                    nodes.get_or_make(nodes.size() + 1024);
+                    nodes.get_or_make(
+                        decltype(nodes)::block_to_total_allocsize(decltype(nodes)::total_allocsize_to_block(nodes.size()) + 1) - 1
+                    );
                     continue;
-                    // return false; // Stack overflow (out of free nodes)
                 }
 
                 // 2. Assign the data
@@ -2569,7 +2574,7 @@ namespace GL {
         }
 
         // Pop a value from the stack
-        bool try_pop(unsigned int& result) {
+        __declspec(noinline) bool try_pop(unsigned int& result) {
             // 1. Grab a node index from the main stack
             unsigned int node_idx = pop_from_list(head);
             if (node_idx == INVALID) {
@@ -2657,28 +2662,95 @@ int main() {
         ////std::cout << cache.current<3>()->cast<GL::string&>() << std::endl;
     };
 #endif
-     // experiemnting with a (unlikely) memory leak associated with epoch_btree_map? Or just a design flaw?
+     // experimenting with an (unlikely) memory leak associated with epoch_btree_map? Or just a design flaw?
     while (true) {
-        GL::FixedAtomicUnsignedStack
-            stack;
-        unsigned int j;
-        if (stack.try_pop(j)) {
-            std::cout << j << std::endl;
-        }
-        for (int i = 0; i < 1'000'000; ++i) {
-            stack.push(i);
-        }
-        for (int i = 1'000'000 - 1; i >= 0; --i) {
-            if (stack.try_pop(j)) {
-                if (j != i)
-                    std::cout << j << std::endl;
+        while (true) {
+            if (GL::stopwatch_group timer("FixedAtomicUnsignedStack"); true) {
+                GL::FixedAtomicUnsignedStack
+                    stack;
+                unsigned int j;
+                for (int k = 0; k < 100; ++k) {
+                    if (stack.try_pop(j)) {
+                        std::cout << j << std::endl;
+                    }
+                    for (int i = 0; i < 1'000'000; ++i) {
+                        auto t1 = timer.debug_timer();
+                        stack.push(i);
+                    }
+                    for (int i = 1'000'000 - 1; i >= 0; --i) {
+                        auto t2 = timer.debug_timer();
+                        if (stack.try_pop(j)) {
+                            if (j != i)
+                                std::cout << j << std::endl;
+                        }
+                    }
+                    if (stack.try_pop(j)) {
+                        std::cout << j << std::endl;
+                    }
+                }
             }
-        }
-        if (stack.try_pop(j)) {
-            std::cout << j << std::endl;
-        }
+            if (GL::stopwatch_group timer("aba_problem::stack<unsigned int>"); false) {
+                GL::aba_problem::stack<unsigned int>
+                    stack;
+                
+                unsigned int j;
+                for (int k = 0; k < 100; ++k) {
+                    if (stack.try_pop(j)) {
+                        std::cout << j << std::endl;
+                    }
+                    for (int i = 0; i < 1'000'000; ++i) {
+                        auto t1 = timer.debug_timer();
+                        stack.push(i);
+                    }
+                    for (int i = 1'000'000 - 1; i >= 0; --i) {
+                        auto t2 = timer.debug_timer();
+                        if (stack.try_pop(j)) {
+                            if (j != i)
+                                std::cout << j << std::endl;
+                        }
+                    }
+                    if (stack.try_pop(j)) {
+                        std::cout << j << std::endl;
+                    }
+                }
+            }
 
+            if (GL::stopwatch_group timer("\tParallel FixedAtomicUnsignedStack"); true) {
+                GL::FixedAtomicUnsignedStack
+                    stack;
+                GL::parallel::For(0, 100, [&](){
+                    unsigned int j;
+                    for (int i = 0; i < 10'000; ++i) {
+                        auto t1 = timer.debug_timer();
+                        stack.push(i);
+                    }
+                    for (int i = 10'000 - 1; i >= 0; --i) {
+                        auto t2 = timer.debug_timer();
+                        if (stack.try_pop(j)) {
 
+                        }
+                    }
+                });
+            }
+            if (GL::stopwatch_group timer("\tParallel aba_problem::stack<unsigned int>"); false) {
+                GL::aba_problem::stack<unsigned int>
+                    stack;                
+                GL::parallel::For(0, 100, [&](){
+                    unsigned int j;
+                    for (int i = 0; i < 10'000; ++i) {
+                        auto t1 = timer.debug_timer();
+                        stack.push(i);
+                    }
+                    for (int i = 10'000 - 1; i >= 0; --i) {
+                        auto t2 = timer.debug_timer();
+                        if (stack.try_pop(j)) {
+
+                        }
+                    }
+                });
+            }
+
+        }
 
 
 
