@@ -2818,6 +2818,153 @@ namespace GL {
             return true;
         }
     };
+    
+    // atomic, thread-safe stack of unsigned integers. Specialized for single-threaded access with occassional, lock-free multi-threaded access.
+    class atomic_uint_stack2 {
+    private:
+        static constexpr unsigned int INVALID = 0xFFFFFFFF;
+
+        // Fits into a standard 64-bit atomic integer on modern platforms
+        union TaggedIndex {
+        public:
+            struct bitset {
+            public:
+                uint64_t // must sum to 64
+                    m_nABA : 12, // 8, 12, and 18 work. Larger = less likelihood of crashing due to ABA bug.
+                    m_pNode : 52; // Windows only supports 44 bits addressing anyway.
+            };
+            uint64_t
+                m_n64; // for CAS
+            bitset
+                m_bits;
+
+            static unsigned int Finalize(unsigned int p) noexcept {
+                TaggedIndex out;
+                out.m_bits.m_pNode = (uint64_t)p;
+                out.m_bits.m_nABA = 0;
+                return (unsigned int)out.m_bits.m_pNode;
+            };
+            bool is_null() const noexcept {
+                return (m_bits.m_nABA == 0) || ((unsigned int)m_bits.m_pNode == INVALID);
+            };
+            unsigned int Node() noexcept { return (unsigned int)m_bits.m_pNode; }
+            // changeing Node bumps aba
+            TaggedIndex* Node(unsigned int p) noexcept { m_bits.m_nABA++; m_bits.m_pNode = (uint64_t)p; return this; }
+
+            static TaggedIndex Init(unsigned int rhs) {
+                TaggedIndex out;
+                out.m_n64 = 0;
+                out.m_bits.m_pNode = rhs;
+                return out;
+            };
+        };
+
+        struct Node {
+            unsigned int data;
+            unsigned int next; // Stores index of next node, or INVALID
+        };
+
+        GL::atomic_constructable_batch_vector<Node> nodes;
+        // std::atomic<TaggedIndex> 
+        TaggedIndex
+            head;
+    public:
+        //std::atomic<TaggedIndex> 
+        TaggedIndex
+            free_head;
+
+        // pop pNode from head of list.
+        unsigned int Pop(TaggedIndex& Head) noexcept {
+            TaggedIndex Old, New; // Get an atomic copy of head and call it old.
+            while (1) { // race loop                
+                New.m_n64 = (Old.m_n64 = Head.m_n64);
+                if (Old.is_null()) { break; }
+                New.Node(nodes.get_or_make(Old.Node()).next); // change New's Node, which bumps internal aba                
+                if (GL::interlocked::compare_exchange(Head.m_n64, Old.m_n64, New.m_n64))
+                    return /*TaggedIndex::Finalize(*/Old.Node()/*)*/; // success      
+            } // race, try again
+            return INVALID; // Head.m_n64.m_pNode was nullptr ... e.g. nothing to pop
+        };
+        // push pNode onto head of list. 
+        void Stack_Push(TaggedIndex& Head, unsigned int pNode) noexcept {
+            TaggedIndex Old, New;
+            while (1) { // race loop                
+                New.m_n64 = (Old.m_n64 = Head.m_n64); // Get an atomic copy of head and call it old. Copy old and call it new.                
+                nodes.get_or_make(pNode).next = Old.Node(); // Wire node t Head    
+                New.Node(pNode); // change New's head ptr, which bumps internal aba
+                if (GL::interlocked::compare_exchange(Head.m_n64, Old.m_n64, New.m_n64)) // compare and swap New with Head if it still matches Old.
+                    break; // success           
+            } // race, try again
+        }
+
+
+    public:
+        // Initialize stack with a maximum capacity
+        __declspec(noinline) atomic_uint_stack2()
+            : nodes(
+                [](Node* ptr, size_t count, size_t blockN) -> void {
+                    // size_t starting_position = (blockN == 0) ? 0 : decltype(nodes)::block_to_total_allocsize((blockN == 0) ? 0 : blockN - 1);
+                    // for (size_t i = 0; i < count; ++i)
+                        // ptr[i].next = (i == (count - 1)) ? INVALID : static_cast<unsigned int>(i + 1 + starting_position);
+                },
+                [](Node* ptr, size_t count, size_t blockN, void* _data) -> void {
+                    auto* self = static_cast<atomic_uint_stack2*>(_data);
+                    size_t starting_position = (blockN == 0) ? 0 : decltype(nodes)::block_to_total_allocsize((blockN == 0) ? 0 : blockN - 1);
+                    for (size_t i = 0; i < count; ++i)
+                        self->Stack_Push(self->free_head, (unsigned int)(starting_position + i));
+                },
+                this
+            )
+            , head{ TaggedIndex::Init(INVALID) }
+                    , free_head{ TaggedIndex::Init(INVALID) }
+                {
+                    // Link all nodes into the free list initially
+                    size_t
+                        i;
+                    for (i = 0; i < decltype(nodes)::block_to_total_allocsize(4); ++i)
+                        nodes.get_or_make(i).next = static_cast<unsigned int>(i + 1);
+                    nodes.get_or_make(i).next = INVALID;
+                    free_head.Node(0); // free_head.store(*temp.Node(0), std::memory_order_relaxed);
+                }
+
+                // Push a value onto the stack
+                __declspec(noinline) bool push(unsigned int value) {
+                    while (true) {
+                        // 1. Grab an available node index from the freelist
+                        unsigned int node_idx = Pop(free_head);
+                        if (node_idx == INVALID) {
+                            nodes.get_or_make(
+                                decltype(nodes)::block_to_total_allocsize(decltype(nodes)::total_allocsize_to_block(nodes.size()) + 1) - 1
+                            );
+                            continue;
+                        }
+
+                        // 2. Assign the data
+                        nodes.get_or_make(node_idx).data = value;
+
+                        // 3. Push it onto the main stack
+                        Stack_Push(head, node_idx);
+                        return true;
+                    }
+                }
+
+                // Pop a value from the stack
+                __declspec(noinline) bool try_pop(unsigned int& result) {
+                    // 1. Grab a node index from the main stack
+                    unsigned int node_idx = Pop(head);
+                    if (node_idx == INVALID) {
+                        return false; // Stack underflow (empty)
+                    }
+
+                    // 2. Extract data
+                    result = nodes.get_or_make(node_idx).data;
+
+                    // 3. Return the node index back to the freelist
+                    Stack_Push(free_head, node_idx);
+                    return true;
+                }
+    };
+
 
 };
 
@@ -2916,7 +3063,29 @@ int main() {
                     }
                 }
             }
-            if (auto timer = GL::stopwatch::debug_timer("aba_problem::stack<unsigned int>"); true) {
+            if (auto timer = GL::stopwatch::debug_timer("atomic_uint_stack2"); false) {
+                GL::atomic_uint_stack2
+                    stack;
+                unsigned int j;
+                for (int k = 0; k < 100; ++k) {
+                    while (stack.try_pop(j)) {
+                        std::cout << j << std::endl;
+                    }
+                    for (int i = 0; i < 1'000'000; ++i) {
+                        stack.push(i);
+                    }
+                    for (int i = 1'000'000 - 1; i >= 0; --i) {
+                        if (stack.try_pop(j)) {
+                            if (j != i)
+                                std::cout << j << std::endl;
+                        }
+                    }
+                    while (stack.try_pop(j)) {
+                        std::cout << j << std::endl;
+                    }
+                }
+            }
+            if (auto timer = GL::stopwatch::debug_timer("aba_problem::stack<unsigned int>"); false) {
                 GL::aba_problem::stack<unsigned int>
                     stack;
                 
@@ -2980,7 +3149,22 @@ int main() {
                     }
                 });
             }
-            if (auto timer = GL::stopwatch::debug_timer("\tParallel aba_problem::stack<unsigned int>"); true) {
+            if (auto timer = GL::stopwatch::debug_timer("\tParallel atomic_uint_stack2"); false) {
+                GL::atomic_uint_stack2
+                    stack;
+                GL::parallel::For(0, 100, [&]() {
+                    unsigned int j;
+                    for (int i = 0; i < 10'000; ++i) {
+                        stack.push(i);
+                    }
+                    for (int i = 10'000 - 1; i >= 0; --i) {
+                        if (!stack.try_pop(j)) {
+                            std::cout << i << std::endl;
+                        }
+                    }
+                    });
+            }
+            if (auto timer = GL::stopwatch::debug_timer("\tParallel aba_problem::stack<unsigned int>"); false) {
                 GL::aba_problem::stack<unsigned int>
                     stack;                
                 GL::parallel::For(0, 100, [&](){
