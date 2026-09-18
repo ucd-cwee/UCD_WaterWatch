@@ -223,8 +223,8 @@ namespace GL {
                 }
             }
         };
-        template <typename... TArgs> std::shared_ptr< T > AllocShared(TArgs&&... a) {
-            return std::shared_ptr<T>(Alloc(std::forward<TArgs>(a)...), [this](T* p) { Free(p); });
+        template <typename... TArgs> GL::shared_ptr< T > AllocShared(TArgs&&... a) {
+            return GL::shared_ptr<T>(Alloc(std::forward<TArgs>(a)...), [this](T* p) { Free(p); });
         };
 
     private:
@@ -643,8 +643,8 @@ namespace GL {
                 retired_blocks->push(t->m_block);
             }
         };
-        template <typename... TArgs> std::shared_ptr< T > AllocShared(TArgs&&... a) {
-            return std::shared_ptr<T>(Alloc(std::forward<TArgs>(a)...), [this](T* p) { Free(p); });
+        template <typename... TArgs> GL::shared_ptr< T > AllocShared(TArgs&&... a) {
+            return GL::shared_ptr<T>(Alloc(std::forward<TArgs>(a)...), [this](T* p) { Free(p); });
         };
 
         typedef typename decltype(GL::details::detail::function_signature(&ThreadState::guard_critical_section))::Return_Type GuardType;

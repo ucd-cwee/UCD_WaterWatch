@@ -3,6 +3,7 @@
 #include "aba_problem.h"
 #include "atomic_vector.h"
 #include "thread_object.h"
+#include "atomic_uint_stack.h"
 #include <deque>
 #include <mutex>
 #pragma endregion
@@ -163,8 +164,8 @@ namespace GL {
         };
 
     public:
-        // FixedAtomicUnsignedStack
-        aba_problem::stack<size_t>
+        parallel_atomic_uint_stack
+        //aba_problem::stack<unsigned int>
             queue{};
         std::atomic<size_t>
             indexes{ 0 };
@@ -184,9 +185,9 @@ namespace GL {
             return ScopedTicket(get_ticket(), *this);
         };
         __declspec(noinline) size_t get_ticket() {
-            size_t out;
+            unsigned int out;
             if (!queue.try_pop(out)) {
-                out = ++indexes;
+                out = (unsigned int)++indexes;
             }
             if constexpr (perform_count) {
                 ++count;
@@ -312,8 +313,8 @@ namespace GL {
         };
 
     public:
-        //FixedAtomicUnsignedStack
-        aba_problem::stack<size_t>
+        parallel_atomic_uint_stack
+        //aba_problem::stack<unsigned int>
             shared_queue;
         GL::thread_object_no_default<std::deque<size_t>>
             queue;
@@ -348,7 +349,7 @@ namespace GL {
             return ScopedTicket(get_ticket(), *this);
         };
         size_t get_ticket() {
-            size_t out{ 0 };
+            unsigned int out{ 0 };
 
             auto& this_q = *queue;
             if (this_q.size() > 0) {
@@ -356,7 +357,7 @@ namespace GL {
                 this_q.pop_front();
             }
             else if (!shared_queue.try_pop(out)) {
-                out = ++indexes;
+                out = (unsigned int)++indexes;
             }
             if constexpr (perform_count) {
                 ++count;

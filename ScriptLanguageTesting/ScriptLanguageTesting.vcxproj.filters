@@ -41,5 +41,6 @@
     <ClInclude Include="atomic_epoch_allocator.h" />
     <ClInclude Include="epoch_map.h" />
     <ClInclude Include="array_allocator.h" />
+    <ClInclude Include="atomic_uint_stack.h" />
   </ItemGroup>
 </Project>

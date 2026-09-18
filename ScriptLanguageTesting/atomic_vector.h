@@ -119,43 +119,48 @@ namespace GL {
             valid_pos{ 0 };
         short
             current_blockN{ -1 };
+        GL::fast_exclusive_mutex
+            mut;
 
         bool EnsureBlockExists(short block_n) noexcept {
             bool out = false;
             if (blocks[block_n]) return out;
             for (short blockN = 0; blockN <= block_n; ++blockN) {
                 if (!blocks[blockN]) {
-                    element_t* new_ptr;
-                    if constexpr (use_malloc) {
-                        new_ptr = (element_t*)GL::malloc(block_to_allocsize(blockN) * sizeof(element_t));
-                    }
-                    else {
-                        new_ptr = (element_t*)::malloc(block_to_allocsize(blockN) * sizeof(element_t));
-                    }
-                    if (new_ptr) {
-                        if constexpr (!std::is_pod_v<T>) {
-                            for (int i = 0; i < block_to_allocsize(blockN); ++i) {
-                                new (new_ptr + i) element_t();
-                            }
+                    std::unique_lock locked(mut);
+                    if (!blocks[blockN]) {
+                        element_t* new_ptr;
+                        if constexpr (use_malloc) {
+                            new_ptr = (element_t*)GL::malloc(block_to_allocsize(blockN) * sizeof(element_t));
                         }
                         else {
-                            // some users expect the POD-types to be zero'd when the requested index has been initialized.
-                            std::memset(new_ptr, 0, block_to_allocsize(blockN) * sizeof(element_t));
+                            new_ptr = (element_t*)::malloc(block_to_allocsize(blockN) * sizeof(element_t));
                         }
-                        if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&blocks[blockN]), new_ptr, nullptr) == nullptr) {
-                            out = true;
-                        }
-                        else {
-                            if constexpr (!std::is_pod_v<element_t>) {
+                        if (new_ptr) {
+                            if constexpr (!std::is_pod_v<T>) {
                                 for (int i = 0; i < block_to_allocsize(blockN); ++i) {
-                                    (new_ptr + i)->~element_t();
+                                    new (new_ptr + i) element_t();
                                 }
                             }
-                            if constexpr (use_malloc) {
-                                GL::mfree(new_ptr);
+                            else {
+                                // some users expect the POD-types to be zero'd when the requested index has been initialized.
+                                std::memset(new_ptr, 0, block_to_allocsize(blockN) * sizeof(element_t));
+                            }
+                            if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&blocks[blockN]), new_ptr, nullptr) == nullptr) {
+                                out = true;
                             }
                             else {
-                                ::free(new_ptr);
+                                if constexpr (!std::is_pod_v<element_t>) {
+                                    for (int i = 0; i < block_to_allocsize(blockN); ++i) {
+                                        (new_ptr + i)->~element_t();
+                                    }
+                                }
+                                if constexpr (use_malloc) {
+                                    GL::mfree(new_ptr);
+                                }
+                                else {
+                                    ::free(new_ptr);
+                                }
                             }
                         }
                     }
@@ -421,26 +426,31 @@ namespace GL {
         short
             current_blockN{ -1 };     
         element_t(*constructor)(void);
+        GL::fast_exclusive_mutex
+            mut;
 
         __declspec(noinline) bool EnsureBlockExists(short block_n) noexcept {
             bool out = false;
             if (blocks[block_n]) return out;
             for (short blockN = 0; blockN <= block_n; ++blockN) {
                 if (!blocks[blockN]) {
-                    element_t* new_ptr = (element_t*)(GL::malloc(block_to_allocsize(blockN) * sizeof(element_t)));
-                    for (int i = 0; i < block_to_allocsize(blockN); ++i) {
-                        new (new_ptr + i) element_t(constructor());
-                    }
-                    if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&blocks[blockN]), new_ptr, nullptr) == nullptr) {
-                        out = true;
-                    }
-                    else {
-                        if constexpr (!std::is_pod_v<element_t>) {
-                            for (int i = 0; i < block_to_allocsize(blockN); ++i) {
-                                (new_ptr + i)->~element_t();
-                            }
+                    std::unique_lock locked(mut);
+                    if (!blocks[blockN]) {
+                        element_t* new_ptr = (element_t*)(GL::malloc(block_to_allocsize(blockN) * sizeof(element_t)));
+                        for (int i = 0; i < block_to_allocsize(blockN); ++i) {
+                            new (new_ptr + i) element_t(constructor());
                         }
-                        GL::mfree(new_ptr);
+                        if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&blocks[blockN]), new_ptr, nullptr) == nullptr) {
+                            out = true;
+                        }
+                        else {
+                            if constexpr (!std::is_pod_v<element_t>) {
+                                for (int i = 0; i < block_to_allocsize(blockN); ++i) {
+                                    (new_ptr + i)->~element_t();
+                                }
+                            }
+                            GL::mfree(new_ptr);
+                        }
                     }
                 }
             }
@@ -740,27 +750,32 @@ namespace GL {
             valid_pos{ 0 };
         short
             current_blockN{ -1 };
-        void(*constructor)(element_t*, size_t, size_t);
-        void(*on_append)(element_t*, size_t, size_t, void*);
+        void(*constructor)(element_t*, size_t, short);
+        void(*on_append)(element_t*, size_t, short, void*);
+        GL::fast_exclusive_mutex
+            mut;
 
         __declspec(noinline) bool EnsureBlockExists(short block_n) noexcept {
             bool out = false;
             if (blocks[block_n]) return out;
             for (short blockN = 0; blockN <= block_n; ++blockN) {
                 if (!blocks[blockN]) {
-                    element_t* new_ptr = (element_t*)(GL::malloc(block_to_allocsize(blockN) * sizeof(element_t)));
-                    constructor(new_ptr, block_to_allocsize(blockN), blockN);
-                    if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&blocks[blockN]), new_ptr, nullptr) == nullptr) {
-                        on_append(new_ptr, block_to_allocsize(blockN), blockN, _data);
-                        out = true;
-                    }
-                    else {
-                        if constexpr (!std::is_pod_v<element_t>) {
-                            for (int i = 0; i < block_to_allocsize(blockN); ++i) {
-                                (new_ptr + i)->~element_t();
-                            }
+                    std::unique_lock locked(mut);
+                    if (!blocks[blockN]) {
+                        element_t* new_ptr = (element_t*)(GL::malloc(block_to_allocsize(blockN) * sizeof(element_t)));
+                        constructor(new_ptr, block_to_allocsize(blockN), blockN);
+                        if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&blocks[blockN]), new_ptr, nullptr) == nullptr) {
+                            on_append(new_ptr, block_to_allocsize(blockN), blockN, _data);
+                            out = true;
                         }
-                        GL::mfree(new_ptr);
+                        else {
+                            if constexpr (!std::is_pod_v<element_t>) {
+                                for (int i = 0; i < block_to_allocsize(blockN); ++i) {
+                                    (new_ptr + i)->~element_t();
+                                }
+                            }
+                            GL::mfree(new_ptr);
+                        }
                     }
                 }
             }
@@ -773,11 +788,11 @@ namespace GL {
 
     public:
         atomic_constructable_batch_vector(
-            void(*_constructor)(element_t*, size_t, size_t) = [](element_t* pointer, size_t count, size_t block_number) -> void {
+            void(*_constructor)(element_t*, size_t, short) = [](element_t* pointer, size_t count, short block_number) -> void {
             for (size_t i = 0; i < count; ++i)
                 new (pointer + i) element_t();
             },
-            void(*_on_append)(element_t*, size_t, size_t, void*) = [](element_t* pointer, size_t count, size_t block_number, void* data) -> void {
+            void(*_on_append)(element_t*, size_t, short, void*) = [](element_t* pointer, size_t count, short block_number, void* data) -> void {
 
             },
             void* data = nullptr
