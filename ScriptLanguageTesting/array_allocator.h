@@ -1225,7 +1225,7 @@ namespace GL {
                     block->prev = nullptr;
                     block->node = nullptr;
                 }
-                block->thread_id = GL::util::get_thread_id();
+                block->thread_id = (int)GL::util::get_thread_id();
                 return block;
             };
             __declspec(noinline) void
@@ -1477,7 +1477,7 @@ namespace GL {
                     block->prev = nullptr;
                     block->node = nullptr;
                 }
-                block->thread_id = GL::util::get_thread_id();
+                block->thread_id = (int)GL::util::get_thread_id();
                 return block;
             };
             __declspec(noinline) void
@@ -1563,6 +1563,262 @@ namespace GL {
                         if (freeTree.FindSmallestLargerEqual(block->GetSize())) {
                             allocated_blocks.erase(block->allocated_block_index);
                             GL::mfree(block);
+                        }
+                        else {
+                            LinkFreeInternal(block);
+                        }
+                        return;
+                    }
+                    else {
+                        LinkFreeInternal(block);
+                        return;
+                    }
+                }
+            };
+            __declspec(noinline) void
+                LinkFreeInternal(dynamic_block* block) {
+                block->node = freeTree.Add(block, block->GetSize());
+            };
+
+        };
+
+        // non-atomic, non-thread-safe allocator that can allocate arrays of items (e.g. 128 floats, 1024 strings, etc.).
+        template <int baseBlockSize = 8 << 12>
+        class generalized_allocator {
+        public:
+            class dynamic_block {
+            public:
+                void*
+                    GetMemory() const { return (void*)(((::byte*)this) + sizeof(dynamic_block)); }
+                int
+                    GetSize() const { return abs(size); }
+                void
+                    SetSize(int s, bool isBaseBlock) { size = isBaseBlock ? -s : s; }
+                bool
+                    IsBaseBlock() const { return (size < 0); }
+
+                dynamic_block*
+                    prev = nullptr; // previous memory block
+                dynamic_block*
+                    next = nullptr; // next memory block
+                typename binary_search_b_tree<dynamic_block, int>::binary_search_b_treeNode*
+                    node = nullptr; // node in the B-Tree with free blocks
+                void (*deleter)(void*, size_t) = nullptr;
+                int
+                    thread_id = 0;
+                int
+                    allocated_block_index = 0;
+                int
+                    size = 0; // size in bytes of the block
+                int
+                    initialized_block_index = 0;
+                int
+                    num = 0;
+            };
+
+        protected:
+            GL::impl::binary_search_b_tree< dynamic_block, int>
+                freeTree;   // B-Tree with free memory blocks
+            GL::atomic_bag< dynamic_block* >
+                allocated_blocks;
+            GL::atomic_bag< dynamic_block* >
+                initialized_blocks;
+        public:
+            void*(*allocMemory)(size_t);
+            void(*freeMemory)(void*);
+
+        public:
+            void // required to set the node allocator before first use. 
+                SetAllocator(GL::fast_atomic_allocator<typename binary_search_b_tree<dynamic_block, int>::binary_search_b_treeNode, 256>& node_allocator, GL::fast_atomic_allocator< std::array<typename binary_search_b_tree<dynamic_block, int>::binary_search_b_treeNode*, 10>, 32 >& node_children_allocator) {
+                this->freeTree.nodeAllocator = &node_allocator;
+                this->freeTree.nodeChildrenAllocator = &node_children_allocator;
+            };
+            static dynamic_block* // get the block for a given allocated pointer. 
+                Block(void* ptr) {
+                return (dynamic_block*)(((::byte*)ptr) - (int)sizeof(dynamic_block));
+            };
+
+            generalized_allocator() {};
+            generalized_allocator(generalized_allocator const&) = delete;
+            generalized_allocator(generalized_allocator&&) noexcept = delete;
+            generalized_allocator& operator=(generalized_allocator const&) = delete;
+            generalized_allocator& operator=(generalized_allocator&&) noexcept = delete;
+            ~generalized_allocator() {
+                initialized_blocks.unsafe_for_each([](dynamic_block* block) {
+                    if (block->deleter) {
+                        block->deleter(block->GetMemory(), block->num);
+                    }
+                });
+                allocated_blocks.unsafe_for_each([this](dynamic_block* block) {
+                    this->freeMemory((void*)block);
+                });
+            };
+
+        public:
+            template <typename T, typename Lock, typename Unlock> __declspec(noinline) T*
+                Alloc(const int num, Lock const& lock, Unlock const& unlock, void(*deleter)(void*, size_t) = nullptr, bool cleared_alloc = false) {
+                dynamic_block
+                    * block;
+                T
+                    * ptr;
+
+                if (num <= 0)
+                    return nullptr;
+
+                lock();
+
+                block = AllocInternal(num * sizeof(T));
+                if (block == nullptr) {
+                    unlock();
+                    return nullptr;
+                }
+
+                block = ResizeInternal(block, num * sizeof(T));
+                if (block == nullptr) {
+                    unlock();
+                    return nullptr;
+                }
+
+                unlock();
+
+                ptr = reinterpret_cast<T*>(block->GetMemory());
+                block->deleter = deleter;
+                block->num = num;
+                if constexpr (std::is_pod<T>::value) {
+                    if (cleared_alloc) ::memset((void*)ptr, 0, sizeof(T) * num);
+                }
+                else {
+                    std::uninitialized_default_construct(ptr, ptr + num);
+                }
+                block->initialized_block_index = initialized_blocks.push_back(block);
+
+                return ptr;
+            };
+            template <typename Lock, typename Unlock> __declspec(noinline) void
+                Free(void* ptr, Lock const& lock, Unlock const& unlock) {
+                if (!ptr) { return; }
+
+                dynamic_block* block = (dynamic_block*)(((::byte*)ptr) - (int)sizeof(dynamic_block));
+
+                initialized_blocks.erase(block->initialized_block_index);
+                if (block->deleter) {
+                    block->deleter(ptr, block->num);
+                }
+
+                lock();
+
+                FreeInternal(block);
+
+                unlock();
+            };
+
+        private:
+            __declspec(noinline) dynamic_block* // find a free block that is big enough for the request, otherwise manufactures it. 
+                AllocInternal(const int num) {
+                dynamic_block* block;
+                int alignedBytes = (num + 15) & ~15; // request is aligned to 16 bytes
+
+                block = freeTree.FindSmallestLargerEqual(alignedBytes);
+                if (block) {
+                    UnlinkFreeInternal(block);
+                }
+                else {
+                    int allocSize = std::max(baseBlockSize, alignedBytes + (int)sizeof(dynamic_block));
+
+                    block = (dynamic_block*)this->allocMemory((size_t)allocSize);
+
+                    block->SetSize(allocSize - (int)sizeof(dynamic_block), true);
+                    block->allocated_block_index = allocated_blocks.push_back(block);
+                    block->next = nullptr;
+                    block->prev = nullptr;
+                    block->node = nullptr;
+                }
+                block->thread_id = (int)GL::util::get_thread_id();
+                return block;
+            };
+            __declspec(noinline) void
+                UnlinkFreeInternal(dynamic_block* block) {
+                freeTree.Remove(block->node);
+                block->node = nullptr;
+            };
+            __declspec(noinline) dynamic_block*
+                ResizeInternal(dynamic_block* block, const int num) {
+                dynamic_block* newBlock;
+                int alignedBytes = (num + 15) & ~15;
+                // if the new size is larger
+                if (alignedBytes > block->GetSize()) {
+
+                    dynamic_block* nextBlock = block->next;
+
+                    // try to annexate the next block if it's free
+                    if (nextBlock && !nextBlock->IsBaseBlock() && nextBlock->node != nullptr &&
+                        block->GetSize() + (int)sizeof(dynamic_block) + nextBlock->GetSize() >= alignedBytes) {
+
+                        UnlinkFreeInternal(nextBlock);
+                        block->SetSize(block->GetSize() + (int)sizeof(dynamic_block) + nextBlock->GetSize(), block->IsBaseBlock());
+                        block->next = nextBlock->next;
+                        if (nextBlock->next) {
+                            nextBlock->next->prev = block;
+                        }
+                    }
+                    else {
+                        // allocate a new block and copy
+                        dynamic_block* oldBlock = block;
+                        block = AllocInternal(num);
+                        if (block == nullptr) {
+                            return nullptr;
+                        }
+                        ::memcpy(block->GetMemory(), oldBlock->GetMemory(), oldBlock->GetSize());
+                        FreeInternal(oldBlock);
+                    }
+                }
+
+                // if the unused space at the end of this block is large enough to hold a block with at least one element
+                if ((block->GetSize() - alignedBytes - (int)sizeof(dynamic_block)) < (int)64)
+                    return block;
+
+                newBlock = (dynamic_block*)(((::byte*)block) + (int)sizeof(dynamic_block) + alignedBytes);
+                newBlock->SetSize(block->GetSize() - alignedBytes - (int)sizeof(dynamic_block), false);
+                newBlock->next = block->next;
+                newBlock->prev = block;
+                if (newBlock->next != nullptr) {
+                    newBlock->next->prev = newBlock;
+                }
+                newBlock->node = nullptr;
+                block->next = newBlock;
+                block->SetSize(alignedBytes, block->IsBaseBlock());
+
+                FreeInternal(newBlock);
+
+                return block;
+            };
+            __declspec(noinline) void
+                FreeInternal(dynamic_block* block) {
+                // short max_help = 1;
+                while (true) {
+                    // try to merge with a previous free block
+                    if (dynamic_block* prevBlock = block->prev; prevBlock && !prevBlock->IsBaseBlock() && prevBlock->node != nullptr) {
+                        UnlinkFreeInternal(prevBlock);
+                        prevBlock->SetSize(prevBlock->GetSize() + (int)sizeof(dynamic_block) + block->GetSize(), prevBlock->IsBaseBlock());
+                        prevBlock->next = block->next;
+                        if (block->next) {
+                            block->next->prev = prevBlock;
+                        }
+                        block = prevBlock;
+                    }
+                    // try to merge with a next free block
+                    else if (dynamic_block* nextBlock = block->next; nextBlock && !nextBlock->IsBaseBlock() && nextBlock->node != nullptr) {
+                        UnlinkFreeInternal(nextBlock);
+                        block->SetSize(nextBlock->GetSize() + (int)sizeof(dynamic_block) + block->GetSize(), block->IsBaseBlock());
+                        block->next = nextBlock->next;
+                        if (nextBlock->next) {
+                            nextBlock->next->prev = block;
+                        }
+                    }
+                    else if (dynamic_block* nextBlock = block->next, *prevBlock = block->prev; !nextBlock && !prevBlock) {
+                        if (freeTree.FindSmallestLargerEqual(block->GetSize())) {
+                            allocated_blocks.erase(block->allocated_block_index);
+                            this->freeMemory((void*)block);
                         }
                         else {
                             LinkFreeInternal(block);
@@ -1753,6 +2009,174 @@ namespace GL {
             }, [&Alloc](void)->void {
                 Alloc.second.unlock();
             });
+        };
+
+    };
+
+    // thread-safe allocator that can allocate arrays of any types of items (e.g. 128 floats, 1024 strings, etc.).
+    // allowed to mix-and-match types using this allocator. Allocates an array of items at a time. 
+    // On destruction of the allocator, all memory will be collected properly. 
+    template <int baseBlockSize = 8 << 12>
+    class parallel_generalized_allocator {
+    protected:
+        GL::fast_atomic_allocator<typename impl::binary_search_b_tree<typename GL::impl::generalized_allocator<baseBlockSize>::dynamic_block, int>::binary_search_b_treeNode, 256>
+            node_allocator_m;
+        GL::fast_atomic_allocator< std::array<typename impl::binary_search_b_tree<typename GL::impl::generalized_allocator<baseBlockSize>::dynamic_block, int>::binary_search_b_treeNode*, 10>, 32 >
+            node_children_allocator_m;
+        GL::thread_object_no_default < std::pair<GL::impl::generalized_allocator<baseBlockSize>, GL::fast_exclusive_mutex> >
+            alloc_m;
+        void*(*allocMemory)(size_t);
+        void(*freeMemory)(void*);
+
+    public:
+        parallel_generalized_allocator(void* (*_allocMemory)(size_t), void(*_freeMemory)(void*))
+            : allocMemory{ _allocMemory }
+            , freeMemory{ _freeMemory }
+            , node_allocator_m()
+            , node_children_allocator_m()
+            , alloc_m()
+        {
+            alloc_m._after_construction = [this](auto& tree) {
+                tree.first.allocMemory = this->allocMemory;
+                tree.first.freeMemory = this->freeMemory;
+                tree.first.SetAllocator(this->node_allocator_m, this->node_children_allocator_m);
+            };
+        };
+        parallel_generalized_allocator(parallel_generalized_allocator const&) = delete;
+        parallel_generalized_allocator(parallel_generalized_allocator&&) noexcept = delete;
+        parallel_generalized_allocator& operator=(parallel_generalized_allocator const&) = delete;
+        parallel_generalized_allocator& operator=(parallel_generalized_allocator&&) noexcept = delete;
+        ~parallel_generalized_allocator() = default;
+
+    public:
+        // allocate N bytes.
+        __declspec(noinline) void*
+            alloc(const size_t bytes, void(*destroy)(void*, size_t)) {
+            auto& Alloc = *alloc_m;
+            return Alloc.first.Alloc<unsigned char>(bytes / sizeof(unsigned char), [&Alloc](void)->void {
+                Alloc.second.lock();
+            }, [&Alloc](void)->void {
+                Alloc.second.unlock();
+            }, destroy, true);
+        };
+
+        // allocate N items as an array. POD-types are not cleared and may be garbage data. 
+        template <typename T> __declspec(noinline) T*
+            alloc(const int num) {
+            auto& Alloc = *alloc_m;
+            if constexpr (std::is_pod_v<T>) {
+                return Alloc.first.Alloc<T>(num, [&Alloc](void)->void {
+                    Alloc.second.lock();
+                }, [&Alloc](void)->void {
+                    Alloc.second.unlock();
+                }, nullptr
+                , false);
+            }
+            else {
+                return Alloc.first.Alloc<T>(num, [&Alloc](void)->void {
+                    Alloc.second.lock();
+                }, [&Alloc](void)->void {
+                    Alloc.second.unlock();
+                }, [](void* ptr, size_t num) -> void {
+                    if constexpr (!std::is_pod_v<T>) {
+                        std::destroy(reinterpret_cast<T*>(ptr), reinterpret_cast<T*>(ptr) + num);
+                    }
+                }, false);
+            }
+        };
+
+        // allocate N items as an array. POD-types are cleared to 0. 
+        template <typename T> __declspec(noinline) T*
+            calloc(const int num) {
+            auto& Alloc = *alloc_m;
+            if constexpr (std::is_pod_v<T>) {
+                return Alloc.first.Alloc<T>(num, [&Alloc](void)->void {
+                Alloc.second.lock();
+                }, [&Alloc](void)->void {
+                    Alloc.second.unlock();
+                }, nullptr
+                , true);
+            }
+            else {
+                return Alloc.first.Alloc<T>(num, [&Alloc](void)->void {
+                    Alloc.second.lock();
+                }, [&Alloc](void)->void {
+                    Alloc.second.unlock();
+                }, [](void* ptr, size_t num) -> void {
+                    if constexpr (!std::is_pod_v<T>) {
+                        std::destroy(reinterpret_cast<T*>(ptr), reinterpret_cast<T*>(ptr) + num);
+                    }
+                }, true);
+            }
+
+
+        };
+
+        // free a pointer to an array of items. 
+        __declspec(noinline) void
+            free(void* ptr) {
+            auto& Alloc = alloc_m[GL::impl::generalized_allocator<baseBlockSize>::Block(ptr)->thread_id];
+            Alloc.first.Free(ptr, [&Alloc](void)->void {
+                Alloc.second.lock();
+            }, [&Alloc](void)->void {
+                Alloc.second.unlock();
+            });
+        };
+
+        template <typename T>
+        class unique_ptr {
+            void* data;
+            parallel_generalized_allocator* parent;
+
+        public:
+            explicit unique_ptr(void* d, parallel_generalized_allocator* p) : data{ d }, parent{ p } {};
+            unique_ptr() : data{ nullptr }, parent{ nullptr } {};
+            unique_ptr(std::nullptr_t) : data{ nullptr }, parent{ nullptr } {};
+            unique_ptr(unique_ptr const&) = delete;
+            unique_ptr(unique_ptr&& rhs) noexcept : data{ rhs.data }, parent{ rhs.parent } {
+                rhs.data = nullptr;
+                rhs.parent = nullptr;
+            };
+            unique_ptr& operator=(unique_ptr const&) = delete;
+            __declspec(noinline) unique_ptr& operator=(std::nullptr_t) {
+                if (data && parent) { parent->free(data); }
+                data = nullptr;
+                parent = nullptr;
+                return *this;
+            };
+            __declspec(noinline) unique_ptr& operator=(unique_ptr&& rhs) noexcept {
+                if (data && parent) { parent->free(data); }
+                data = rhs.data;
+                parent = rhs.parent;
+                rhs.data = nullptr;
+                rhs.parent = nullptr;
+                return *this;
+            };
+            operator bool() const {
+                return data;
+            };
+
+            ~unique_ptr() {
+                if (data && parent) { parent->free(data); }
+            };
+
+            const T* operator->() const {
+                return data;
+            };
+            const T* operator->() {
+                return data;
+            };
+            const T* get() const {
+                return data;
+            };
+            T* get() {
+                return data;
+            };
+        };
+
+        template <typename T>
+        unique_ptr<T> make_unique(unsigned int N) {
+            return unique_ptr<T>(this->alloc<T>(N), this);
         };
 
     };

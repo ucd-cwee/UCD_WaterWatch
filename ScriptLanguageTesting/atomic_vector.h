@@ -170,7 +170,7 @@ namespace GL {
         };
         bool grow_to_at_least_blocksN(short blockN) noexcept { return EnsureBlockExists(blockN); };
     public:
-        atomic_vector() noexcept = default;
+        atomic_vector() = default;
         atomic_vector(atomic_vector const&) = delete;
         atomic_vector(atomic_vector&& rhs) : blocks{ rhs.blocks }, current_pos{ rhs.current_pos }, valid_pos{ rhs.valid_pos }, current_blockN{ rhs.current_blockN } {
             for (auto& x : rhs.blocks) x = nullptr;

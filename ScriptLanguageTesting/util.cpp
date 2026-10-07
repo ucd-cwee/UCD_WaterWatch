@@ -490,6 +490,8 @@ namespace GL {
         };
         // 0..max or max..0
         double rand_very_fast(double max) {
+            if (0 > max) return rand_very_fast(max, 0);
+
             //if (max >= 0) return rand_impl().FastRandom(0.0, max);
             //else return rand_impl().FastRandom(max, 0.0);
 
@@ -497,7 +499,7 @@ namespace GL {
         };
         // min..max or max..min
         double rand_very_fast(double min, double max) {
-            //if (max >= min) return rand_impl().FastRandom(min, max);
+            if (min > max) return rand_very_fast(max, min);
             //else return rand_impl().FastRandom(max, min);
 
             return min + ((max - min) * _global_random);

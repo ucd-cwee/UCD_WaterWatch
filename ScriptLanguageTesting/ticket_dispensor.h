@@ -198,7 +198,7 @@ namespace GL {
             if constexpr (perform_count) {
                 --count;
             }
-            queue.push(ticket);
+            queue.push((unsigned int)ticket);
         };
         void reserve(int n) {
             std::vector<size_t> tickets;

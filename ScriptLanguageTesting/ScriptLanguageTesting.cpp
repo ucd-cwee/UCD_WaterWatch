@@ -2581,7 +2581,207 @@ namespace GL {
 
 };
 
+#include "../GpuProgramming/matrix.h"
+
 int main() {
+    if (1) {
+        using namespace GL;
+        using namespace GL::GPU;
+
+        std::ios_base::sync_with_stdio(false);
+        std::cin.tie(NULL);
+        CONSOLE_SCREEN_BUFFER_INFO screen; GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &screen);
+        CONSOLE_CURSOR_INFO cursorInfo;
+        GetConsoleCursorInfo(GetStdHandle(STD_OUTPUT_HANDLE), &cursorInfo);
+        cursorInfo.bVisible = false;
+        SetConsoleCursorInfo(GetStdHandle(STD_OUTPUT_HANDLE), &cursorInfo);
+
+        int game_w = screen.dwSize.X / 2, game_h = screen.dwSize.Y - 3;
+        std::deque<float> framerates;
+
+        // Initialize the kernel array
+        matrix_kernel<float> kernel(matrix<float>::from_vector({
+            1, 1, 1,
+            1, 0, 1,
+            1, 1, 1
+        }, 3));
+        auto state = (matrix<float>::random(game_h, game_w, 1) > 0.4f).cast<unsigned int>();
+
+        int frame = 1;
+        // Run the game of life
+        for (;;) {
+            GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &screen);
+            int game_w2 = (screen.dwSize.X / 2), game_h2 = ((screen.dwSize.Y > 3) ? screen.dwSize.Y - 3 : 1);
+            if (game_w2 != game_w || game_h != game_h2) {
+                game_w = game_w2;
+                game_h = game_h2;
+
+                auto temp = state.resize(game_h, game_w, 1);
+                state = temp;
+
+                framerates.clear();
+            }
+
+            GL::stopwatch sw;
+
+            // Convolve aligns the kernel ontop of each pixel, multiplies the neighboring pixels by the kernel, and sums the results. The edges are correctly handled using weighted-balancing on the kernel itself.
+            auto nHood = state.convolve(static_matrix_kernel<float>{ &kernel });
+
+            // Generate conditions for life
+            // state == 1 && nHood < 2 ->> state = 0
+            // state == 1 && nHood > 3 ->> state = 0
+            // else if state == 1 ->> state = 1
+            // state == 0 && nHood == 3 ->> state = 1
+            auto C0 = (nHood == 2);
+            auto C1 = (nHood == 3);
+
+            //auto a0 = (state == 1) && (nHood < 2);  // Die of under population
+            //auto a1 = (state > 0) && (C0 || C1);   // Continue to live
+            //auto a2 = (state <= 0) && C1;           // Reproduction
+            //auto a3 = (state == 1) && (nHood > 3);  // Over-population
+
+            // display = (a0 + a1).join(2, a1 + a2).join(2, a3).cast(ArrayTypes::FLOAT);
+            //auto R = a0 * a1;
+            //auto G = a1 * a2;
+            //auto B = a3;
+
+            // Update state
+            state *= C0.cast<unsigned int>();
+            state += C1.cast<unsigned int>();
+
+            // console_clear();
+            SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
+
+#if 0
+#if 0
+            auto statef = state.cast<float>();
+            auto blur_1 = statef.convolve(matrix<float>::guassian_kernel(3, 3));
+            auto blur_2 = blur_1.convolve(matrix<float>::guassian_kernel(7, 7));
+            auto blur_3 = blur_2.convolve(matrix<float>::guassian_kernel(11, 11));
+            auto blur_4 = blur_3.convolve(matrix<float>::guassian_kernel(23, 23));
+            auto blur_5 = blur_4.convolve(matrix<float>::guassian_kernel(53, 53));
+            print((statef + blur_1 + blur_2 + blur_3 + blur_4 + blur_5).ASCII().to_string({}, true));
+#else
+            //// column position (0 to game_w)
+            //auto col_pos = (matrix<float>::linear(0, game_w2 * game_h2, game_h2, game_w2, 1) / (float)game_h2).floor().cast<unsigned int>();
+
+            //// row position (0 to game_h)
+            //auto row_pos = (matrix<unsigned int>::linear(0, game_w2 * game_h2, game_h2, game_w2, 1) % game_h2);            
+            //// UV coordinates for the screen
+            //auto screen_U = col_pos.cast<float>() / (float)game_w2;
+            //auto screen_V = row_pos.cast<float>() / (float)game_h2;
+
+            //matrix<float>::test_vector(100);
+            //matrix<float>::test_vector(1000);
+            //matrix<float>::test_vector(10000);
+            //matrix<float>::test_vector(100000);
+            //matrix<float>::test_vector(1000000);
+
+
+            class MatrixImage {
+            public:
+                std::vector<matrix<float>> mip_maps;
+                MatrixImage() : mip_maps{} {};
+                MatrixImage(matrix<float>&& srce) : mip_maps{} {
+                    calculate_mip_maps(std::move(srce));
+                };
+                MatrixImage(MatrixImage const&) = delete;
+                MatrixImage(MatrixImage&&) = delete;
+                MatrixImage& operator=(MatrixImage const&) = delete;
+                MatrixImage& operator=(MatrixImage&&) = delete;
+                ~MatrixImage() = default;
+
+                matrix<float> debug_display() const {
+                    matrix<float> out = mip_maps[0];
+                    for (int i = 1; i < mip_maps.size(); ++i) {
+                        out = out.join(1, mip_maps[i].resize(mip_maps[0].size(0), mip_maps[i].size(1) + 16, 1));
+                    }
+                    return out;
+                };
+                matrix<float> sum() const {
+                    std::vector<matrix<float>> mips;
+                    matrix<float> out = mip_maps[0];
+                    for (int i = 1; i < mip_maps.size(); ++i) {
+                        mips.emplace_back(mip_maps[i].resize_stretch(mip_maps[0].size(0), mip_maps[0].size(1), 1));
+                        out += mips[mips.size() - 1];
+                    }
+                    return out;
+                };
+
+            private:
+                void calculate_mip_maps(matrix<float>&& srce) {
+                    mip_maps.reserve(32);
+                    mip_maps.push_back(std::move(srce));
+                    const matrix<float>* current = &mip_maps[0];
+                    //auto kernel = matrix<float>::guassian_kernel<13, 13>();
+                    while ((current->size(0) > 1) && (current->size(1) > 1)) {
+                        //auto blurred = current->convolve(kernel);
+                        //mip_maps.push_back(blurred.resize_stretch(std::floorf(((float)blurred.size(0) / 2.0f) + 0.5), std::floorf(((float)blurred.size(1) / 2.0f) + 0.5), 1)); //  current->halfsize<false>());
+
+                        mip_maps.push_back(current->halfsize()); // faster but less accurate
+                        current = &mip_maps[mip_maps.size() - 1];
+                    }
+                };
+
+            };
+            MatrixImage img(state.cast<float>());
+            std::cout << img.sum().resize_stretch(game_h, game_w, 1).ASCII().to_string({}, true) << std::endl;
+
+            //auto texture_y = (screen_U * (float)I5.size(1)).cast<unsigned int>().min(I5.size(1) - 1);
+            //auto texture_x = (screen_V * (float)I5.size(0)).cast<unsigned int>().min(I5.size(0) - 1);
+            //auto texture_N = ((texture_y * I5.size(0)) + texture_x).min((I5.size(1) * I5.size(0)) - 1);
+            //auto scaled = I5.resample(texture_N);
+
+            //auto A = state.resize(game_h2 / 3, game_w2, 1);
+            //auto B = state.cast<float>().convolve(matrix<float>::guassian_kernel(5, 5)).resize(game_h2 / 3, game_w2, 1);
+            //auto C = state.halfsize().doublesize().resize(game_h2 / 3, game_w2, 1);
+            //auto print_me = A.ASCII().join(0, B.ASCII()).join(0, C.ASCII());
+            //print(print_me.to_string({}, true));
+#endif
+#else
+            std::cout << state.ASCII().to_string({}, true) << std::endl;
+#endif
+            // state += ((state > 0).cast<float>().convolve(matrix<float>::guassian_kernel<7,7>()) * (matrix<float>::random(game_h, game_w, 1) >= 0.995f).cast<float>()).cast<unsigned int>();
+            // state = state.min(1);
+
+            std::cout << "" << std::endl;
+            auto this_frame = (float)(1.0 / sw.stop());
+            framerates.push_back(this_frame);
+
+            if (framerates.size() > 10000) framerates.pop_front();
+            std::deque<float> copy(framerates);
+            std::sort(copy.begin(), copy.end());
+            float q0 = 0;
+            float q1 = 0;
+            float q2 = 0;
+            float q3 = 0;
+            float q4 = 0;
+            if (copy.size() >= 4) {
+                q0 = copy.at(0);
+                q1 = copy.at(copy.size() / 4);
+                q2 = copy.at(2 * copy.size() / 4);
+                q3 = copy.at(3 * copy.size() / 4);
+                q4 = copy.at(copy.size() - 1);
+            }
+
+            std::cout << GL::printf("min{ %f }  q1{ %f }  median{ %f }  q2{ %f }  max{ %f }  ", q0, q1, q2, q3, q4) + GL::arena_memory_pool::debug() + "         \t" << std::endl;
+            std::cout << std::flush;
+
+            //while (sw.stop() < 1.0 / 60.0) {
+            //    std::this_thread::yield();
+            //}
+        }
+
+
+
+    }
+
+
+
+
+
+
+
 #if 0
     if (0) {
         GL::atomic_shared_ptr<GL::any> ptr;
@@ -2648,6 +2848,19 @@ int main() {
         ////std::cout << cache.current<3>()->cast<GL::string&>() << std::endl;
     };
 #endif
+
+    while (1) {
+        GL::parallel_generalized_allocator alloc([](size_t sz) -> void* {
+            return GL::malloc(sz);
+        }, [](void* p) -> void {
+            GL::mfree(p);
+        });
+        GL::parallel::For(0ull, 100'000ull, [&](size_t i) {
+            int* p = alloc.alloc<int>((int)GL::util::rand_very_fast(1'000, i + 1));
+            alloc.free(p);
+        });
+    }
+
      // experimenting with an (unlikely) memory leak associated with epoch_btree_map? Or just a design flaw?
     while (true) {
 
