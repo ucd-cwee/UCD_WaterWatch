@@ -852,8 +852,6 @@ namespace GL {
             };
             __declspec(noinline) binary_search_b_treeNode* // find an object with the smallest key larger equal the given key
                 NodeFindSmallestLargerEqual(keyType key) {
-                binary_search_b_treeNode
-                    * nxt;
                 binary_search_b_treeNode*
                     node;
 
@@ -1690,7 +1688,7 @@ namespace GL {
                 else {
                     std::uninitialized_default_construct(ptr, ptr + num);
                 }
-                block->initialized_block_index = initialized_blocks.push_back(block);
+                block->initialized_block_index = (int)initialized_blocks.push_back(block);
 
                 return ptr;
             };
@@ -1728,7 +1726,7 @@ namespace GL {
                     block = (dynamic_block*)this->allocMemory((size_t)allocSize);
 
                     block->SetSize(allocSize - (int)sizeof(dynamic_block), true);
-                    block->allocated_block_index = allocated_blocks.push_back(block);
+                    block->allocated_block_index = (int)allocated_blocks.push_back(block);
                     block->next = nullptr;
                     block->prev = nullptr;
                     block->node = nullptr;
@@ -2170,7 +2168,7 @@ namespace GL {
                 return data;
             };
             T* get() {
-                return data;
+                return static_cast<T*>(data);
             };
         };
 

@@ -3,6 +3,7 @@
 #include "atomic_vector.h"
 #include "ticket_dispensor.h"
 #include "thread_object.h"
+#include "functions.h"
 #include <vector>
 #include <concurrent_priority_queue.h>
 #include <queue>

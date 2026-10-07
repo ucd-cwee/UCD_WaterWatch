@@ -2464,7 +2464,7 @@ namespace GL {
                 //}));
 
                 auto& constants_NS = this->make_namespace("constants");
-                constants_NS.insert_object_here("pi", GL::any::fast_any::instance(GL::constants::pi()));
+                constants_NS.insert_object_here("pi", GL::any::fast_any::instance(GL::constants::PI()));
                 constants_NS.insert_object_here("viscosity", GL::any::fast_any::instance(GL::constants::viscosity()));
                 constants_NS.insert_object_here("half_pi", GL::any::fast_any::instance(GL::constants::half_pi()));
                 constants_NS.insert_object_here("g", GL::any::fast_any::instance(GL::constants::g()));

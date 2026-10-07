@@ -1426,94 +1426,94 @@ namespace GL {
         private:
             static constexpr float _pi = 3.141592653589793238462643383279502884197169399375105820974944f;
             static constexpr float _pi_over_2 = _pi / 2.0f;
-            static constexpr inline double pow(double x, unsigned long long y) noexcept {
-                return y == 0 ? 1.0 : x * pow(x, y - 1);
-            };
+            //static constexpr inline double pow(double x, unsigned long long y) noexcept {
+            //    return y == 0 ? 1.0 : x * pow(x, y - 1);
+            //};
 
-            template<int power> 
-            static inline constexpr double cpow(double V) noexcept {
-                static_assert(power >= 0, "cpow cannot accept negative numbers. Try pow instead.");
-                return pow(V, power);
-            };
+            //template<int power> 
+            //static inline constexpr double cpow(double V) noexcept {
+            //    static_assert(power >= 0, "cpow cannot accept negative numbers. Try pow instead.");
+            //    return pow(V, power);
+            //};
 
         public:
             /* PI (equal to 180 degrees) */
-            static radian					
-                pi() {
+            static GL::radian
+                PI() {
                 return _pi;
             };
 
             /* equal to 90 degrees */
-            static radian
+            static GL::radian
                 half_pi() {
                 return _pi_over_2;
             };
 
             /* speed of light in a vacuum (m/s) */
-            static meters_per_second		    
+            static GL::meters_per_second
                 c() {
-                return value(299792458.0f);
+                return GL::value(299792458.0f);
             };
 
             /* ( m^3 / (kg * s^2) ) */
-            static value				        
+            static GL::value
                 G() {
                 using namespace literals;
                 return 6.67408e-11_cu_m / (1_kg * 1_s * 1_s);
             };
 
             /* acceleration due to gravity ( m/s^2 ) */
-            static meters_per_second_squared	
+            static GL::meters_per_second_squared
                 g() {
-                return value(9.8067f);
+                return GL::value(9.8067f);
             };
 
             /* density of water ( kg/m^3 ) */
-            static kilograms_per_cubic_meter 
+            static GL::kilograms_per_cubic_meter
                 d() {
-                return value(998.57f);
+                return GL::value(998.57f);
             };
 
             // Kinematic viscosity of water @ 20 deg C (sq ft/sec)
-            static value
+            static GL::value
                 viscosity() {
                 using namespace literals;
                 return 1.1E-5_sq_ft / 1_s; 
             };
         };
 
-        __forceinline value value::sin() const {
+        __forceinline GL::value value::sin() const {
             value::package copied = this->packed;
             if (copied.m_bits.si_unit == 0) {
                 throw std::runtime_error(GL::string("Provided type ('" + abbreviation(copied) + "') must be convertable to radians for trig functions, and may not be scalar due to ambiguity of the type").to_string());
             }
             return std::sin(GL::radian(GL::value(std::move(copied))).operator float());
         };
-        __forceinline value value::cos() const {
+        __forceinline GL::value value::cos() const {
             value::package copied = this->packed;
             if (copied.m_bits.si_unit == 0) {
                 throw std::runtime_error(GL::string("Provided type ('" + abbreviation(copied) + "') must be convertable to radians for trig functions, and may not be scalar due to ambiguity of the type").to_string());
             }
             return std::cos(GL::radian(GL::value(std::move(copied))).operator float());
         };
-        __forceinline value value::tan() const {
+        __forceinline GL::value value::tan() const {
             value::package copied = this->packed;
             if (copied.m_bits.si_unit == 0) {
                 throw std::runtime_error(GL::string("Provided type ('" + abbreviation(copied) + "') must be convertable to radians for trig functions, and may not be scalar due to ambiguity of the type").to_string());
             }
             return std::tan(GL::radian(GL::value(std::move(copied))).operator float());
         };
-        __forceinline radian value::asin() const {
+        __forceinline GL::radian value::asin() const {
             package copied = this->packed;
             value::confirm_is_scalar(copied);
             return GL::radian(std::asin(fwrap(copied.m_bits.val, -1.0f, 1.0f)));
         };
-        __forceinline radian value::acos() const {
+        __forceinline GL::radian value::acos() const {
             value::package copied = this->packed;
             value::confirm_is_scalar(copied);
             return GL::radian(std::acos(fwrap(copied.m_bits.val, -1.0f, 1.0f)));
         };
-        __forceinline radian value::atan() const {
+        __forceinline GL::radian value::atan() const {
             package copied = this->packed;
             value::confirm_is_scalar(copied);
             return GL::radian(std::atan(copied.m_bits.val));

@@ -2652,7 +2652,7 @@ int main() {
             // console_clear();
             SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
 
-#if 0
+#if 1
 #if 0
             auto statef = state.cast<float>();
             auto blur_1 = statef.convolve(matrix<float>::guassian_kernel(3, 3));
@@ -2660,7 +2660,7 @@ int main() {
             auto blur_3 = blur_2.convolve(matrix<float>::guassian_kernel(11, 11));
             auto blur_4 = blur_3.convolve(matrix<float>::guassian_kernel(23, 23));
             auto blur_5 = blur_4.convolve(matrix<float>::guassian_kernel(53, 53));
-            print((statef + blur_1 + blur_2 + blur_3 + blur_4 + blur_5).ASCII().to_string({}, true));
+            std::cout << (statef + blur_1 + blur_2 + blur_3 + blur_4 + blur_5).ASCII().to_string({}, true) << std::endl;
 #else
             //// column position (0 to game_w)
             //auto col_pos = (matrix<float>::linear(0, game_w2 * game_h2, game_h2, game_w2, 1) / (float)game_h2).floor().cast<unsigned int>();
@@ -2775,12 +2775,6 @@ int main() {
 
 
     }
-
-
-
-
-
-
 
 #if 0
     if (0) {
