@@ -2584,6 +2584,46 @@ namespace GL {
 #include "../GpuProgramming/matrix.h"
 
 int main() {
+
+    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED_LOOP"); true) {
+        GL::GPU::matrix<float> LHS = GL::GPU::matrix<float>::constant(5, 100, 100);
+        GL::GPU::matrix<float> RHS = GL::GPU::matrix<float>::constant(6, 100, 100);
+        auto task = GL::parallel::single_threaded::task([&]() -> GL::GPU::matrix<float> {
+            return LHS * RHS;
+        });
+        task->wait().result;
+
+
+
+
+        //auto awaiting = GL::parallel::single_threaded::task(0, 1'000'000, [](int i) {
+        //    i = i + 1;
+        //})->and_then(0, 1'000'000, [](int i) {
+        //    i = i + 1;
+        //});
+        //awaiting->wait(); // will never contribute to the task - pure wait loop. 
+    }
+    if (auto sw = GL::stopwatch::debug_timer("MULTI_THREADED_LOOP"); true) {
+        GL::GPU::matrix<float> LHS = GL::GPU::matrix<float>::constant(5, 100, 100);
+        GL::GPU::matrix<float> RHS = GL::GPU::matrix<float>::constant(6, 100, 100);
+        auto task = GL::parallel::single_threaded::task([&]() -> GL::GPU::matrix<float> {
+            return LHS * RHS;
+        });
+        task->wait().result;
+
+
+        //auto awaiting = GL::parallel::task(0, 1'000'000, [](int i) {
+        //    i = i + 1;
+        //})->and_then(0, 1'000'000, [](int i) {
+        //    i = i + 1;
+        //});
+        //awaiting->wait(); // may contribute to the task
+    }
+
+
+
+
+
     if (1) {
         using namespace GL;
         using namespace GL::GPU;

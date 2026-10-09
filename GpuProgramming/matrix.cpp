@@ -181,7 +181,7 @@ public:
         GL::string out;
 #define R(...) GL::string(" "#__VA_ARGS__" ")
         out = out + R(
-        kernel void copy_type_(global _type_ * A, global _type_ * B) {
+            kernel void copy_type_(global _type_ * A, global _type_ * B) {
             const uint n = get_global_id(0);
             A[n] = B[n];
         };
@@ -830,7 +830,7 @@ public:
         );
         if constexpr (std::is_floating_point_v<T>) {
             out = out + R(
-            global atomic_int __rand_global_counter = ATOMIC_VAR_INIT(123456789);
+                global atomic_int __rand_global_counter = ATOMIC_VAR_INIT(123456789);
             uint __rand_global() {
                 uint x, y;
                 for (;;) {
@@ -1006,7 +1006,7 @@ public:
         }
         else {
             out = out + R(
-            kernel void power_single_type_(global _type_ * A, _type_ B, global _type_ * C) {
+                kernel void power_single_type_(global _type_ * A, _type_ B, global _type_ * C) {
                 const uint n = get_global_id(0);
                 C[n] = pow((float)A[n], (float)B);
             }
@@ -1320,7 +1320,7 @@ public:
     kernel_list functions;
 
 
-     Program(std::vector<std::string> const& opencl_c_code)
+    Program(std::vector<std::string> const& opencl_c_code)
         : info(select_device_with_most_flops(get_devices(false)))
         , program(info, opencl_c_code)
         , queue(info.cl_context, info.cl_device)
@@ -1348,24 +1348,26 @@ public:
     };
 };
 
+#include "../ScriptLanguageTesting/array_allocator.h"
+
 struct static_mem_matrix { mem_matrix* ptr; };
 class mem_matrix {
     template <typename G> friend class matrix;
 public:
     static auto& program() { return opencl::get_program(); };
-    
-    using dynamic_cpu_allocator = GL::parallel_dynamic_allocator<void*>;
-    static dynamic_cpu_allocator& cpu_allocator() { 
+
+    using dynamic_cpu_allocator = GL::parallel_generalized_allocator<32768>; // GL::parallel_dynamic_allocator<void*>;
+    static dynamic_cpu_allocator& cpu_allocator() {
         static dynamic_cpu_allocator out(
             [](unsigned long long length) -> void* {
                 return Mem_Alloc(length);
             }, // _alloc_block
-            [](void*& parent_block) -> void {
+            [](void* parent_block) -> void {
                 Mem_Free(parent_block);
                 parent_block = nullptr;
             } // _free_block
-        );
-        return out; 
+            );
+        return out;
     };
 
     using dynamic_gpu_allocator = GL::/*parallel_*/dynamic_allocator<cl_mem>;
@@ -1386,40 +1388,27 @@ public:
                 ::clReleaseMemObject(parent_block);
                 parent_block = nullptr;
             } // _free_block            
-        );
+            );
         return out;
     };
-    
+
 public:
     template <typename T>
     struct helper {
-        // using block_type = dynamic_allocator<void*>::dynamic_block;
-        using block_type = dynamic_cpu_allocator::dynamic_block;
         struct array_delete { // default deleter for unique_ptr to array of unknown size
             constexpr array_delete() noexcept = default;
             array_delete(const array_delete&) noexcept {}
             void operator()(T* p) const noexcept { // delete a pointer
-                static_assert(0 < sizeof(T), "can't delete an incomplete type");
-                auto* ptr = (void*)((::byte*)p - sizeof(block_type));
-                auto* alloced = *(block_type**)(::byte*)(ptr);
-                unsigned __int64 N = (alloced->length - sizeof(block_type)) / sizeof(T);
-                if constexpr (!std::is_pod_v<T>) for (unsigned __int64 i = 0; i < N; ++i) (&p[i])->~T();
-                cpu_allocator().Free(alloced);
+                cpu_allocator().free(p);
             }
         };
         __declspec(noinline) static T* create(unsigned int N) {
-            auto* ptr = cpu_allocator().Alloc((sizeof(T) * N) + sizeof(block_type));
-            *(block_type**)(::byte*)(ptr->sub_buffer) = ptr;
-            T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(block_type));
-            if constexpr (!std::is_pod_v<T>) for (unsigned int i = 0; i < N; ++i) new (&out[i]) T;
-            return out;           
+            return cpu_allocator().alloc<T>(N);
         };
         template <typename... U> static T* create_single(U&&... args) {
-            constexpr unsigned int N = 1;
-            auto* ptr = cpu_allocator().Alloc((sizeof(T) * N) + sizeof(block_type));
-            *(block_type**)(::byte*)(ptr->sub_buffer) = ptr;
-            T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(block_type));
-            if constexpr (!std::is_pod_v<T> || (sizeof...(args) > 0)) new (&out[0]) T(std::move(args)...);
+            T* out = cpu_allocator().alloc<T>(1);
+            std::destroy_n(out, 1);
+            new (out) T(std::move(args)...);
             return out;
         };
     };
@@ -1437,34 +1426,11 @@ public:
     template <typename T>
     static auto make_shared(unsigned int N) {
         struct helper {
-             static void destroy(T* p) noexcept { // delete a pointer
-                static_assert(0 < sizeof(T), "can't delete an incomplete type");
-                auto* ptr = (void*)((::byte*)p - sizeof(dynamic_cpu_allocator::dynamic_block*));
-                auto* alloced = *(dynamic_cpu_allocator::dynamic_block**)(::byte*)(ptr);
-                unsigned int N = (alloced->length - sizeof(dynamic_cpu_allocator::dynamic_block*)) / sizeof(T);
-                if constexpr (!std::is_pod_v<T>) {
-                    for (unsigned int i = 0; i < N; ++i)
-                        (&p[i])->~T();
-                }
-                cpu_allocator().Free(alloced);
+            static void destroy(T* p) noexcept { // delete a pointer
+                cpu_allocator().free(p);
             };
-             static T* create(unsigned int N) {
-                //N = ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
-                auto* ptr = cpu_allocator().Alloc((sizeof(T) * N) + sizeof(dynamic_cpu_allocator::dynamic_block*));
-
-                *(dynamic_cpu_allocator::dynamic_block**)(::byte*)(ptr->sub_buffer) = ptr;
-                T* out = (T*)(void*)((::byte*)ptr->sub_buffer + sizeof(dynamic_cpu_allocator::dynamic_block*));
-                if constexpr (std::is_pod_v<T>) {
-                    // best-case scenario!
-                    std::memset(out, 0, (sizeof(T) * N));
-                }
-                else {
-                    // need to actually initialize the array...
-                    for (unsigned int i = 0; i < N; ++i) {
-                        new (&out[i]) T;
-                    }
-                }
-                return out;
+            static T* create(unsigned int N) {
+                return cpu_allocator().alloc<T>(N);
             };
         };
         return std::shared_ptr<T[]>(helper::create(N), &helper::destroy);
@@ -1477,22 +1443,22 @@ public:
 
     public:
         gpu_event()
-            : _ev{ nullptr } 
+            : _ev{ nullptr }
         {};
-         gpu_event(cl_event ev) // assumes the event comes in fresh & retained already.
-            : _ev{ev} 
+        gpu_event(cl_event ev) // assumes the event comes in fresh & retained already.
+            : _ev{ ev }
         {};
-         gpu_event(gpu_event const& rhs) // copies
-            : _ev{ rhs._ev } 
+        gpu_event(gpu_event const& rhs) // copies
+            : _ev{ rhs._ev }
         {
             if (_ev) ::clRetainEvent(_ev);
         };
-         gpu_event(gpu_event && rhs) noexcept // moves
-            : _ev{ rhs._ev } 
+        gpu_event(gpu_event&& rhs) noexcept // moves
+            : _ev{ rhs._ev }
         {
             rhs._ev = nullptr;
         };
-         gpu_event& operator=(gpu_event const& rhs) { // copies        
+        gpu_event& operator=(gpu_event const& rhs) { // copies        
             if (_ev) {
                 ::clReleaseEvent(_ev);
             }
@@ -1500,7 +1466,7 @@ public:
             if (_ev) ::clRetainEvent(_ev);
             return *this;
         };
-         gpu_event& operator=(gpu_event&& rhs) noexcept { // moves        
+        gpu_event& operator=(gpu_event&& rhs) noexcept { // moves        
             if (_ev != nullptr) {
                 ::clReleaseEvent(_ev);
             }
@@ -1508,7 +1474,7 @@ public:
             rhs._ev = nullptr;
             return *this;
         };
-         ~gpu_event() {
+        ~gpu_event() {
             if (_ev != nullptr) {
                 ::clReleaseEvent(_ev);
             }
@@ -1521,9 +1487,9 @@ public:
     public:
         std::unique_ptr< gpu_event[], mem_matrix::helper<gpu_event>::array_delete>
             items; // leverages the CPU allocator for speed of allocation
-        long long 
+        long long
             len;
-        long long 
+        long long
             reservation;
 
         void clear() {
@@ -1616,7 +1582,7 @@ public:
     };
     dynamic_gpu_allocator::unique_ptr
         gpu_memory;
-    dynamic_cpu_allocator::unique_ptr
+    dynamic_cpu_allocator::unique_ptr<char>
         cpu_memory;
     unsigned long long
         len_bytes;
@@ -1643,10 +1609,10 @@ public:
     void read_from_device() {
         if (gpu_memory && cpu_memory) {
             events.clear();
-            cl_event evP;            
+            cl_event evP;
             cl_int err =
                 ::clEnqueueReadBuffer(
-                    program().queue.get().obj.get(), gpu_memory->sub_buffer, true, 0, len_bytes, cpu_memory->sub_buffer,
+                    program().queue.get().obj.get(), gpu_memory->sub_buffer, true, 0, len_bytes, (void*)cpu_memory.get(),
                     0, nullptr, &evP
                 );
             check_for_errors(err);
@@ -1665,22 +1631,22 @@ public:
                 if (eventStatus == CL_QUEUED || eventStatus == CL_SUBMITTED) std::this_thread::yield();
             } while (eventStatus != CL_COMPLETE);
             check_for_errors(err);
-            ::clReleaseEvent(ev);  
+            ::clReleaseEvent(ev);
 #else
             err = ::clWaitForEvents(1, &ev._ev);
             check_for_errors(err);
 #endif
-        }        
+        }
     };
     void write_to_device() {
         if (gpu_memory && cpu_memory) {
             events.clear();
 
-            
+
             cl_event evP;
             cl_int err =
                 ::clEnqueueWriteBuffer(
-                    program().queue.get().obj.get(), gpu_memory->sub_buffer, false, 0, len_bytes, cpu_memory->sub_buffer,
+                    program().queue.get().obj.get(), gpu_memory->sub_buffer, false, 0, len_bytes, (void*)cpu_memory.get(),
                     0, nullptr, &evP
                 );
             gpu_event ev(evP);
@@ -1694,7 +1660,7 @@ public:
     // immediate
     void ensure_host_mem_exists() {
         if (!cpu_memory) {
-            cpu_memory = cpu_allocator().make_unique((cl_uint)len_bytes);
+            cpu_memory = cpu_allocator().make_unique<char>((cl_uint)len_bytes);
         }
     };
     // immediate
@@ -1706,7 +1672,7 @@ public:
 
     mem_matrix(unsigned long long bytes, const bool allocate_cpu = true, const bool allocate_gpu = true)
         : len_bytes{ bytes }
-        , cpu_memory{ allocate_cpu ? cpu_allocator().make_unique((cl_uint)bytes) : nullptr }
+        , cpu_memory{ allocate_cpu ? cpu_allocator().make_unique<char>((cl_uint)bytes) : nullptr }
         , gpu_memory{ allocate_gpu ? gpu_allocator().make_unique((cl_uint)bytes) : nullptr }
         , events{}
     {};
@@ -1752,7 +1718,7 @@ public:
     template <typename T = void> T* cpu_data() {
         if (cpu_memory) {
             ensure_host_mem_exists();
-            return reinterpret_cast<T*>(cpu_memory->sub_buffer);
+            return reinterpret_cast<T*>(cpu_memory.get());
         }
         else {
             return nullptr;
@@ -1870,7 +1836,7 @@ private:
     };
     static void link_parameters(cl_kernel const& cl_kernel, std::array<gpu_event, 512>& waitlist, int& waitlistSize, const uint starting_position) { }
     template<template<class> typename G, typename T, class... U>
-     static void link_parameters(cl_kernel const& cl_kernel, std::array<gpu_event, 512>& waitlist, int& waitlistSize, const uint starting_position, const G<T>& parameter, const U&... parameters) {
+    static void link_parameters(cl_kernel const& cl_kernel, std::array<gpu_event, 512>& waitlist, int& waitlistSize, const uint starting_position, const G<T>& parameter, const U&... parameters) {
         if constexpr (std::is_same_v<G<T>, std::shared_ptr<T>>) {
             check_for_errors(::clSetKernelArgSVMPointer(cl_kernel, starting_position, parameter.get()));
         }
@@ -1880,7 +1846,7 @@ private:
         link_parameters(cl_kernel, waitlist, waitlistSize, starting_position + 1u, parameters...);
     };
     template<class G, class... U>
-     static void link_parameters(cl_kernel const& cl_kernel, std::array<gpu_event, 512>& waitlist, int& waitlistSize, const uint starting_position, const G& parameter, const U&... parameters) {
+    static void link_parameters(cl_kernel const& cl_kernel, std::array<gpu_event, 512>& waitlist, int& waitlistSize, const uint starting_position, const G& parameter, const U&... parameters) {
         if constexpr (std::is_same_v<G, mem_matrix>) {
             if (parameter.gpu_memory) {
                 link_parameter(cl_kernel, starting_position, parameter.gpu_memory->sub_buffer);
@@ -1889,17 +1855,17 @@ private:
                     size_t j = 0;
 
                     if (!parameter->events[i]._ev) continue;
-                        //err = ::clGetEventInfo(parameter->events[i]._ev, CL_EVENT_COMMAND_EXECUTION_STATUS, sizeof(eventStatus), &eventStatus, nullptr);
-                        //check_for_errors(err);
-                        //if (eventStatus == CL_COMPLETE) {
-                        //    continue;
-                        //}
-                    for (j = 0; j < waitlistSize; ++j) if (waitlist[j] == parameter.events[i]) break;                    
+                    //err = ::clGetEventInfo(parameter->events[i]._ev, CL_EVENT_COMMAND_EXECUTION_STATUS, sizeof(eventStatus), &eventStatus, nullptr);
+                    //check_for_errors(err);
+                    //if (eventStatus == CL_COMPLETE) {
+                    //    continue;
+                    //}
+                    for (j = 0; j < waitlistSize; ++j) if (waitlist[j] == parameter.events[i]) break;
                     if (j == waitlistSize) waitlist[waitlistSize++] = parameter.events[i];
                     if (waitlistSize >= 512) throw std::runtime_error("Too many events are queued for completion -- increase the size of the queue list");
                 }
             }
-            else {                
+            else {
                 throw std::runtime_error(GL::printf("Parameter %i was empty in call to GPU-accelerated function", (int)starting_position).to_string());
             }
         }
@@ -1911,17 +1877,17 @@ private:
                     size_t j = 0;
 
                     if (!parameter->events[i]._ev) continue;
-                        //err = ::clGetEventInfo(parameter->events[i]._ev, CL_EVENT_COMMAND_EXECUTION_STATUS, sizeof(eventStatus), &eventStatus, nullptr);
-                        //check_for_errors(err);
-                        //if (eventStatus == CL_COMPLETE) {
-                        //    continue;
-                        //}
-                    for (j = 0; j < waitlistSize; ++j) if (waitlist[j]._ev == parameter->events[i]._ev) break;                    
+                    //err = ::clGetEventInfo(parameter->events[i]._ev, CL_EVENT_COMMAND_EXECUTION_STATUS, sizeof(eventStatus), &eventStatus, nullptr);
+                    //check_for_errors(err);
+                    //if (eventStatus == CL_COMPLETE) {
+                    //    continue;
+                    //}
+                    for (j = 0; j < waitlistSize; ++j) if (waitlist[j]._ev == parameter->events[i]._ev) break;
                     if (j == waitlistSize) waitlist[waitlistSize++] = parameter->events[i];
-                    if (waitlistSize >= 512) throw std::runtime_error("Too many events are queued for completion -- increase the size of the queue list");                    
+                    if (waitlistSize >= 512) throw std::runtime_error("Too many events are queued for completion -- increase the size of the queue list");
                 }
             }
-            else throw std::runtime_error(GL::printf("Parameter %i was empty in call to GPU-accelerated function", (int)starting_position).to_string());            
+            else throw std::runtime_error(GL::printf("Parameter %i was empty in call to GPU-accelerated function", (int)starting_position).to_string());
         }
         else if constexpr (std::is_same_v<G, std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>>) {
             if (parameter && parameter->gpu_memory) {
@@ -1931,17 +1897,17 @@ private:
                     size_t j = 0;
 
                     if (!parameter->events[i]._ev) continue;
-                        //err = ::clGetEventInfo(parameter->events[i]._ev, CL_EVENT_COMMAND_EXECUTION_STATUS, sizeof(eventStatus), &eventStatus, nullptr);
-                        //check_for_errors(err);
-                        //if (eventStatus == CL_COMPLETE) {
-                        //    continue;
-                        //}
-                    for (j = 0; j < waitlistSize; ++j) if (waitlist[j]._ev == parameter->events[i]._ev) break;                    
+                    //err = ::clGetEventInfo(parameter->events[i]._ev, CL_EVENT_COMMAND_EXECUTION_STATUS, sizeof(eventStatus), &eventStatus, nullptr);
+                    //check_for_errors(err);
+                    //if (eventStatus == CL_COMPLETE) {
+                    //    continue;
+                    //}
+                    for (j = 0; j < waitlistSize; ++j) if (waitlist[j]._ev == parameter->events[i]._ev) break;
                     if (j == waitlistSize) waitlist[waitlistSize++] = parameter->events[i];
-                    if (waitlistSize >= 512) throw std::runtime_error("Too many events are queued for completion -- increase the size of the queue list");                    
+                    if (waitlistSize >= 512) throw std::runtime_error("Too many events are queued for completion -- increase the size of the queue list");
                 }
             }
-            else throw std::runtime_error(GL::printf("Parameter %i was empty in call to GPU-accelerated function", (int)starting_position).to_string());            
+            else throw std::runtime_error(GL::printf("Parameter %i was empty in call to GPU-accelerated function", (int)starting_position).to_string());
         }
         else if constexpr (std::is_same_v<G, static_mem_matrix>) {
             if (parameter.ptr && parameter.ptr->gpu_memory) {
@@ -1968,11 +1934,11 @@ public:
             = prog.functions[name];
         cl_int err
             = 0;
-        
+
         cl::NDRange
             cl_range_global = cl::NDRange(((count + WORKGROUP_SIZE - 1ull) / WORKGROUP_SIZE) * WORKGROUP_SIZE),
             cl_range_local = cl::NDRange(WORKGROUP_SIZE);
-        int waitlist_size 
+        int waitlist_size
             = 0;
 
         if (!kernel) {
@@ -2015,7 +1981,7 @@ namespace GL {
         private:
             GL::thread_object_no_default<std::pair<size_t, std::array<T, capacity>>> vecs;
         public:
-             void push_back(T&& arg) {
+            void push_back(T&& arg) {
                 std::pair<size_t, std::array<T, capacity>>& PR = *vecs;
                 // size_t pos = PR.first++ % capacity;
                 size_t pos = PR.first++ & (capacity - 1); // faster than %, must be power of two
@@ -2029,8 +1995,8 @@ namespace GL {
         template <typename T> static std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>& mem(matrix<T> const& rhs) {
             return reinterpret_cast<std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>&>(const_cast<matrix<T>&>(rhs).internal_memory());
         };
-        static unsigned int WorkgroupAdjustment(unsigned int N) { 
-            return ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE; 
+        static unsigned int WorkgroupAdjustment(unsigned int N) {
+            return ((N + (WORKGROUP_SIZE - 1)) / WORKGROUP_SIZE) * WORKGROUP_SIZE;
         };
         static auto& mem_free_helper() {
             class wrap {
@@ -2058,7 +2024,7 @@ namespace GL {
                     //mem_free_helper().Free(p);
                 }
             }
-            mem = nullptr;            
+            mem = nullptr;
         };
 
         template <typename T> matrix<T>::matrix(GL::GPU::dimensions d)
@@ -2480,7 +2446,7 @@ namespace GL {
             );
             return out;
         };
-        
+
         template <typename T> template<typename G> matrix<G> matrix<T>::cast() const {
             if constexpr (std::is_same_v<G, T>) {
                 return *this; // makes an implicit copy
@@ -2495,7 +2461,7 @@ namespace GL {
                 return out;
             }
         };
-        template <typename T> matrix<T> matrix<T>::random(unsigned int X, unsigned int Y, unsigned int Z) { 
+        template <typename T> matrix<T> matrix<T>::random(unsigned int X, unsigned int Y, unsigned int Z) {
             static auto func_name{ GL::string("Rand") + GL::string(opencl_impl::type_name<T>()) };
             if constexpr (std::is_floating_point_v<T>) {
 #if 1 // should result in better quality, but is performed on the CPU rather than the GPU. 
@@ -3374,8 +3340,8 @@ namespace GL {
                     if (auto W = out.write()) {
                         if (R_lhs && R_rhs && W) {
                             auto N = out.dim.count();
-                            for (unsigned int n = 0; n < N; ++n){
-                            //parallel::Std_For<unsigned int>(0, N, [&](unsigned int n) {
+                            for (unsigned int n = 0; n < N; ++n) {
+                                //parallel::Std_For<unsigned int>(0, N, [&](unsigned int n) {
                                 T v = (T)0;
                                 const unsigned int destination_Y = (unsigned int)std::floor((long double)n / (long double)final_num_rows);
                                 const unsigned int destination_X = n - (final_num_rows * destination_Y);
@@ -3421,14 +3387,14 @@ namespace GL {
             //    }
             //}
             //else {
-                auto N = this->size();
-                T out = (T)0;
-                if (auto R = this->read()) {
-                    for (unsigned int n = 0; n < N; ++n) {
-                        out += R(n);
-                    }
+            auto N = this->size();
+            T out = (T)0;
+            if (auto R = this->read()) {
+                for (unsigned int n = 0; n < N; ++n) {
+                    out += R(n);
                 }
-                return out;
+            }
+            return out;
             // }
         };
         template <typename T> T matrix<T>::avg() const {
@@ -3454,14 +3420,14 @@ namespace GL {
             //    }
             //}
             //else {
-                auto N = this->size();
-                T out = std::numeric_limits<T>::lowest();
-                if (auto R = this->read()) {
-                    for (unsigned int n = 0; n < N; ++n) {
-                        out = std::max(out, R(n));
-                    }
+            auto N = this->size();
+            T out = std::numeric_limits<T>::lowest();
+            if (auto R = this->read()) {
+                for (unsigned int n = 0; n < N; ++n) {
+                    out = std::max(out, R(n));
                 }
-                return out;
+            }
+            return out;
             //}
         };
         template <typename T> T matrix<T>::min() const {
@@ -3484,14 +3450,14 @@ namespace GL {
             //    }
             //}
             //else {
-                auto N = this->size();
-                T out = std::numeric_limits<T>::max();
-                if (auto R = this->read()) {
-                    for (unsigned int n = 0; n < N; ++n) {
-                        out = std::min(out, R(n));
-                    }
+            auto N = this->size();
+            T out = std::numeric_limits<T>::max();
+            if (auto R = this->read()) {
+                for (unsigned int n = 0; n < N; ++n) {
+                    out = std::min(out, R(n));
                 }
-                return out;
+            }
+            return out;
             //}
         };
         template <typename T> matrix<T> matrix<T>::convolve(matrix_kernel<float> const& K) const {
@@ -3551,7 +3517,7 @@ namespace GL {
         };
         template <typename T> matrix<char> matrix<T>::ASCII() const {
             static auto func_name{ GL::string("ASCII") + GL::string(opencl_impl::type_name<T>()) };
-            static std::vector<char> chars = []() {
+            static std::vector<char> chars{ []() {
                 std::vector<char> chars{
                     'Q', '&', '@', '$', 'B', 'M', 'W', '8', 'h', 'k', '%', '#', '0', 'O', 'b', 'd', 'p', 'q', 'w', 'm', 'Z',
                     'C', 'U', 'X', 'I', 'a', 'o', 'z', 'c', 'f', 'Y', 'v', 'u', 'n', 'x', 'r', 'L', 'J', 'j', 't', '|',
@@ -3560,7 +3526,7 @@ namespace GL {
                 };
                 std::reverse(chars.begin(), chars.end());
                 return chars;
-            }();
+            }() };
             static auto ramp{ matrix<char>::from_vector(chars) };
             mem(ramp)->wait_for_events();
             auto thisMinV = this->min();
@@ -3984,17 +3950,17 @@ namespace GL {
             if (1) {
                 matrix<T>(10) + matrix<T>(10);
                 matrix<T>(10) - matrix<T>(10);
-                matrix<T>(10) * matrix<T>(10);
+                matrix<T>(10)* matrix<T>(10);
                 matrix<T>(10) / matrix<T>(10);
 
                 matrix<T>(10) + T{ 0 };
                 matrix<T>(10) - T{ 0 };
-                matrix<T>(10) * T{ 1 };
+                matrix<T>(10)* T { 1 };
                 matrix<T>(10) / T{ 1 };
 
                 T{ 0 } + matrix<T>(10);
                 T{ 0 } - matrix<T>(10);
-                T{ 1 } * matrix<T>(10);
+                T{ 1 } *matrix<T>(10);
                 T{ 1 } / matrix<T>(10);
             }
             for_each_type([](auto const& to) {
@@ -4120,22 +4086,22 @@ namespace GL {
             if (GL::util::get_current_epoch() > 0) return;
             for_each_type([](auto const& with) {
                 do_precompile(with);
-            });
+                });
         };
     };
 
-    void* 
+    void*
         arena_memory_pool::malloc_bytes(unsigned int bytes) {
         // return Mem_Alloc(bytes); // significantly slower
         return (void*)mem_matrix::helper<char>::create(bytes / sizeof(char));
     };
-    void 
+    void
         arena_memory_pool::free(void* p) {
         //Mem_Free(p); // significantly slower
         mem_matrix::helper<char>::array_delete()((char*)p);
     };
     std::string
         arena_memory_pool::debug() {
-        return GL::printf("gpu(%i / %i) cpu(%i / %i)", (int)mem_matrix::gpu_allocator().size(), (int)1, (int)mem_matrix::cpu_allocator().size(), (int)mem_matrix::cpu_allocator().num_threads()).to_string();
+        return GL::printf("gpu(%i / %i) cpu(%i / %i)", (int)mem_matrix::gpu_allocator().size(), (int)mem_matrix::gpu_allocator().size(), (int)1, (int)1).to_string();
     };
 };
