@@ -7,6 +7,1936 @@
 
 // GL::Proxy_Functions, which wrap other functions into a shareable interface
 namespace GL {
+    class Function;
+    class Function_Caller;
+
+    template <typename R, typename Class, typename... T> class Const_Member_Function_Traits {
+    public:
+        using argType = std::tuple<T...>;
+        using classType = Class const&;
+        using returnType = R;
+        static constexpr auto numArgs{ std::tuple_size_v< argType > };
+        Const_Member_Function_Traits(R(Class::* f)(T...) const) {
+            if (!m_attr) m_attr = f;
+        };
+        ~Const_Member_Function_Traits() = default;
+
+    private:
+        inline static R(Class::* m_attr)(T...) const = nullptr;
+
+    public:
+        static R call(const any* begin) {
+            if constexpr (numArgs >= 15) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13].cast<std::tuple_element_t<12, argType>>(), begin[14].cast<std::tuple_element_t<13, argType>>(), begin[15].cast<std::tuple_element_t<14, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 14) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13].cast<std::tuple_element_t<12, argType>>(), begin[14].cast<std::tuple_element_t<13, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 13) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13].cast<std::tuple_element_t<12, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 12) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>()
+                    );
+            }
+
+            else if constexpr (numArgs == 11) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 10) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 9) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9].cast<std::tuple_element_t<8, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 8) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>()
+                    );
+            }
+
+            else if constexpr (numArgs == 7) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 6) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 5) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 4) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>()
+                    );
+            }
+
+            else if constexpr (numArgs == 3) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 2) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 1) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 0) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    );
+            }
+        };
+    };
+    template <typename R, typename Class, typename... T> class Member_Function_Traits {
+    public:
+        using argType = std::tuple<T...>;
+        using classType = Class&;
+        using returnType = R;
+        static constexpr auto numArgs{ std::tuple_size_v< argType > };
+        Member_Function_Traits(R(Class::* f)(T...)) {
+            if (!m_attr) m_attr = f;
+        };
+        ~Member_Function_Traits() = default;
+
+    private:
+        inline static R(Class::* m_attr)(T...) = nullptr;
+
+    public:
+        static R call(const any* begin) {
+            if constexpr (numArgs >= 15) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13].cast<std::tuple_element_t<12, argType>>(), begin[14].cast<std::tuple_element_t<13, argType>>(), begin[15].cast<std::tuple_element_t<14, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 14) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13].cast<std::tuple_element_t<12, argType>>(), begin[14].cast<std::tuple_element_t<13, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 13) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13].cast<std::tuple_element_t<12, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 12) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>()
+                    );
+            }
+
+            else if constexpr (numArgs == 11) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 10) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 9) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9].cast<std::tuple_element_t<8, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 8) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>()
+                    );
+            }
+
+            else if constexpr (numArgs == 7) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 6) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 5) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5].cast<std::tuple_element_t<4, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 4) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>()
+                    );
+            }
+
+            else if constexpr (numArgs == 3) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 2) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 1) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    begin[1].cast<std::tuple_element_t<0, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 0) {
+                return (begin[0].cast<classType>().*m_attr)(
+                    );
+            }
+        };
+    };
+    template <typename R, typename Class> class Attribute_Function_Traits {
+    public:
+        using classType = Class;
+        using returnType = R;
+        static_assert(!std::is_same_v<void, returnType>);
+
+        Attribute_Function_Traits(R Class::* t_attr) {
+            if (!m_attr) m_attr = t_attr;
+        };
+        ~Attribute_Function_Traits() = default;
+
+    private:
+        inline static R Class::* m_attr = nullptr;
+
+    public:
+        static returnType& call(const any* begin) {
+            return begin->cast<Class>().*m_attr;
+        };
+    };
+    template <typename R, typename... T> class Static_Function_Traits {
+    public:
+        using argType = std::tuple<T...>;
+        using returnType = R;
+        static constexpr auto numArgs{ std::tuple_size_v< argType > };
+        Static_Function_Traits(R(*f)(T...)) {
+            if (!m_attr) m_attr = f;
+        };
+        ~Static_Function_Traits() = default;
+
+    private:
+        inline static R(*m_attr)(T...) = nullptr;
+
+    public:
+        static R call(const any* begin) {
+            if constexpr (numArgs >= 16) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13 - 1].cast<std::tuple_element_t<12, argType>>(), begin[14 - 1].cast<std::tuple_element_t<13, argType>>(), begin[15 - 1].cast<std::tuple_element_t<14, argType>>(), begin[16 - 1].cast<std::tuple_element_t<15, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 15) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13 - 1].cast<std::tuple_element_t<12, argType>>(), begin[14 - 1].cast<std::tuple_element_t<13, argType>>(), begin[15 - 1].cast<std::tuple_element_t<14, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 14) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13 - 1].cast<std::tuple_element_t<12, argType>>(), begin[14 - 1].cast<std::tuple_element_t<13, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 13) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13 - 1].cast<std::tuple_element_t<12, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 12) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>()
+                    );
+            }
+
+            else if constexpr (numArgs == 11) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 10) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 9) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 8) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>()
+                    );
+            }
+
+            else if constexpr (numArgs == 7) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 6) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 5) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 4) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>()
+                    );
+            }
+
+            else if constexpr (numArgs == 3) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 2) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 1) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 0) {
+                return (*m_attr)(
+                    );
+            }
+        };
+    };
+    template <typename LambdaFunction> class Lambda_Function_Traits {
+    private:
+        using function_traits = GL::parallel::impl::function_traits< decltype(std::function(std::declval<LambdaFunction>())) >;
+    public:
+        using argType = typename function_traits::arguments;
+        using returnType = typename function_traits::result_type;
+        static constexpr auto numArgs{ std::tuple_size_v< argType > };
+        Lambda_Function_Traits() = default;
+        ~Lambda_Function_Traits() = default;
+    public:
+        static returnType call(const any* begin, LambdaFunction const& m_attr) {
+            if constexpr (numArgs >= 16) {
+                return m_attr(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13 - 1].cast<std::tuple_element_t<12, argType>>(), begin[14 - 1].cast<std::tuple_element_t<13, argType>>(), begin[15 - 1].cast<std::tuple_element_t<14, argType>>(), begin[16 - 1].cast<std::tuple_element_t<15, argType>>()
+                );
+            }
+            else if constexpr (numArgs == 15) {
+                return m_attr(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13 - 1].cast<std::tuple_element_t<12, argType>>(), begin[14 - 1].cast<std::tuple_element_t<13, argType>>(), begin[15 - 1].cast<std::tuple_element_t<14, argType>>()
+                );
+            }
+            else if constexpr (numArgs == 14) {
+                return m_attr(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13 - 1].cast<std::tuple_element_t<12, argType>>(), begin[14 - 1].cast<std::tuple_element_t<13, argType>>()
+                );
+            }
+            else if constexpr (numArgs == 13) {
+                return m_attr(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13 - 1].cast<std::tuple_element_t<12, argType>>()
+                );
+            }
+            else if constexpr (numArgs == 12) {
+                return m_attr(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>()
+                );
+            }
+
+            else if constexpr (numArgs == 11) {
+                return m_attr(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>()
+                );
+            }
+            else if constexpr (numArgs == 10) {
+                return m_attr(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>()
+                );
+            }
+            else if constexpr (numArgs == 9) {
+                return m_attr(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>()
+                );
+            }
+            else if constexpr (numArgs == 8) {
+                return m_attr(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>()
+                );
+            }
+
+            else if constexpr (numArgs == 7) {
+                return m_attr(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>()
+                );
+            }
+            else if constexpr (numArgs == 6) {
+                return m_attr(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>()
+                );
+            }
+            else if constexpr (numArgs == 5) {
+                return m_attr(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>()
+                );
+            }
+            else if constexpr (numArgs == 4) {
+                return m_attr(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>()
+                );
+            }
+
+            else if constexpr (numArgs == 3) {
+                return m_attr(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>()
+                );
+            }
+            else if constexpr (numArgs == 2) {
+                return m_attr(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>()
+                );
+            }
+            else if constexpr (numArgs == 1) {
+                return m_attr(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>()
+                );
+            }
+            else if constexpr (numArgs == 0) {
+                return m_attr(
+                );
+            }
+        };
+    };
+
+    class Function_Caller {
+    public:
+        bool UseSimplifiedArguments = false;
+
+        virtual ~Function_Caller() = default;
+        // implimentation-specific function that may include a reference, a shared pointer, a value-type, etc. 
+        virtual void call(const any* const begin, any* const out) const = 0;
+        // implimentation-specific function specifically intended copy-out the return value without wrapping it as an 'any'
+        virtual void call(const any* const begin, void* out_destination, size_t out_size) const = 0;
+        // returns true if the underlying, real function return of the underlying function exactly matches the provided type.
+        virtual bool return_type_explicit_match(std::type_info const& match) const = 0;
+
+        virtual size_t num_arguments() const = 0;
+        virtual GL::type const& argument(size_t index) const = 0;
+        virtual GL::type const& returns() const = 0;
+        std::array<const GL::type*, 16> arguments() const {
+            return std::array<const GL::type*, 16>{
+                &argument(0), & argument(1), & argument(2), & argument(3),
+                    & argument(4), & argument(5), & argument(6), & argument(7),
+                    & argument(8), & argument(9), & argument(10), & argument(11),
+                    & argument(12), & argument(13), & argument(14), & argument(15)
+            };
+        };
+    };
+
+    namespace {
+        template <typename Function> class Const_Member_Function_Caller final : public Function_Caller {
+        public:
+            using traits = decltype(Const_Member_Function_Traits(std::declval< Function>()));
+            Const_Member_Function_Caller(Function&& Func) {
+                (void)Const_Member_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
+            };
+            virtual ~Const_Member_Function_Caller() = default;
+            static typename traits::returnType call(const any* begin) {
+                return traits::call(begin);
+            };
+            void call(const any* const begin, any* const out) const override {
+                if constexpr (std::is_same_v<void, typename traits::returnType>) {
+                    call(begin);
+                }
+                else {
+                    if (out) {
+#if 1
+                        if ((out->uuid() & uuid::TEMPORARY) == 0) {
+                            if ((out->uuid() & uuid::INV_FLAGS) > 0) {
+                                auto& ref = uuid::get_uuid(out->uuid());
+                                if (GL::interlocked::decrement(ref.count) == 0) {
+                                    ref.count = 1;
+                                    ref.data = GL::type_erasure::wrap(call(begin));
+                                    const_cast<void*&>(out->ptr()) = ref.data->get();
+                                    const_cast<GL::type&>(out->type()) = GL::type_of<typename traits::returnType>();
+                                }
+                                else {
+                                    const_cast<unsigned long&>(out->uuid()) = 0;
+                                    *out = any::instance(call(begin));
+                                }
+                            }
+                            else {
+                                *out = any::instance(call(begin));
+                            }
+                        }
+                        else {
+                            *out = any::instance(call(begin));
+                        }
+#else
+                        * out = any::instance(call(begin));
+#endif
+                    }
+                    else {
+                        call(begin);
+                    }
+                }
+            };
+            void call(const any* const begin, void* out_destination, size_t out_size) const override {
+                if constexpr (std::is_same_v<void, typename traits::returnType>) {
+                    call(begin);
+                }
+                else {
+                    if (out_destination && (out_size >= sizeof(std::decay_t<typename traits::returnType>)))
+                        if constexpr (std::is_pod_v<std::decay_t<typename traits::returnType>>) {
+                            decltype(auto) recieved = call(begin);
+                            std::memcpy(out_destination, &recieved, sizeof(std::decay_t<typename traits::returnType>));
+                        }
+                        else {
+                            new (out_destination) std::decay_t<typename traits::returnType>(call(begin));
+                        }
+                    else
+                        if (GL::string err_str = GL::prints(GL::string(R"(
+Call to function "%s" with explicit value return failed due to incorrect parameter sizing (%zu, expected %zu for return type of "%s").
+                )").remove_leading_and_trailing_whitespace(),
+                            typeid(Function).name(),
+                            out_size,
+                            sizeof(std::decay_t<typename traits::returnType>),
+                            typeid(std::decay_t<typename traits::returnType>).name()
+                        ); err_str.length() > 0)
+                            throw std::runtime_error(err_str.to_string());
+                }
+            };
+            bool return_type_explicit_match(std::type_info const& match) const override {
+                return typeid(typename traits::returnType) == match;
+            };
+            size_t num_arguments() const override {
+                return traits::numArgs + 1;
+            };
+            GL::type const& argument(size_t index) const override {
+                if (index == 0)
+                    return GL::type_of<typename traits::classType>();
+                switch (index - 1) {
+                case 0: if constexpr (traits::numArgs > 0) return GL::type_of<std::tuple_element_t<0, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 1: if constexpr (traits::numArgs > 1) return GL::type_of<std::tuple_element_t<1, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 2: if constexpr (traits::numArgs > 2) return GL::type_of<std::tuple_element_t<2, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 3: if constexpr (traits::numArgs > 3) return GL::type_of<std::tuple_element_t<3, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 4: if constexpr (traits::numArgs > 4) return GL::type_of<std::tuple_element_t<4, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 5: if constexpr (traits::numArgs > 5) return GL::type_of<std::tuple_element_t<5, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 6: if constexpr (traits::numArgs > 6) return GL::type_of<std::tuple_element_t<6, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 7: if constexpr (traits::numArgs > 7) return GL::type_of<std::tuple_element_t<7, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 8: if constexpr (traits::numArgs > 8) return GL::type_of<std::tuple_element_t<8, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 9: if constexpr (traits::numArgs > 9) return GL::type_of<std::tuple_element_t<9, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 10: if constexpr (traits::numArgs > 10) return GL::type_of<std::tuple_element_t<10, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 11: if constexpr (traits::numArgs > 11) return GL::type_of<std::tuple_element_t<11, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 12: if constexpr (traits::numArgs > 12) return GL::type_of<std::tuple_element_t<12, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 13: if constexpr (traits::numArgs > 13) return GL::type_of<std::tuple_element_t<13, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 14: if constexpr (traits::numArgs > 14) return GL::type_of<std::tuple_element_t<14, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 15: if constexpr (traits::numArgs > 15) return GL::type_of<std::tuple_element_t<15, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                default:
+                    return GL::type_of<GL::undefined>();
+                }
+            };
+            GL::type const& returns() const override {
+                return GL::type_of<typename traits::returnType>();
+            };
+        };
+        template <typename Function> class Member_Function_Caller final : public Function_Caller {
+        public:
+            using traits = decltype(Member_Function_Traits(std::declval< Function>()));
+            Member_Function_Caller(Function&& Func) {
+                (void)Member_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
+            };
+            virtual ~Member_Function_Caller() = default;
+            static typename traits::returnType call(const any* begin) {
+                return traits::call(begin);
+            };
+            void call(const any* const begin, any* const out) const override {
+                if constexpr (std::is_same_v<void, typename traits::returnType>) {
+                    call(begin);
+                }
+                else {
+                    if (out) {
+#if 1
+                        if ((out->uuid() & uuid::TEMPORARY) == 0) {
+                            if ((out->uuid() & uuid::INV_FLAGS) > 0) {
+                                auto& ref = uuid::get_uuid(out->uuid());
+                                if (GL::interlocked::decrement(ref.count) == 0) {
+                                    ref.count = 1;
+                                    ref.data = GL::type_erasure::wrap(call(begin));
+                                    const_cast<void*&>(out->ptr()) = ref.data->get();
+                                    const_cast<GL::type&>(out->type()) = GL::type_of<typename traits::returnType>();
+                                }
+                                else {
+                                    const_cast<unsigned long&>(out->uuid()) = 0;
+                                    *out = any::instance(call(begin));
+                                }
+                            }
+                            else {
+                                *out = any::instance(call(begin));
+                            }
+                        }
+                        else {
+                            *out = any::instance(call(begin));
+                        }
+#else
+                        * out = any::instance(call(begin));
+#endif
+                    }
+                    else {
+                        call(begin);
+                    }
+                }
+            };
+            void call(const any* const begin, void* out_destination, size_t out_size) const override {
+                if constexpr (std::is_same_v<void, typename traits::returnType>) {
+                    call(begin);
+                }
+                else {
+                    if (out_destination && (out_size >= sizeof(std::decay_t<typename traits::returnType>)))
+                        if constexpr (std::is_pod_v<std::decay_t<typename traits::returnType>>) {
+                            decltype(auto) recieved = call(begin);
+                            std::memcpy(out_destination, &recieved, sizeof(std::decay_t<typename traits::returnType>));
+                        }
+                        else {
+                            new (out_destination) std::decay_t<typename traits::returnType>(call(begin));
+                        }
+                    else
+                        if (GL::string err_str = GL::prints(GL::string(R"(
+Call to function "%s" with explicit value return failed due to incorrect parameter sizing (%zu, expected %zu for return type of "%s").
+                )").remove_leading_and_trailing_whitespace(),
+                            typeid(Function).name(),
+                            out_size,
+                            sizeof(std::decay_t<typename traits::returnType>),
+                            typeid(std::decay_t<typename traits::returnType>).name()
+                        ); err_str.length() > 0)
+                            throw std::runtime_error(err_str.to_string());
+                }
+            };
+            bool return_type_explicit_match(std::type_info const& match) const override {
+                return typeid(typename traits::returnType) == match;
+            };
+            size_t num_arguments() const override {
+                return traits::numArgs + 1;
+            };
+            GL::type const& argument(size_t index) const override {
+                if (index == 0)
+                    return GL::type_of<typename traits::classType>();
+                switch (index - 1) {
+                case 0: if constexpr (traits::numArgs > 0) return GL::type_of<std::tuple_element_t<0, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 1: if constexpr (traits::numArgs > 1) return GL::type_of<std::tuple_element_t<1, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 2: if constexpr (traits::numArgs > 2) return GL::type_of<std::tuple_element_t<2, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 3: if constexpr (traits::numArgs > 3) return GL::type_of<std::tuple_element_t<3, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 4: if constexpr (traits::numArgs > 4) return GL::type_of<std::tuple_element_t<4, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 5: if constexpr (traits::numArgs > 5) return GL::type_of<std::tuple_element_t<5, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 6: if constexpr (traits::numArgs > 6) return GL::type_of<std::tuple_element_t<6, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 7: if constexpr (traits::numArgs > 7) return GL::type_of<std::tuple_element_t<7, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 8: if constexpr (traits::numArgs > 8) return GL::type_of<std::tuple_element_t<8, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 9: if constexpr (traits::numArgs > 9) return GL::type_of<std::tuple_element_t<9, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 10: if constexpr (traits::numArgs > 10) return GL::type_of<std::tuple_element_t<10, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 11: if constexpr (traits::numArgs > 11) return GL::type_of<std::tuple_element_t<11, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 12: if constexpr (traits::numArgs > 12) return GL::type_of<std::tuple_element_t<12, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 13: if constexpr (traits::numArgs > 13) return GL::type_of<std::tuple_element_t<13, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 14: if constexpr (traits::numArgs > 14) return GL::type_of<std::tuple_element_t<14, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 15: if constexpr (traits::numArgs > 15) return GL::type_of<std::tuple_element_t<15, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                default:
+                    return GL::type_of<GL::undefined>();
+                }
+            };
+            GL::type const& returns() const override {
+                return GL::type_of<typename traits::returnType>();
+            };
+        };
+        template<typename Ret, typename Class, typename... Param> auto Member_Function_Caller_Impl(Ret(Class::* f)(Param...) const) {
+            using Type = decltype(Const_Member_Function_Caller(std::move(f)));
+            return GL::make_shared<Type>(std::move(f));
+        };
+        template<typename Ret, typename Class, typename... Param> auto Member_Function_Caller_Impl(Ret(Class::* f)(Param...)) {
+            using Type = decltype(Member_Function_Caller(std::move(f)));
+            return GL::make_shared<Type>(std::move(f));
+        };
+        template <typename Function> class Const_Attribute_Function_Caller final : public Function_Caller {
+        public:
+            using traits = decltype(Attribute_Function_Traits(std::declval< Function>()));
+            Const_Attribute_Function_Caller(Function&& Func) {
+                (void)Attribute_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
+            };
+            virtual ~Const_Attribute_Function_Caller() = default;
+            static typename traits::returnType& call(const any* begin) {
+                return traits::call(begin);
+            };
+            void call(const any* const begin, any* const out) const override {
+                if (out) {
+                    if constexpr (std::is_same_v<GL::any, std::decay_t<typename traits::returnType>> || std::is_same_v<any, std::decay_t<typename traits::returnType>>) {
+                        *out = call(begin);
+                        if (begin->type().is_const()) *out |= (GL::type::Const | GL::type::Reference);
+                        else *out |= GL::type::Reference;
+                    }
+                    else if constexpr (std::is_pointer<typename traits::returnType>::value) {
+                        *out = any::wrap_member(*begin, *call(begin));
+                        if (begin->type().is_const()) *out |= GL::type::Const;
+                    }
+                    else {
+                        *out = any::wrap_member(*begin, call(begin));
+                        if (begin->type().is_const()) *out |= GL::type::Const;
+                    }
+                }
+            };
+            void call(const any* const begin, void* out_destination, size_t out_size) const override {
+                if (out_destination && (out_size >= sizeof(std::decay_t<typename traits::returnType>))) {
+                    typename traits::returnType& ref = call(begin);
+                    if constexpr (std::is_pod_v<std::decay_t<typename traits::returnType>>) {
+                        std::memcpy(out_destination, &ref, sizeof(std::decay_t<typename traits::returnType>));
+                    }
+                    else {
+                        new (out_destination) std::decay_t<typename traits::returnType>(ref);
+                    }
+                }
+                else
+                    if (GL::string err_str = GL::prints(GL::string(R"(
+Call to function "%s" with explicit value return failed due to incorrect parameter sizing (%zu, expected %zu for return type of "%s").
+                )").remove_leading_and_trailing_whitespace(),
+                        typeid(Function).name(),
+                        out_size,
+                        sizeof(std::decay_t<typename traits::returnType>),
+                        typeid(std::decay_t<typename traits::returnType>).name()
+                    ); err_str.length() > 0)
+                        throw std::runtime_error(err_str.to_string());
+            };
+            bool return_type_explicit_match(std::type_info const& match) const override {
+                return typeid(typename traits::returnType) == match;
+            };
+            size_t num_arguments() const override {
+                return 1;
+            };
+            GL::type const& argument(size_t index) const override {
+                if (index == 0) return GL::type_of<typename traits::classType const&>();
+                else return GL::type_of<GL::undefined>();
+            };
+            GL::type const& returns() const override {
+                return GL::type_of<typename traits::returnType const&>();
+            };
+        };
+        template <typename Function> class Attribute_Function_Caller final : public Function_Caller {
+        public:
+            using traits = decltype(Attribute_Function_Traits(std::declval< Function>()));
+            Attribute_Function_Caller(Function&& Func) {
+                (void)Attribute_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
+            };
+            virtual ~Attribute_Function_Caller() = default;
+            static typename traits::returnType& call(const any* begin) {
+                return traits::call(begin);
+            };
+            void call(const any* const begin, any* const out) const override {
+                if (out) {
+                    if constexpr (std::is_same_v<GL::any, std::decay_t<typename traits::returnType>> || std::is_same_v<any, std::decay_t<typename traits::returnType>>) {
+                        *out = call(begin);
+                        if (begin->type().is_const()) *out |= (GL::type::Const | GL::type::Reference);
+                        else *out |= GL::type::Reference;
+                    }
+                    else if constexpr (std::is_pointer<typename traits::returnType>::value) {
+                        *out = any::wrap_member(*begin, *call(begin));
+                        if (begin->type().is_const()) *out |= GL::type::Const;
+                    }
+                    else {
+                        *out = any::wrap_member(*begin, call(begin));
+                        if (begin->type().is_const()) *out |= GL::type::Const;
+                    }
+                }
+            };
+            void call(const any* const begin, void* out_destination, size_t out_size) const override {
+                if (out_destination && (out_size >= sizeof(std::decay_t<typename traits::returnType>))) {
+                    typename traits::returnType& ref = call(begin);
+                    if constexpr (std::is_pod_v<std::decay_t<typename traits::returnType>>) {
+                        std::memcpy(out_destination, &ref, sizeof(std::decay_t<typename traits::returnType>));
+                    }
+                    else {
+                        new (out_destination) std::decay_t<typename traits::returnType>(ref);
+                    }
+                }
+                else
+                    if (GL::string err_str = GL::prints(GL::string(R"(
+Call to function "%s" with explicit value return failed due to incorrect parameter sizing (%zu, expected %zu for return type of "%s").
+                )").remove_leading_and_trailing_whitespace(),
+                        typeid(Function).name(),
+                        out_size,
+                        sizeof(std::decay_t<typename traits::returnType>),
+                        typeid(std::decay_t<typename traits::returnType>).name()
+                    ); err_str.length() > 0)
+                        throw std::runtime_error(err_str.to_string());
+            };
+            bool return_type_explicit_match(std::type_info const& match) const override {
+                return typeid(typename traits::returnType) == match;
+            };
+            size_t num_arguments() const override {
+                return 1;
+            };
+            GL::type const& argument(size_t index) const override {
+                if (index == 0) return GL::type_of<typename traits::classType&>();
+                else return GL::type_of<GL::undefined>();
+            };
+            GL::type const& returns() const override {
+                return GL::type_of<typename traits::returnType&>();
+            };
+        };
+        template <typename Function> class Static_Function_Caller final : public Function_Caller {
+        public:
+            using traits = decltype(Static_Function_Traits(std::declval<Function>()));
+            Static_Function_Caller(Function&& Func) {
+                (void)Static_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
+            };
+            virtual ~Static_Function_Caller() = default;
+
+            static typename traits::returnType call(const any* begin) {
+                return traits::call(begin);
+            };
+            void call(const any* const begin, any* const out) const override {
+                if constexpr (std::is_same_v<void, typename traits::returnType>) {
+                    call(begin);
+                }
+                else {
+                    if (out) {
+#if 1
+                        if ((out->uuid() & uuid::TEMPORARY) == 0) {
+                            if ((out->uuid() & uuid::INV_FLAGS) > 0) {
+                                auto& ref = uuid::get_uuid(out->uuid());
+                                if (GL::interlocked::decrement(ref.count) == 0) {
+                                    ref.count = 1;
+                                    ref.data = GL::type_erasure::wrap(call(begin));
+                                    const_cast<void*&>(out->ptr()) = ref.data->get();
+                                    const_cast<GL::type&>(out->type()) = GL::type_of<typename traits::returnType>();
+                                }
+                                else {
+                                    const_cast<unsigned long&>(out->uuid()) = 0;
+                                    *out = any::instance(call(begin));
+                                }
+                            }
+                            else {
+                                *out = any::instance(call(begin));
+                            }
+                        }
+                        else {
+                            *out = any::instance(call(begin));
+                        }
+#else
+                        * out = any::instance(call(begin));
+#endif
+
+                    }
+                    else {
+                        call(begin);
+                    }
+                }
+            };
+            void call(const any* const begin, void* out_destination, size_t out_size) const override {
+                if constexpr (std::is_same_v<void, typename traits::returnType>) {
+                    call(begin);
+                }
+                else {
+                    if (out_destination && (out_size >= sizeof(std::decay_t<typename traits::returnType>)))
+                        if constexpr (std::is_pod_v<std::decay_t<typename traits::returnType>>) {
+                            decltype(auto) recieved = call(begin);
+                            std::memcpy(out_destination, &recieved, sizeof(std::decay_t<typename traits::returnType>));
+                        }
+                        else {
+                            new (out_destination) std::decay_t<typename traits::returnType>(call(begin));
+                        }
+                    else
+                        if (GL::string err_str = GL::prints(GL::string(R"(
+Call to function "%s" with explicit value return failed due to incorrect parameter sizing (%zu, expected %zu for return type of "%s").
+                )").remove_leading_and_trailing_whitespace(),
+                            typeid(Function).name(),
+                            out_size,
+                            sizeof(std::decay_t<typename traits::returnType>),
+                            typeid(std::decay_t<typename traits::returnType>).name()
+                        ); err_str.length() > 0)
+                            throw std::runtime_error(err_str.to_string());
+                }
+            };
+            bool return_type_explicit_match(std::type_info const& match) const override {
+                return typeid(typename traits::returnType) == match;
+            };
+            size_t num_arguments() const override {
+                return traits::numArgs;
+            };
+            GL::type const& argument(size_t index) const override {
+                switch (index) {
+                case 0: if constexpr (traits::numArgs > 0) return GL::type_of<std::tuple_element_t<0, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 1: if constexpr (traits::numArgs > 1) return GL::type_of<std::tuple_element_t<1, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 2: if constexpr (traits::numArgs > 2) return GL::type_of<std::tuple_element_t<2, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 3: if constexpr (traits::numArgs > 3) return GL::type_of<std::tuple_element_t<3, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 4: if constexpr (traits::numArgs > 4) return GL::type_of<std::tuple_element_t<4, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 5: if constexpr (traits::numArgs > 5) return GL::type_of<std::tuple_element_t<5, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 6: if constexpr (traits::numArgs > 6) return GL::type_of<std::tuple_element_t<6, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 7: if constexpr (traits::numArgs > 7) return GL::type_of<std::tuple_element_t<7, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 8: if constexpr (traits::numArgs > 8) return GL::type_of<std::tuple_element_t<8, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 9: if constexpr (traits::numArgs > 9) return GL::type_of<std::tuple_element_t<9, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 10: if constexpr (traits::numArgs > 10) return GL::type_of<std::tuple_element_t<10, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 11: if constexpr (traits::numArgs > 11) return GL::type_of<std::tuple_element_t<11, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 12: if constexpr (traits::numArgs > 12) return GL::type_of<std::tuple_element_t<12, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 13: if constexpr (traits::numArgs > 13) return GL::type_of<std::tuple_element_t<13, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 14: if constexpr (traits::numArgs > 14) return GL::type_of<std::tuple_element_t<14, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 15: if constexpr (traits::numArgs > 15) return GL::type_of<std::tuple_element_t<15, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                default:
+                    return GL::type_of<GL::undefined>();
+                }
+            };
+            GL::type const& returns() const override {
+                return GL::type_of<typename traits::returnType>();
+            };
+        };
+        /* Converts to a static function caller if the lambda does not capture. Otherwise, uses the local function copy. */
+        template <typename Function> class Lambda_Function_Caller final : public Function_Caller {
+        private:
+            Function func;
+        public:
+            using traits = typename Lambda_Function_Traits< Function >;
+            Lambda_Function_Caller(Function&& Func) : func(std::forward<Function>(Func)) {
+                if constexpr (std::is_empty_v< Function >) {
+                    (void)Static_Function_Traits(+Func); // instantiate the static function pointer
+                }
+            };
+            virtual ~Lambda_Function_Caller() = default;
+            typename traits::returnType call(const any* begin) const {
+                if constexpr (std::is_empty_v< Function >) {
+                    using static_traits = decltype(Static_Function_Traits(+std::declval<Function>()));
+                    return static_traits::call(begin);
+                }
+                else {
+                    return Lambda_Function_Traits< Function >::call(begin, func);
+                }
+            };
+            void call(const any* const begin, any* const out) const override {
+                if constexpr (std::is_same_v<void, typename traits::returnType>) {
+                    call(begin);
+                }
+                else {
+                    if (out) {
+#if 1
+                        if ((out->uuid() & uuid::TEMPORARY) == 0) {
+                            if ((out->uuid() & uuid::INV_FLAGS) > 0) {
+                                auto& ref = uuid::get_uuid(out->uuid());
+                                if (GL::interlocked::decrement(ref.count) == 0) {
+                                    ref.count = 1;
+                                    ref.data = GL::type_erasure::wrap(call(begin));
+                                    const_cast<void*&>(out->ptr()) = ref.data->get();
+                                    const_cast<GL::type&>(out->type()) = GL::type_of<typename traits::returnType>();
+                                }
+                                else {
+                                    const_cast<unsigned long&>(out->uuid()) = 0;
+                                    *out = any::instance(call(begin));
+                                }
+                            }
+                            else {
+                                *out = any::instance(call(begin));
+                            }
+                        }
+                        else {
+                            *out = any::instance(call(begin));
+                        }
+#else
+                        * out = any::instance(call(begin));
+#endif
+                    }
+                    else {
+                        call(begin);
+                    }
+                }
+            };
+            void call(const any* const begin, void* out_destination, size_t out_size) const override {
+                if constexpr (std::is_same_v<void, typename traits::returnType>) {
+                    call(begin);
+                }
+                else {
+                    if (out_destination && (out_size >= sizeof(std::decay_t<typename traits::returnType>)))
+                        if constexpr (std::is_pod_v<std::decay_t<typename traits::returnType>>) {
+                            decltype(auto) recieved = call(begin);
+                            std::memcpy(out_destination, &recieved, sizeof(std::decay_t<typename traits::returnType>));
+                        }
+                        else {
+                            new (out_destination) std::decay_t<typename traits::returnType>(call(begin));
+                        }
+                    else
+                        if (GL::string err_str = GL::prints(GL::string(R"(
+Call to function "%s" with explicit value return failed due to incorrect parameter sizing (%zu, expected %zu for return type of "%s").
+                )").remove_leading_and_trailing_whitespace(),
+                            typeid(Function).name(),
+                            out_size,
+                            sizeof(std::decay_t<typename traits::returnType>),
+                            typeid(std::decay_t<typename traits::returnType>).name()
+                        ); err_str.length() > 0)
+                            throw std::runtime_error(err_str.to_string());
+                }
+            };
+            bool return_type_explicit_match(std::type_info const& match) const override {
+                return typeid(typename traits::returnType) == match;
+            };
+            size_t num_arguments() const override {
+                return traits::numArgs;
+            };
+            GL::type const& argument(size_t index) const override {
+                switch (index) {
+                case 0: if constexpr (traits::numArgs > 0) return GL::type_of<std::tuple_element_t<0, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 1: if constexpr (traits::numArgs > 1) return GL::type_of<std::tuple_element_t<1, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 2: if constexpr (traits::numArgs > 2) return GL::type_of<std::tuple_element_t<2, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 3: if constexpr (traits::numArgs > 3) return GL::type_of<std::tuple_element_t<3, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 4: if constexpr (traits::numArgs > 4) return GL::type_of<std::tuple_element_t<4, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 5: if constexpr (traits::numArgs > 5) return GL::type_of<std::tuple_element_t<5, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 6: if constexpr (traits::numArgs > 6) return GL::type_of<std::tuple_element_t<6, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 7: if constexpr (traits::numArgs > 7) return GL::type_of<std::tuple_element_t<7, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 8: if constexpr (traits::numArgs > 8) return GL::type_of<std::tuple_element_t<8, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 9: if constexpr (traits::numArgs > 9) return GL::type_of<std::tuple_element_t<9, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 10: if constexpr (traits::numArgs > 10) return GL::type_of<std::tuple_element_t<10, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 11: if constexpr (traits::numArgs > 11) return GL::type_of<std::tuple_element_t<11, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 12: if constexpr (traits::numArgs > 12) return GL::type_of<std::tuple_element_t<12, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 13: if constexpr (traits::numArgs > 13) return GL::type_of<std::tuple_element_t<13, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 14: if constexpr (traits::numArgs > 14) return GL::type_of<std::tuple_element_t<14, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 15: if constexpr (traits::numArgs > 15) return GL::type_of<std::tuple_element_t<15, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                default:
+                    return GL::type_of<GL::undefined>();
+                }
+            };
+            GL::type const& returns() const override {
+                return GL::type_of<typename traits::returnType>();
+            };
+        };
+    };
+
+    namespace detail {
+        template <typename T>
+        struct is_static_member_function : std::false_type {};
+
+        template <typename R, typename C, typename... Args>
+        struct is_static_member_function<R(C::*)(Args...) const> : std::false_type {};
+
+        template <typename R, typename C, typename... Args>
+        struct is_static_member_function<R(C::*)(Args...)> : std::false_type {};
+
+        template <typename R, typename C, typename... Args>
+        struct is_static_member_function<R(C::*)(Args...) const volatile> : std::false_type {};
+
+        template <typename R, typename C, typename... Args>
+        struct is_static_member_function<R(C::*)(Args...) volatile> : std::false_type {};
+
+        template <typename R, typename C, typename... Args>
+        struct is_static_member_function<R(C::*)(Args...)&> : std::false_type {};
+
+        template <typename R, typename C, typename... Args>
+        struct is_static_member_function<R(C::*)(Args...) const&> : std::false_type {};
+
+        template <typename R, typename C, typename... Args>
+        struct is_static_member_function<R(C::*)(Args...)&&> : std::false_type {};
+
+        template <typename R, typename C, typename... Args>
+        struct is_static_member_function<R(C::*)(Args...) const&&> : std::false_type {};
+
+        template <typename R, typename C, typename... Args>
+        struct is_static_member_function<R(C::*)(Args...) noexcept> : std::true_type {};
+
+        template <typename R, typename C, typename... Args>
+        struct is_static_member_function<R(C::*)(Args...) const noexcept> : std::true_type {};
+
+        template <typename R, typename C, typename... Args>
+        struct is_static_member_function<R(C::*)(Args...) volatile noexcept> : std::true_type {};
+
+        template <typename R, typename C, typename... Args>
+        struct is_static_member_function<R(C::*)(Args...) const volatile noexcept> : std::true_type {};
+
+
+        template<typename... Param> struct Function_Params {
+            typedef std::tuple<Param...> argType;
+            static constexpr auto numArgs = std::tuple_size_v<argType>;
+
+            // Specialization to unpack the tuple's internal parameter pack
+            template <typename Ret>
+            struct to_function_pointer {
+                using type = Ret(*)(Param...);
+            };
+        };
+
+        template<typename Ret, typename Class, typename Params, bool IsMember = false, bool IsMemberObject = false, bool IsObject = false/*, bool IsStatelessObject = false*/>
+        struct Function_Signature {
+            typedef Params Param_Types;
+            typedef Class Class_Type;
+            typedef Ret Return_Type;
+
+            // constexpr static const bool is_stateless_object = IsStatelessObject; // e.g. lambda object that does not capture anything
+            constexpr static const bool is_object = IsObject; // e.g. lambda object
+            constexpr static const bool is_member = IsMember; // e.g. first param MUST be an alive Class type. May be function or parameter.
+            constexpr static const bool is_member_object = IsMemberObject; // e.g. first param MUST be an alive Class type. Will be a parameter of the Class.
+            constexpr static const bool is_member_function = !is_member_object && is_member; // e.g. first param MUST be an alive Class type. Will be a parameter of the Class.
+            constexpr static const bool is_static_member_function = std::is_same_v< Class_Type, void>; // e.g. free function
+
+            template<typename T> constexpr Function_Signature(T&&) noexcept { };
+            constexpr Function_Signature() noexcept = default;
+        };
+
+        // Free functions
+        template<typename Ret, typename... Param>
+        Function_Signature(Ret(*f)(Param...))
+            ->Function_Signature<Ret, void, Function_Params<Param...>, false, false, false>; // static function
+
+        // no reference specifier
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...) volatile)
+            ->Function_Signature<Ret, Class, Function_Params<volatile Class&, Param...>, true, false, false>; // member function
+
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...) volatile const)
+            ->Function_Signature<Ret, Class, Function_Params<volatile const Class&, Param...>, true, false, false>; // member function
+
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...))
+            ->Function_Signature<Ret, Class, Function_Params<Class&, Param...>, true, false, false>; // member function
+
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...) const)
+            ->Function_Signature<Ret, Class, Function_Params<const Class&, Param...>, true, false, false>; // member function
+
+        // & reference specifier
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...) volatile&)
+            ->Function_Signature<Ret, Class, Function_Params<volatile Class&, Param...>, true, false, false>; // member function
+
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...) volatile const&)
+            ->Function_Signature<Ret, Class, Function_Params<volatile const Class&, Param...>, true, false, false>; // member function
+
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...)&)
+            ->Function_Signature<Ret, Class, Function_Params<Class&, Param...>, true, false, false>; // member function
+
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...) const&)
+            ->Function_Signature<Ret, Class, Function_Params<const Class&, Param...>, true, false, false>; // member function
+
+        // && reference specifier
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...) volatile&&)
+            ->Function_Signature<Ret, Class, Function_Params<volatile Class&&, Param...>, true, false, false>; // member function
+
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...) volatile const&&)
+            ->Function_Signature<Ret, Class, Function_Params<volatile const Class&&, Param...>, true, false, false>; // member function
+
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...)&&)
+            ->Function_Signature<Ret, Class, Function_Params<Class&&, Param...>, true, false, false>; // member function
+
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...) const&&)
+            ->Function_Signature<Ret, Class, Function_Params<const Class&&, Param...>, true, false, false>; // member function
+
+        // Free functions
+        template<typename Ret, typename... Param>
+        Function_Signature(Ret(*f)(Param...) noexcept)
+            ->Function_Signature<Ret, void, Function_Params<Param...>, false, false, false>; // static function
+
+        // no reference specifier
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...) volatile noexcept)
+            ->Function_Signature<Ret, Class, Function_Params<volatile Class&, Param...>, true, false, false>; // member function
+
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...) volatile const noexcept)
+            ->Function_Signature<Ret, Class, Function_Params<volatile const Class&, Param...>, true, false, false>; // member function
+
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...) noexcept)
+            ->Function_Signature<Ret, Class, Function_Params<Class&, Param...>, true, false, false>; // member function
+
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...) const noexcept)
+            ->Function_Signature<Ret, Class, Function_Params<const Class&, Param...>, true, false, false>; // member function
+
+        // & reference specifier
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...) volatile& noexcept)
+            ->Function_Signature<Ret, Class, Function_Params<volatile Class&, Param...>, true, false, false>; // member function
+
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...) volatile const& noexcept)
+            ->Function_Signature<Ret, Class, Function_Params<volatile const Class&, Param...>, true, false, false>; // member function
+
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...) & noexcept)
+            ->Function_Signature<Ret, Class, Function_Params<Class&, Param...>, true, false, false>; // member function
+
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...) const& noexcept)
+            ->Function_Signature<Ret, Class, Function_Params<const Class&, Param...>, true, false, false>; // member function
+
+        // && reference specifier
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...) volatile&& noexcept)
+            ->Function_Signature<Ret, Class, Function_Params<volatile Class&&, Param...>, true, false, false>; // member function
+
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...) volatile const&& noexcept)
+            ->Function_Signature<Ret, Class, Function_Params<volatile const Class&&, Param...>, true, false, false>; // member function
+
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...) && noexcept)
+            ->Function_Signature<Ret, Class, Function_Params<Class&&, Param...>, true, false, false>; // member function
+
+        template<typename Ret, typename Class, typename... Param>
+        Function_Signature(Ret(Class::* f)(Param...) const&& noexcept)
+            ->Function_Signature<Ret, Class, Function_Params<const Class&&, Param...>, true, false, false>; // member function
+
+        template<typename Ret, typename Class>
+        Function_Signature(Ret Class::* f)
+            ->Function_Signature<Ret, Class, Function_Params<Class&>, true, true, false>; // member object
+
+        namespace impl {
+
+            template<typename Ret, typename Class, typename Params, bool IsMember = false, bool IsMemberObject = false, bool IsObject = false/*, bool IsStatelessObject = false*/>
+            struct Function_Signature_m1 {
+                typedef Params Param_Types;
+                typedef Class Class_Type;
+                typedef Ret Return_Type;
+
+                // constexpr static const bool is_stateless_object = IsStatelessObject; // e.g. lambda object that does not capture anything
+                constexpr static const bool is_object = IsObject; // e.g. lambda object
+                constexpr static const bool is_member = IsMember; // e.g. first param MUST be an alive Class type. May be function or parameter.
+                constexpr static const bool is_member_object = IsMemberObject; // e.g. first param MUST be an alive Class type. Will be a parameter of the Class.
+                constexpr static const bool is_member_function = !is_member_object && is_member; // e.g. first param MUST be an alive Class type. Will be a parameter of the Class.
+                constexpr static const bool is_static_member_function = std::is_same_v< Class_Type, void>; // e.g. free function
+
+                template<typename T> constexpr Function_Signature_m1(T&&) noexcept { };
+                constexpr Function_Signature_m1() noexcept = default;
+            };
+
+            // Free functions
+            template<typename Ret, typename... Param>
+            Function_Signature_m1(Ret(*f)(Param...))
+                ->Function_Signature_m1<Ret, void, Function_Params<Param...>, false, false, false>; // static function
+
+            // no reference specifier
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...) volatile)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...) volatile const)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...))
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...) const)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            // & reference specifier
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...) volatile&)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...) volatile const&)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...)&)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...) const&)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            // && reference specifier
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...) volatile&&)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...) volatile const&&)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...)&&)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...) const&&)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            // Free functions
+            template<typename Ret, typename... Param>
+            Function_Signature_m1(Ret(*f)(Param...) noexcept)
+                ->Function_Signature_m1<Ret, void, Function_Params<Param...>, false, false, false>; // static function
+
+            // no reference specifier
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...) volatile noexcept)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...) volatile const noexcept)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...) noexcept)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...) const noexcept)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            // & reference specifier
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...) volatile& noexcept)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...) volatile const& noexcept)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...) & noexcept)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...) const& noexcept)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            // && reference specifier
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...) volatile&& noexcept)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...) volatile const&& noexcept)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...) && noexcept)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+            template<typename Ret, typename Class, typename... Param>
+            Function_Signature_m1(Ret(Class::* f)(Param...) const&& noexcept)
+                ->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+        }
+
+        // primary template handles types that have no nested ::type member:
+        template<class, class = std::void_t<>>
+        struct has_call_operator : std::false_type {};
+
+        // specialization recognizes types that do have a nested ::type member:
+        template<class T>
+        struct has_call_operator<T, std::void_t<decltype(&T::operator())>> : std::true_type {};
+
+        template<typename Func>
+        auto function_signature(Func const& f) {
+            if constexpr (has_call_operator<Func>::value) {
+                return Function_Signature<
+                    typename decltype(Function_Signature{ &std::decay_t<Func>::operator() })::Return_Type,
+                    void,
+                    typename decltype(impl::Function_Signature_m1{ &std::decay_t<Func>::operator() })::Param_Types,
+                    false,
+                    false,
+                    true
+                    // , std::is_empty_v<Func>
+                > {};
+            }
+            else {
+                return Function_Signature{ f };
+            }
+        };
+
+        template<typename Obj, typename Param1, typename... Rest>
+        Param1 get_first_param(Function_Params<Param1, Rest...>, Obj&& obj) {
+            return static_cast<Param1>(std::forward<Obj>(obj));
+        };
+
+    } // namespace chaiscript::dispatch::detail
+
+    // Manager for wrapped functions, adding support for default parameters.
+    class Function {
+    public:
+        // Wrap any function (static, lambda, member function, attribute access, etc.) into a callable. Types and aritys must match when calling. 
+        template <typename Func>
+        static GL::shared_ptr<Function_Caller> make_callable(Func&& func) {
+            typedef decltype(GL::detail::function_signature(func)) function_header;
+            if constexpr (function_header::is_object) { // function objects, e.g. auto x = [](){};
+                if constexpr (std::is_empty_v< Func >) {
+                    using Type = decltype(Static_Function_Caller(+std::move(func)));
+                    return GL::make_shared<Type>(+std::move(func));
+                }
+                else {
+                    using Type = decltype(Lambda_Function_Caller(std::move(func)));
+                    return GL::make_shared<Type>(std::move(func));
+                }
+            }
+            else if constexpr (function_header::is_member_object) { // member objects, e.g. return object.member;    
+                using Type = decltype(Attribute_Function_Caller(std::move(func)));
+                return GL::make_shared<Type>(std::move(func));
+            }
+            else if constexpr (function_header::is_member && !function_header::is_member_object) { // member functions, e.g. return object.member();
+                return Member_Function_Caller_Impl(std::move(func));
+            }
+            else if constexpr (function_header::is_static_member_function) { // static function pointers, e.g. static foo(){};   
+                using Type = decltype(Static_Function_Caller(std::move(func)));
+                return GL::make_shared<Type>(std::move(func));
+            }
+            else {
+                throw std::runtime_error("Did not handle conversion of provided function.");
+            }
+        };
+        struct function_wrapper_s {
+            struct argument_wrapper_s {
+                GL::string argument_name = GL::string::empty_string(); // argument name
+                any argument_default = nullptr; // argument's default value. Must exactly match the expected type of the function. 
+            };
+            GL::string name = GL::string::empty_string(); // function name
+            std::vector<argument_wrapper_s> arguments; // list of function arguments
+            GL::string description = GL::string::empty_string(); // function description
+            bool UseSimplifiedArguments = false; // true will result in faster code, but requires strict management of the lifetime of argument data, and dis-allows any type conversion of the argument data. 
+        };
+
+    public:
+        const GL::shared_ptr<Function_Caller> ptr; // 
+        const size_t num_arguments; // 
+        const GL::type* returns; // 
+        std::array<GL::type, 16> arguments; //   
+        std::array<any, 16> defaults; // 
+        GL::string name; // 
+        GL::string description; // 
+        std::array<GL::string, 16> argument_names; // 
+
+        Function(GL::shared_ptr<Function_Caller>&& rhs)
+            : ptr{ std::forward<GL::shared_ptr<Function_Caller>>(rhs) }
+            , num_arguments{ ptr->num_arguments() }
+            , returns{ &ptr->returns() }
+            , arguments{}
+            , defaults{}
+            , name{ GL::string::empty_string() }
+            , description{ GL::string::empty_string() }
+            , argument_names{}
+        {
+            auto actual_args = ptr->arguments();
+            for (int i = 0; i < 16; ++i)
+                if (actual_args[i]) arguments[i] = *actual_args[i];
+                else arguments[i] = GL::type_of<GL::undefined>();
+        };
+
+    private:
+        GL::string returns_string() const {
+            if (returns) return returns->name();
+            return "";
+        };
+        GL::string argument_string(size_t index) const {
+            if (arguments[index] == GL::type_of<GL::undefined>()) return GL::string::empty_string();
+            else if (defaults[index]) {
+                return arguments[index].name() + " = {}"; /// \todo
+            }
+            else {
+                return arguments[index].name();
+            }
+        };
+        GL::string arguments_string() const {
+            GL::string out;
+            for (size_t i = 0; i < num_arguments; ++i)
+                out = out.add_to_delim(argument_string(i), ", ");
+            return out;
+        };
+
+    public:
+        GL::string to_string() const {
+            return (returns_string() + " " + name + "(" + arguments_string() + ")").remove_leading_and_trailing(' ');
+        };
+
+    public:
+        // Evaluate the error or delta between the provided arguments and the expected arguments. 
+        // Values less than 1 are safe to call using the provided arguments. 
+        template<typename... Args> double argument_error(Args&&... args) const {
+            double error = 0;
+            int position = 0;
+            ([&] { // unwrap the parameter pack and copy the relevant data
+                if constexpr (std::is_same_v<decltype(args), any const&>)
+                    error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
+                else if constexpr (std::is_same_v<decltype(args), any&>)
+                    error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
+                else if constexpr (std::is_same_v<decltype(args), any&&>)
+                    error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
+                else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>)
+                    error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
+                else if constexpr (std::is_same_v<decltype(args), atomic_any const&>)
+                    error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
+                else if constexpr (std::is_same_v<decltype(args), atomic_any&>)
+                    error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
+                else if constexpr (std::is_same_v<decltype(args), atomic_any&&>)
+                    error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
+                else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, atomic_any>)
+                    error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
+                else
+                    error += 1'000'000.0 * !GL::type_of<std::remove_reference_t<decltype(args)>>().can_free_cast(arguments[position++], true);
+                }(), ...);
+
+            for (; position < num_arguments; ++position)
+                if (defaults[position].empty() || !defaults[position].type().can_free_cast(arguments[position], true))
+                    error += 1'000'000.0;
+                else
+                    error += 0.5 / num_arguments;
+
+            return error;
+        };
+
+    public:
+        // Convenience function that will allow the user to easily call a proxy function with arguments.
+        // Will automatically add default parameters if the number of arguments is less than required. 
+        // Does NOT handle type-conversions and assumes perfect type matches, INCLUDING WITH THE DEFAULT VALUES.
+        template<typename T = void, typename... Args> decltype(auto) do_call(Args&&... args) const {
+            unsigned char buf[sizeof(any) * 16];
+            int position = 0;
+            bool UseSimplifiedArguments = ptr->UseSimplifiedArguments;
+            ([&] { // unwrap the parameter pack and copy the relevant data
+                if constexpr (std::is_same_v<decltype(args), any const&>)
+                    std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));
+                else if constexpr (std::is_same_v<decltype(args), any&>)
+                    std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));
+                else if constexpr (std::is_same_v<decltype(args), any&&>)
+                    new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<any>(args));
+                else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>)
+                    std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));
+                else if constexpr (std::is_same_v<decltype(args), atomic_any const&>)
+                    new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
+                else if constexpr (std::is_same_v<decltype(args), atomic_any&>)
+                    new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
+                else if constexpr (std::is_same_v<decltype(args), atomic_any&&>)
+                    new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<atomic_any>(args));
+                else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, atomic_any>)
+                    new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
+                else if (UseSimplifiedArguments)
+                    new (&reinterpret_cast<any*>(&buf[0])[position++]) any(0, &args, GL::type_of<decltype(args)>());
+                else
+                    new (&reinterpret_cast<any*>(&buf[0])[position++]) any(any::instance(std::forward<decltype(args)>(args)));
+                }(), ...);
+
+            for (; position < num_arguments; ++position)
+                if (!defaults[position].empty())
+                    std::memcpy((&reinterpret_cast<any*>(&buf[0])[position]), &defaults[position], sizeof(any));
+                else
+                    if (GL::string err_str = GL::prints(GL::string(R"(
+Arity error at call of Function "%.*s" at Argument #%i "%.*s". Number of provided arguments did not match the number of required arguments, and a default was not located to fill the gap.
+                )").remove_leading_and_trailing_whitespace(),
+                        name.length(), name.c_str().data(),
+                        position,
+                        argument_names[position].length(), argument_names[position].c_str().data()
+                    ); err_str.length() > 0)
+                        throw std::runtime_error(err_str.to_string());
+
+            defer(position = 0; ([&] { // unwrap the parameter pack and unload the non-reference data
+                if constexpr (std::is_same_v<decltype(args), any const&>)
+                    position++;
+                else if constexpr (std::is_same_v<decltype(args), any&>)
+                    position++;
+                else if constexpr (std::is_same_v<decltype(args), any&&>)
+                    reinterpret_cast<any*>(&buf[0])[position++].~any();
+                else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>)
+                    position++;
+                else if constexpr (std::is_same_v<decltype(args), atomic_any const&>)
+                    reinterpret_cast<any*>(&buf[0])[position++].~any();
+                else if constexpr (std::is_same_v<decltype(args), atomic_any&>)
+                    reinterpret_cast<any*>(&buf[0])[position++].~any();
+                else if constexpr (std::is_same_v<decltype(args), atomic_any&&>)
+                    reinterpret_cast<any*>(&buf[0])[position++].~any();
+                else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, atomic_any>)
+                    reinterpret_cast<any*>(&buf[0])[position++].~any();
+                else if (UseSimplifiedArguments)
+                    position++;
+                else
+                    reinterpret_cast<any*>(&buf[0])[position++].~any();
+                }(), ...));
+
+            if constexpr (std::is_same_v<void, T>)
+                ptr->call(reinterpret_cast<any*>(&buf[0]), nullptr);
+            else {
+                /*thread_local*/ any out;
+                thread_local unsigned char arr[sizeof(std::decay_t<T>)];
+
+                if constexpr (std::is_same_v<any, T>) {
+                    ptr->call(reinterpret_cast<any*>(&buf[0]), &out);
+                    return /*std::move(*/out/*)*/;
+                }
+                else {
+                    if (UseSimplifiedArguments && ptr->return_type_explicit_match(typeid(T))) {
+                        ptr->call(reinterpret_cast<any*>(&buf[0]), reinterpret_cast<void*>(&arr[0]), sizeof(arr));
+                        defer(if (!std::is_pod_v<std::decay_t<T>>) std::destroy_at(reinterpret_cast<std::decay_t<T>*>(&arr[0])));
+                        return (T) * reinterpret_cast<std::decay_t<T>*>(&arr[0]);
+                    }
+                    else {
+                        ptr->call(reinterpret_cast<any*>(&buf[0]), &out);
+                        T to_return = out.cast<T>();
+                        //if ((out.uuid() & uuid::TEMPORARY) == 0) // if not temporary, then potentially call the destructor                    
+                            //out = nullptr;
+                        return to_return;
+                    }
+                }
+            }
+        };
+
+        // Convenience function that will allow the user to easily call a proxy function with arguments asynchronously.
+        // Will automatically add default parameters if the number of arguments is less than required. 
+        // Does NOT handle type-conversions and assumes perfect type matches, INCLUDING WITH THE DEFAULT VALUES.
+        template<typename T = void, typename... Args> decltype(auto) async_call(Args&&... args) const {
+            unsigned char buf[sizeof(any) * 16];
+            int position = 0;
+            ([&] { // unwrap the parameter pack and copy the relevant data
+                if constexpr (std::is_same_v<decltype(args), any const&>)
+                    new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
+                else if constexpr (std::is_same_v<decltype(args), any&>)
+                    new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
+                else if constexpr (std::is_same_v<decltype(args), any&&>)
+                    new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<any>(args));
+                else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>)
+                    new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
+                else if constexpr (std::is_same_v<decltype(args), atomic_any const&>)
+                    new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
+                else if constexpr (std::is_same_v<decltype(args), atomic_any&>)
+                    new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
+                else if constexpr (std::is_same_v<decltype(args), atomic_any&&>)
+                    new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<atomic_any>(args));
+                else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, atomic_any>)
+                    new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
+                else
+                    new (&reinterpret_cast<any*>(&buf[0])[position++]) any(any::instance(std::forward<decltype(args)>(args)));
+                }(), ...);
+            for (; position < num_arguments; ++position)
+                if (!defaults[position].empty())
+                    new (&reinterpret_cast<any*>(&buf[0])[position]) any(defaults[position]);
+                else
+                    if (GL::string err_str = GL::prints(GL::string(R"(
+Arity error at call of Function "%.*s" at Argument #%i "%.*s". Number of provided arguments did not match the number of required arguments, and a default was not located to fill the gap.
+                )").remove_leading_and_trailing_whitespace(),
+                        name.length(), name.c_str().data(),
+                        position,
+                        argument_names[position].length(), argument_names[position].c_str().data()
+                    ); err_str.length() > 0)
+                        throw std::runtime_error(err_str.to_string());
+
+            // copies the buffer directly, and copies the shared_ptr with its normal protections for the underlying function
+            auto out = GL::parallel::async([buf, Ptr = (GL::shared_ptr<Function_Caller>)(this->ptr)]() {
+                defer(int position = 0; ([&] { // unwrap the parameter pack and unload the non-reference data
+                    if constexpr (std::is_same_v<decltype(args), any const&>)  // this constexpr if statement forces the unroll to happen without impacting performance 
+                        const_cast<any&>(reinterpret_cast<const any*>(&buf[0])[position++]).~any();
+                    else
+                        const_cast<any&>(reinterpret_cast<const any*>(&buf[0])[position++]).~any();
+                    }(), ...));
+                if (!Ptr) throw "Function went out-of-scope";
+
+                if constexpr (std::is_same_v<void, T>)
+                    Ptr->call(const_cast<any*>(reinterpret_cast<const any*>(&buf[0])), nullptr);
+                else {
+                    thread_local any out;
+                    Ptr->call(const_cast<any*>(reinterpret_cast<const any*>(&buf[0])), &out);
+                    if constexpr (std::is_same_v<any, T>)
+                        return std::move(out);
+                    else {
+                        T to_return = out.cast<T>();
+                        if ((out.uuid() & uuid::TEMPORARY) == 0)
+                            // if not temporary, then potentially call the destructor
+                            if ((out.uuid() & uuid::INV_FLAGS) > 0)
+                                out = nullptr;
+                        return to_return;
+                    }
+                }
+            });
+            if constexpr (std::is_same_v<void, T>) {
+                return out.as_promise();
+            }
+            else if constexpr (std::is_same_v<any, T>) {
+                return out.as_promise();
+            }
+            else {
+                return out;
+            }
+        };
+
+    };
+    // wrap any function (such as lambdas, static, member functions, etc.) into a callable object
+    template <typename Func> Function wrap_function(Function::function_wrapper_s const& info, Func&& func) {
+        Function out(Function::make_callable(std::forward<Func>(func)));
+        out.name = info.name;
+        out.description = info.description;
+        out.ptr->UseSimplifiedArguments = info.UseSimplifiedArguments;
+        bool provided_default_parameter = false;
+        for (int i = 0; (i < info.arguments.size()) && (i < out.argument_names.size()) && (i < out.defaults.size()); ++i) {
+            out.argument_names[i] = info.arguments[i].argument_name;
+            out.defaults[i] = info.arguments[i].argument_default;
+
+            if (!out.defaults[i].empty()) {
+                // validate that the default parameter is correctly matching the type information. If it does not, this is a major risk for corruption and crashing.
+                provided_default_parameter = true;
+                if (!out.defaults[i].type().can_free_cast(out.arguments[i], true))
+                    if (GL::string err_str = GL::prints(GL::string(R"(
+Argument #%i "%.*s" of Function "%.*s" was provided a default parameter of type "%.*s", but expected type "%.*s".
+                )").remove_leading_and_trailing_whitespace(),
+                        i,
+                        out.argument_names[i].length(), out.argument_names[i].c_str().data(),
+                        out.name.length(), out.name.c_str().data(),
+                        out.defaults[i].type().name().length(), out.defaults[i].type().name().c_str().data(),
+                        out.arguments[i].name().length(), out.arguments[i].name().c_str().data()
+                    ); err_str.length() > 0)
+                        throw std::runtime_error(err_str.to_string());
+            }
+            else {
+                // validate that when using default parameters, a default must be provided for all arguments following the first-provided default.
+                if (provided_default_parameter)
+                    if (GL::string err_str2 = GL::prints(GL::string(R"(
+Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but expected one of type "%.*s".
+                )").remove_leading_and_trailing_whitespace(),
+                        i,
+                        out.argument_names[i].length(), out.argument_names[i].c_str().data(),
+                        out.name.length(), out.name.c_str().data(),
+                        out.arguments[i].name().length(), out.arguments[i].name().c_str().data()
+                    ); err_str2.length() > 0)
+                        throw std::runtime_error(err_str2.to_string());
+            }
+
+
+        }
+        return out;
+    };
+    // generate a callable object to convert from one type to another, supporting polymorphic types. 
+    template <typename From, typename To> Function wrap_converter(bool UseSimplifiedArguments = true) {
+        Function::function_wrapper_s info{
+            GL::type_of<From>().name() + "_to_" + GL::type_of<To>().name(),
+            { { "from", nullptr } },
+            GL::string("Compiled function to convert from ") + GL::type_of<From>().name() + " to " + GL::type_of<To>().name() + ".",
+            UseSimplifiedArguments
+        };
+
+        if constexpr (std::is_base_of_v< To, From>) {
+            // we are attempting to cast from a Derived type to a Base type. 
+            info.UseSimplifiedArguments = false;
+            Function out = wrap_function(info, [](any const& x) -> any {
+                // uuid::get_uuid(x.uuid()).data->get_type(); // gets the actual, underlying type of the shared object. 
+
+                any out = x;
+                const_cast<GL::type&>(out.type()) = GL::type_of<To>();
+                return out;
+                // return any::wrap_member(x, *dynamic_cast<To*>(reinterpret_cast<From*>(x.ptr())));
+                });
+            out.arguments[0] = GL::type_of<From>() + GL::type::Reference;
+            const_cast<GL::type&>(out.ptr->returns()) = GL::type_of<To>() + (GL::type::Reference + GL::type_of<From>().get_qualifiers());
+            return out;
+        }
+        if constexpr (std::is_base_of_v< From, To>) {
+            // we are attempting to cast from a Base type to a Derived type. 
+            info.UseSimplifiedArguments = false;
+            Function out = wrap_function(info, [](any const& x) -> any {
+                any out = x;
+                const_cast<GL::type&>(out.type()) = GL::type_of<To>();
+                return out;
+                // return any::wrap_member(x, *dynamic_cast<To*>(reinterpret_cast<From*>(x.ptr())));
+                });
+            out.arguments[0] = GL::type_of<From>() + GL::type::Reference;
+            const_cast<GL::type&>(out.ptr->returns()) = GL::type_of<To>() + (GL::type::Reference + GL::type_of<From>().get_qualifiers());
+            return out;
+        }
+
+        // idea: if the To object cannot be assigned normally, we could create it as a shared_ptr and return an 'any' object? Would simply need to un-set the UseSimplifiedArguments argument in that case. 
+        if constexpr (std::is_pod_v<From> && std::is_constructible_v<To, From>) {
+            return wrap_function(info, [](From x) -> To { return x; });
+        }
+        else if constexpr (std::is_constructible_v<To, From const&>) {
+            return wrap_function(info, [](From const& x) -> To { return x; });
+        }
+        else if constexpr (std::is_pod_v<From> && std::is_constructible_v<To> && std::is_assignable_v<To, From>) {
+            return wrap_function(info, [](From x) -> To { To out; out = x; return out; });
+        }
+        else if constexpr (std::is_constructible_v<To> && std::is_assignable_v<To, From const&>) {
+            return wrap_function(info, [](From const& x) -> To { To out; out = x; return out; });
+        }
+        else {
+            static_assert(false, "Attempted to create a conversion function from but failed. Objects were not convertable.");
+        }
+    };
+
+
+#if 0
     // function name, function qualifiers (e.g. static), return type, argument types, and (optionally) argument default values. 
     class function_signature {
     private:
@@ -628,6 +2558,7 @@ namespace GL {
         };
 
     };
+
 
     namespace details {
         /* Pure virtual base class for all Proxy_Function implementations
@@ -2567,8 +4498,12 @@ namespace GL {
         return out;
     };
 #pragma warning(pop)
+
+#endif
+
 };
 
+#if 0
 // std::hash< GL::function_signature > 
 namespace std {
     template <> struct hash<GL::function_signature> {
@@ -2577,6 +4512,7 @@ namespace std {
         };
     };
 };
+#endif
 
 #if 0
 // Sorted Proxy_Functions with support for caching

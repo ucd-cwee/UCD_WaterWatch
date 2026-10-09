@@ -1447,13 +1447,31 @@ namespace GL {
 
 				void Wait(dispatch_context& ctx, bool rethrow) {
 					internal_state.wakeCondition.notify_all(); // Wake any threads that might be sleeping. 
-					int i = 0;
-					while (ctx.is_busy()) { // Do work						
-						if ((++i % 40) == 0)
-							internal_state.wakeCondition.notify_all(); // Wake any threads that might be sleeping. 
+					if (internal_state.threads[0].thread_index == GL::util::get_thread_id()) {
+						// the single_threaded thread is awaiting for the single_threaded job thread to complete. This is impossible and requires us trying to work on another job. 
+						while (ctx.is_busy()) { // Do work					
+							++wait_depth; // allows detection of when job dispatch may be from within an existing job				
+							internal_state.wakeCondition.notify_all(); // Wake any threads that might be sleeping:
+							work(&ctx);
+							--wait_depth; // allows detection of when job dispatch may be from within an existing job
+						}
+						if (rethrow) ctx.try_rethrow_exception();
+						else ctx.clear_exception();
 					}
-					if (rethrow) ctx.try_rethrow_exception();
-					else ctx.clear_exception();
+					else {
+						// another thread is awaiting for the single_threaded job thread to complete. Nothing to do here but spin-wait. 
+						int i = 0;
+						while (ctx.is_busy()) { // Do work						
+							if ((++i % 40) == 0)
+								internal_state.wakeCondition.notify_all(); // Wake any threads that might be sleeping. 
+						}
+						if (rethrow) ctx.try_rethrow_exception();
+						else ctx.clear_exception();
+					}
+
+
+					
+
 				};
 			}
 		};

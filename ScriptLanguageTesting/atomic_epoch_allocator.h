@@ -648,7 +648,7 @@ namespace GL {
             return GL::shared_ptr<T>(Alloc(std::forward<TArgs>(a)...), [this](T* p) { Free(p); });
         };
 
-        typedef typename decltype(GL::details::detail::function_signature(&ThreadState::guard_critical_section))::Return_Type GuardType;
+        typedef typename decltype(GL::detail::function_signature(&ThreadState::guard_critical_section))::Return_Type GuardType;
         [[nodiscard]] GuardType guard_critical_section() {
             return states->guard_critical_section();
         };

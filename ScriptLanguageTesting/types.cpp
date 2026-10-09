@@ -5,39 +5,83 @@
 #include <map>
 
 namespace GL {
-    type_erasure::any_cast any::cast() const noexcept {
-        std::cout << "";
-        return type_erasure::any_cast{ const_cast<any*>(this) };
+    any::any(atomic_any const& rhs) : m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {
+        std::shared_lock locked(rhs.mut);
+
+        m_uuid = rhs.m_uuid & uuid::INV_FLAGS;
+        m_type = rhs.m_type;
+        m_ptr = rhs.m_ptr;
+
+        if (m_uuid > 0) GL::interlocked::increment(uuid::get_uuid(m_uuid).count);
     };
-    type_erasure::fast_any_cast any::fast_any::cast() const noexcept {
-        std::cout << "";
-        return type_erasure::fast_any_cast{ const_cast<fast_any*>(this) };
+    any::any(atomic_any&& rhs) noexcept : m_uuid{ std::move(rhs.m_uuid) }, m_type{ std::move(rhs.m_type) }, m_ptr{ rhs.m_ptr } { rhs.m_uuid = 0; };
+    any any::instance(atomic_any&& value) noexcept {
+        return std::forward<atomic_any>(value);
     };
+    any any::instance(atomic_any& value) noexcept {
+        return value;
+    };
+    any any::instance(const atomic_any& value) noexcept {
+        return value;
+    };
+    atomic_any::atomic_any(any const& rhs) : mut(), m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {
+        if (1) {
+            m_uuid = rhs.m_uuid & uuid::INV_FLAGS;
+            m_type = rhs.m_type;
+            m_ptr = rhs.m_ptr;
+        }
+        if (m_uuid > 0) GL::interlocked::increment(uuid::get_uuid(m_uuid).count);
+    };
+    atomic_any::atomic_any(any&& rhs) noexcept : mut(), m_uuid{ std::move(rhs.m_uuid) }, m_type{ std::move(rhs.m_type) }, m_ptr{ rhs.m_ptr } { rhs.m_uuid = 0; };
+    atomic_any atomic_any::instance(any&& value) noexcept {
+        return std::forward<any>(value);
+    };
+    atomic_any atomic_any::instance(any& value) noexcept {
+        return value;
+    };
+    atomic_any atomic_any::instance(const any& value) noexcept {
+        return value;
+    };
+
+    // Definition
+    namespace uuid {
+        static GL::fast_ticket_dispensor<false> tickets;
+        static GL::atomic_vector< uuid_ticket > slots;
+        unsigned long new_uuid(GL::shared_ptr<GL::type_erasure::any_data>&& rhs) noexcept {
+            unsigned long uuid = (unsigned long)tickets.get_ticket();
+            auto& ref = slots.get_or_make(uuid);
+            ref.count = 1;
+            ref.data = std::forward<GL::shared_ptr<GL::type_erasure::any_data>>(rhs);
+            return uuid;
+        };
+        void free_uuid(unsigned long uuid) noexcept {
+            uuid &= INV_FLAGS;
+            if (uuid > 0) {
+                auto& ref = slots[uuid];
+                // if (!ref.data->is_pod()) 
+                ref.data = nullptr;
+                tickets.return_ticket(uuid);
+            }
+        };
+        uuid_ticket& get_uuid(unsigned long uuid) noexcept {
+            return slots.at(uuid & INV_FLAGS);
+        };
+    };
+
+
 
     bool type::is_any() const noexcept {
         static GL::type_hash_t const h{ util::type_id<any>().hash_code() };
-        static GL::type_hash_t const h2{ util::type_id<any::fast_any>().hash_code() };
+        static GL::type_hash_t const h2{ util::type_id<atomic_any>().hash_code() };
         return (((hash ^ h) & impl::cached_type::MAGIC_MASK2) == 0) || (((hash ^ h2) & impl::cached_type::MAGIC_MASK2) == 0);
-
-        //static GL::type_hash_t const h{ util::type_id<any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
-        //static GL::type_hash_t const h2{ util::type_id<any::fast_any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
-        //GL::type_hash_t this_h{ get_base_hash() };
-        //return (this_h == h) || (this_h == h2);
     };
     bool type::is_var() const noexcept {
         static GL::type_hash_t const h{ util::type_id<var>().hash_code() };
         return ((hash ^ h) & impl::cached_type::MAGIC_MASK2) == 0;
-
-        // static GL::type_hash_t const h{ util::type_id<var>().hash_code() & impl::cached_type::MAGIC_MASK2 };
-        // return (hash & impl::cached_type::MAGIC_MASK2) == h;
     };
     bool type::is_dynamic_object() const noexcept {
         static GL::type_hash_t const h{ util::type_id<dynamic_object>().hash_code() };
         return ((hash ^ h) & impl::cached_type::MAGIC_MASK2) == 0;
-
-        //static GL::type_hash_t const h{ util::type_id<dynamic_object>().hash_code() & impl::cached_type::MAGIC_MASK2 };
-        //GL::type_hash_t this_h{ get_base_hash() };
-        //return this_h == h;
     };
 
     namespace impl {       
@@ -312,7 +356,7 @@ namespace GL {
         GL::type_of<std::string>().try_update_name("string"); // on-purpose, this is a stress test for the system to handle classes that share the same name in alternative namespaces. 
         GL::type_of<GL::string>().try_update_name("string");        
         GL::type_of<GL::any>().try_update_name("any");
-        GL::type_of<GL::any::fast_any>().try_update_name("fast_any");
+        GL::type_of<GL::atomic_any>().try_update_name("atomic_any");
         GL::type_of<GL::type>().try_update_name("type");
         GL::type_of<GL::var>().try_update_name("var");
         GL::type_of<GL::value>().try_update_name("value"); // the implimentations of units (meter, foot, etc) each correct their own name during definition.         

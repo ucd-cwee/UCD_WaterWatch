@@ -1,3 +1,5 @@
+#if 0
+
 #pragma once
 
 #include <map>
@@ -18,7 +20,7 @@ namespace GL {
             if constexpr (std::is_same_v<iter_type, GL::type*>) {
                 return *rhs;
             }
-            else if constexpr (std::is_same_v<iter_type, GL::any::fast_any*>) {
+            else if constexpr (std::is_same_v<iter_type, GL::atomic_any*>) {
                 return rhs->m_casted_type;
             }
             else if constexpr (std::is_same_v<iter_type, GL::any*>) {
@@ -27,7 +29,7 @@ namespace GL {
             else if constexpr (std::is_same_v<iter_type::value_type, GL::type>) {
                 return *rhs;
             }
-            else if constexpr (std::is_same_v<iter_type::value_type, GL::any::fast_any>) {
+            else if constexpr (std::is_same_v<iter_type::value_type, GL::atomic_any>) {
                 return rhs->m_casted_type;
             }
             else if constexpr (std::is_same_v<iter_type::value_type, GL::any>) {
@@ -38,7 +40,7 @@ namespace GL {
             if constexpr (std::is_same_v<iter_type, GL::type*>) {
                 return lhs->can_free_cast(rhs);
             }
-            else if constexpr (std::is_same_v<iter_type, GL::any::fast_any*>) {
+            else if constexpr (std::is_same_v<iter_type, GL::atomic_any*>) {
                 return lhs->can_free_cast(rhs);
             }
             else if constexpr (std::is_same_v<iter_type, GL::any*>) {
@@ -47,7 +49,7 @@ namespace GL {
             else if constexpr (std::is_same_v<iter_type::value_type, GL::type>) {
                 return lhs->can_free_cast(rhs);
             }
-            else if constexpr (std::is_same_v<iter_type::value_type, GL::any::fast_any>) {
+            else if constexpr (std::is_same_v<iter_type::value_type, GL::atomic_any>) {
                 return lhs->can_free_cast(rhs);
             }
             else if constexpr (std::is_same_v<iter_type::value_type, GL::any>) {
@@ -58,7 +60,7 @@ namespace GL {
             if constexpr (std::is_same_v<iter_type, GL::type*>) {
                 return lhs->can_cast(rhs);
             }
-            else if constexpr (std::is_same_v<iter_type, GL::any::fast_any*>) {
+            else if constexpr (std::is_same_v<iter_type, GL::atomic_any*>) {
                 return lhs->can_cast(rhs);
             }
             else if constexpr (std::is_same_v<iter_type, GL::any*>) {
@@ -67,7 +69,7 @@ namespace GL {
             else if constexpr (std::is_same_v<iter_type::value_type, GL::type>) {
                 return lhs->can_cast(rhs);
             }
-            else if constexpr (std::is_same_v<iter_type::value_type, GL::any::fast_any>) {
+            else if constexpr (std::is_same_v<iter_type::value_type, GL::atomic_any>) {
                 return lhs->can_cast(rhs);
             }
             else if constexpr (std::is_same_v<iter_type::value_type, GL::any>) {
@@ -78,7 +80,7 @@ namespace GL {
             if constexpr (std::is_same_v<iter_type, GL::type*>) {
                 return *rhs;
             }
-            else if constexpr (std::is_same_v<iter_type, GL::any::fast_any*>) {
+            else if constexpr (std::is_same_v<iter_type, GL::atomic_any*>) {
                 return rhs->get_actual_type();
             }
             else if constexpr (std::is_same_v<iter_type, GL::any*>) {
@@ -87,7 +89,7 @@ namespace GL {
             else if constexpr (std::is_same_v<iter_type::value_type, GL::type>) {
                 return *rhs;
             }
-            else if constexpr (std::is_same_v<iter_type::value_type, GL::any::fast_any>) {
+            else if constexpr (std::is_same_v<iter_type::value_type, GL::atomic_any>) {
                 return rhs->get_actual_type();
             }
             else if constexpr (std::is_same_v<iter_type::value_type, GL::any>) {
@@ -556,8 +558,8 @@ namespace GL {
 
                 GL::fast_shared_ptr<GL::details::Proxy_Function_Base> try_get_converter(GL::type const& from, GL::type const& to, int depth = 0, bool in_function = false);
                 bool can_convert(GL::type const& from, GL::type const& to, bool in_function = false);
-                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, bool keep_return_value = true);
-                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, GL::any::fast_any* begin, GL::any::fast_any* end, bool keep_return_vale = true) {
+                GL::any call_with_conversions(const GL::details::Proxy_Function_Base* func, bool keep_return_value = true);
+                GL::any call_with_conversions(const GL::details::Proxy_Function_Base* func, GL::any* begin, GL::any* end, bool keep_return_vale = true) {
                     if (!func) return nullptr;
                     
                     int pos = 0;
@@ -615,13 +617,13 @@ namespace GL {
                     //return out;
                 };
                 // fast path
-                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, std::vector<any::fast_any>& params, bool keep_return_value = true);
-                // convenience path, requires casting to any::fast_any
-                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, const std::vector<any>& params, bool keep_return_value = true);
-                // convenience path, requires casting to any::fast_any
-                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, any& param, bool keep_return_value = true);
+                GL::any call_with_conversions(const GL::details::Proxy_Function_Base* func, std::vector<GL::any>& params, bool keep_return_value = true);
+                // convenience path, requires casting to any
+                GL::any call_with_conversions(const GL::details::Proxy_Function_Base* func, const std::vector<GL::any>& params, bool keep_return_value = true);
+                // convenience path, requires casting to any
+                GL::any call_with_conversions(const GL::details::Proxy_Function_Base* func, GL::any& param, bool keep_return_value = true);
                 // fast path
-                GL::any::fast_any call_with_conversions(const GL::details::Proxy_Function_Base* func, any::fast_any& param, bool keep_return_value = true);
+                GL::any call_with_conversions(const GL::details::Proxy_Function_Base* func, GL::any& param, bool keep_return_value = true);
 
 
                 bool can_call_with_conversions(const GL::details::Proxy_Function_Base* func);
@@ -642,13 +644,11 @@ namespace GL {
                     return true;
                 };
                 // fast path
-                bool can_call_with_conversions(const GL::details::Proxy_Function_Base* func, std::vector<any::fast_any>& params);
-                // convenience path, requires casting to any::fast_any
-                bool can_call_with_conversions(const GL::details::Proxy_Function_Base* func, const std::vector<any>& params);
-                // convenience path, requires casting to any::fast_any
-                bool can_call_with_conversions(const GL::details::Proxy_Function_Base* func, any& param);
+                bool can_call_with_conversions(const GL::details::Proxy_Function_Base* func, std::vector<GL::any>& params);
+                // convenience path, requires casting to any
+                bool can_call_with_conversions(const GL::details::Proxy_Function_Base* func, const std::vector<GL::any>& params);
                 // fast path
-                bool can_call_with_conversions(const GL::details::Proxy_Function_Base* func, any::fast_any& param);
+                bool can_call_with_conversions(const GL::details::Proxy_Function_Base* func, GL::any& param);
 
             };
 
@@ -665,11 +665,11 @@ namespace GL {
                     breadcrumb_m;
                 GL::deferred<std::unordered_map<Breadcrumb*, GL::callback<NamespaceScope>::ScopedListener>>
                     using_m; // NOTE: calling "using" should split a normal, BasicScope - e.g. using statements are appended staticly at compile time, NOT at runtime. 
-                std::map<GL::string, GL::any::fast_any> 
+                std::map<GL::string, GL::any> 
                     objects_m; // NOTE: adding objects should be appended staticly at compile time, NOT at runtime. E.g. the names are known, even if the types are not yet known. 
 
                 virtual void invalidate_cache(long* parent_alive = nullptr, size_t call_number = 0) {};
-                template <bool overwriteIfExists> bool EmplaceObject_Impl(GL::string const& sv, GL::any::fast_any&& Obj) {
+                template <bool overwriteIfExists> bool EmplaceObject_Impl(GL::string const& sv, GL::any&& Obj) {
                     if constexpr (overwriteIfExists) {
                         objects_m.emplace(sv, std::move(Obj));
                     }
@@ -683,7 +683,7 @@ namespace GL {
                     }
                     return true;
                 };
-                GL::any::fast_any* GetObject_Impl(GL::string const& sv);
+                GL::any* GetObject_Impl(GL::string const& sv);
                 virtual bool AddUsing_Impl(Breadcrumb* scope);
 
             private:
@@ -819,7 +819,7 @@ namespace GL {
                 /// <param name="sv"></param>
                 /// <param name="Obj"></param>
                 /// <returns>bool</returns>
-                bool insert_object_here(GL::string const& sv, GL::any::fast_any&& Obj);
+                bool insert_object_here(GL::string const& sv, GL::any&& Obj);
 
                 /// <summary>
                 /// Emplace an object into this scope whether or not it exists. Does not search neighbors or review the object name.
@@ -827,13 +827,13 @@ namespace GL {
                 /// <param name="sv"></param>
                 /// <param name="Obj"></param>
                 /// <returns>bool</returns>
-                bool emplace_object_here(GL::string const& sv, GL::any::fast_any&& Obj);
+                bool emplace_object_here(GL::string const& sv, GL::any&& Obj);
 
                 /// <summary>
                 /// Try to find an object in this scope. Does not search neighbors or review the object name. Since objects cannot be removed, it safely returns a pointer. 
                 /// </summary>
                 /// <returns>ObjectWrapper</returns>
-                GL::any::fast_any* find_object_here(GL::string const& sv) const;
+                GL::any* find_object_here(GL::string const& sv) const;
 
                 // should be in the form of: [](auto const& iter) -> bool {}
                 template <typename T> bool for_each_object_here(T const& Func) const {
@@ -856,10 +856,10 @@ namespace GL {
 
             public:
                 // User is allowed to request a scoped object, e.g. "x" or "::x" or "::std::string::npos"
-                std::pair<GL::any::fast_any, bool> try_find_object(GL::string const& PossiblyScopedName, Breadcrumb* search_from = nullptr) const;
+                std::pair<GL::any, bool> try_find_object(GL::string const& PossiblyScopedName, Breadcrumb* search_from = nullptr) const;
 
                 // User is allowed to request a scoped object, e.g. "x" or "::x" or "::std::string::npos"
-                GL::any::fast_any find_object(GL::string const& PossiblyScopedName, Breadcrumb* search_from = nullptr) const;
+                GL::any find_object(GL::string const& PossiblyScopedName, Breadcrumb* search_from = nullptr) const;
 
                 // attempts to find a suitable function from this set that is callable with the given parameters. 
                 // searches for object-lambdas (lambda or not), non-template-functions, and template-functions, in that order of preference. 
@@ -887,7 +887,7 @@ namespace GL {
                                     }
                                     if (from_iter == from_end) {
                                         // allowed to return a static object, perhaps?
-                                        return GL::fast_shared_ptr<GL::details::Proxy_Function_Base>(GL::make_callable(PossiblyScopedName, [o]() -> GL::any::fast_any { return o->fast(); }, GL::function_signature::Static | GL::function_signature::Object, {}, {}, o->m_casted_type + GL::type::Reference));
+                                        return GL::fast_shared_ptr<GL::details::Proxy_Function_Base>(GL::make_callable(PossiblyScopedName, [o]() -> GL::any { return *o; }, GL::function_signature::Static | GL::function_signature::Object, {}, {}, o->m_casted_type + GL::type::Reference));
                                     }
                                 }
                                 obj_search = obj_search->parent_m;
@@ -966,7 +966,7 @@ namespace GL {
                                 }
                                 if (from_iter == from_end) {
                                     // allowed to return a static object, perhaps?
-                                    return GL::fast_shared_ptr<GL::details::Proxy_Function_Base>(GL::make_callable(PossiblyScopedName, [o]() -> GL::any::fast_any { return o->fast(); }, GL::function_signature::Static | GL::function_signature::Object, {}, {}, o->m_casted_type + GL::type::Reference));
+                                    return GL::fast_shared_ptr<GL::details::Proxy_Function_Base>(GL::make_callable(PossiblyScopedName, [o]() -> GL::any { return *o; }, GL::function_signature::Static | GL::function_signature::Object, {}, {}, o->m_casted_type + GL::type::Reference));
                                 }
                             }
 
@@ -1227,7 +1227,7 @@ namespace GL {
                 };
 
             // protected:
-                GL::any::fast_any call_impl(GL::string const& PossiblyScopedName, GL::any::fast_any* from_iter, GL::any::fast_any* from_end, bool keep_return_value = true) const {
+                GL::any call_impl(GL::string const& PossiblyScopedName, GL::any* from_iter, GL::any* from_end, bool keep_return_value = true) const {
                     auto handler = push_back_caller(this);
 
                     //std::vector<GL::type> types;
@@ -1251,11 +1251,11 @@ namespace GL {
 
             public:
                 // calls the requested function
-                GL::any::fast_any call(const GL::details::Proxy_Function_Base* func, std::vector<GL::any::fast_any> const& params = {}, bool keep_return_value = true) const;
+                GL::any call(const GL::details::Proxy_Function_Base* func, std::vector<GL::any> const& params = {}, bool keep_return_value = true) const;
                 // calls the requested function or finds the requested object
-                GL::any::fast_any call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params = {}, bool keep_return_value = true) const;
+                GL::any call(GL::string const& PossiblyScopedName, std::vector<GL::any> const& params = {}, bool keep_return_value = true) const;
                 // casts to the requested c++ type.
-                template <typename T> T cast(GL::any::fast_any const& got) const {
+                template <typename T> T cast(GL::any const& got) const {
                     if constexpr (std::is_reference_v<T>) {
                         return got.cast<T>();
                     }
@@ -1264,7 +1264,7 @@ namespace GL {
                             return *out;
                         }
                         else if (auto converter = this->GetRoot()->get_converters().try_get_converter(got.m_casted_type, GL::type_of<std::decay_t<T>>())) {
-                            return converter->operator()(const_cast<GL::any::fast_any&>(got)).cast<T>();
+                            return converter->operator()(const_cast<GL::any&>(got)).cast<T>();
                         }
                         else {
                             return got.cast<T>();
@@ -1272,17 +1272,17 @@ namespace GL {
                     }
                 };
                 // casts to the requested c++ or scripting type.
-                GL::any::fast_any cast(GL::any::fast_any const& from, GL::type const& to) const {
+                GL::any cast(GL::any const& from, GL::type const& to) const {
                     if (!from.can_free_cast(to)) {
-                        if (auto converter = this->GetRoot()->get_converters().try_get_converter(from.m_casted_type, to)) {
-                            return converter->operator()(const_cast<GL::any::fast_any&>(from));
+                        if (auto converter = this->GetRoot()->get_converters().try_get_converter(from.type(), to)) {
+                            return converter->operator()(const_cast<GL::any&>(from));
                         }
                     }
                     return from;
                 };
                 // calls the requested function or finds the requested object, and casts to the requested c++ type.
-                template <typename T> T call(GL::string const& PossiblyScopedName, std::vector<GL::any::fast_any> const& params = {}, bool keep_return_value = true) const {
-                    return cast<T>(call_impl(PossiblyScopedName, const_cast<GL::any::fast_any*>(&params[0]), const_cast<GL::any::fast_any*>(&params[0] + params.size()), keep_return_value));
+                template <typename T> T call(GL::string const& PossiblyScopedName, std::vector<GL::any> const& params = {}, bool keep_return_value = true) const {
+                    return cast<T>(call_impl(PossiblyScopedName, const_cast<GL::any*>(&params[0]), const_cast<GL::any*>(&params[0] + params.size()), keep_return_value));
                 };
                 // estimates the return type of a call, if that call was to have been performed. Does not actually perform the call. In the case of failure to find anything, will return a 'GL::any' type, since that does not 100% guarrantee the function does not exist (e.g. var's, templates, etc.)
                 GL::type return_type_of_potential_call(GL::string const& PossiblyScopedName, std::vector<GL::type> const& types = {}) {
@@ -1670,7 +1670,7 @@ namespace GL {
                     type_ownership;
 
             protected:
-                concurrency::concurrent_unordered_map<GL::string, std::pair<GL::type, GL::any::fast_any>> 
+                concurrency::concurrent_unordered_map<GL::string, std::pair<GL::type, GL::any>> 
                     member_objects;            
                 void default_construct(GL::dynamic_object& destination);
 
@@ -1678,7 +1678,7 @@ namespace GL {
                 const GL::type this_type;
                 std::vector< std::pair< GL::string, GL::type > > template_types;
 
-                void add_member_object(GL::string const& member_name, GL::type const& member_type, GL::any::fast_any const& default_value = {});                
+                void add_member_object(GL::string const& member_name, GL::type const& member_type, GL::any const& default_value = {});                
                 void initialize_basic_member_functions();
                 ClassScope& make_inherited_template_class(std::vector< std::pair<GL::string, GL::type> > const& templates);
                 virtual Breadcrumb* FindNearestScopeWhere(
@@ -1779,3 +1779,5 @@ namespace GL {
         //};
     }        
 }
+
+#endif

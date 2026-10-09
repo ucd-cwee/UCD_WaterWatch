@@ -9,24 +9,20 @@
 #include <boost/type_index.hpp>
 #include <concurrent_unordered_map.h>
 
-
-
-
-
-
 // implimentatin of atomic type info and atomic any
 namespace GL {
     class undefined {};
     class template_t {};
 
     class any;
+    class atomic_any;
     class var;
     class dynamic_object;
 
-    namespace type_erasure {
-        struct any_cast;
-        struct fast_any_cast;
-    };
+    //namespace type_erasure {
+    //    struct any_cast;
+    //    struct fast_any_cast;
+    //};
 
     namespace util {
         template<typename T> static const auto& type_id() {
@@ -682,7 +678,7 @@ namespace GL {
                 if (obj) {
                     if constexpr (std::is_same<GL::any, S>::value) 
                         return obj->m_ptr.load(); // return self                    
-                    else if constexpr (std::is_same<GL::any::fast_any, S>::value)                         
+                    else if constexpr (std::is_same<GL::atomic_any, S>::value)
                         return obj->m_ptr; // return self                    
                     else {
                         if constexpr (std::is_same<GL::shared_ptr<S>, H<S>>::value) 
@@ -703,7 +699,7 @@ namespace GL {
                 if (obj) {
                     if constexpr (std::is_same<GL::any, S>::value) 
                         return obj->m_ptr.load(); // return self                    
-                    else if constexpr (std::is_same<GL::any::fast_any, S>::value)                        
+                    else if constexpr (std::is_same<GL::atomic_any, S>::value)
                         return obj->m_ptr; // return self                    
                     else {
                         if constexpr (std::is_same<GL::shared_ptr<S>, H<S>>::value) 
@@ -719,40 +715,40 @@ namespace GL {
                 }
             };
 
-            template<typename T, typename = std::enable_if_t<!std::is_same_v<GL::type_erasure::any_cast, T> && !std::is_same_v<GL::type_erasure::fast_any_cast, T>>>
+            template<typename T>
             static GL::shared_ptr<any_data> get_v(const T& obj) {
                 if constexpr (std::is_same<GL::any, T>::value) {
                     // return self
-                    return obj.m_ptr.load();
+                    return obj.get_underlying_ptr();
                 }
-                else if constexpr (std::is_same<GL::any::fast_any, T>::value) {
-                    // return self
-                    return obj.m_ptr;
+                else if constexpr (std::is_same<GL::atomic_any, T>::value) {
+                    // return self                    
+                    return obj.get_underlying_ptr();
                 }
                 else {
                     return GL::static_pointer_cast<any_data>(GL::make_shared<instanced_data<T>>(obj));
                 }
             };
 
-            template<typename T, typename = std::enable_if_t<!std::is_same_v<GL::type_erasure::any_cast, T> && !std::is_same_v<GL::type_erasure::fast_any_cast, T>>>
+            template<typename T>
             static GL::shared_ptr<any_data> get(T&& obj) {
                 if constexpr (std::is_same<GL::any, T>::value) {
                     // return self
-                    return obj.m_ptr.load();
+                    return obj.get_underlying_ptr();
                 }
-                else if constexpr (std::is_same<GL::any::fast_any, T>::value) {
+                else if constexpr (std::is_same<GL::atomic_any, T>::value) {
                     // return self
-                    return obj.m_ptr;
+                    return obj.get_underlying_ptr();
                 }
                 else {
                     return GL::static_pointer_cast<any_data>(GL::make_shared<instanced_data<T>>(std::forward<T>(obj)));
                 }
             };
 
-            static GL::shared_ptr<any_data> get(const type_erasure::any_cast& obj);
-            static GL::shared_ptr<any_data> get(const type_erasure::any_cast* t);
-            static GL::shared_ptr<any_data> get(const type_erasure::fast_any_cast& obj);
-            static GL::shared_ptr<any_data> get(const type_erasure::fast_any_cast* t);
+            //static GL::shared_ptr<any_data> get(const type_erasure::any_cast& obj);
+            //static GL::shared_ptr<any_data> get(const type_erasure::any_cast* t);
+            //static GL::shared_ptr<any_data> get(const type_erasure::fast_any_cast& obj);
+            //static GL::shared_ptr<any_data> get(const type_erasure::fast_any_cast* t);
         };
         template<typename T> static GL::shared_ptr<any_data> wrap(const T& r) { return wrapper::get_v(r); };
         template<typename T> static GL::shared_ptr<any_data> wrap(T&& r) { 
@@ -810,7 +806,7 @@ namespace GL {
 
         template <typename T>
         static GL::shared_ptr<GL::any> object_access(GL::string const& member_name, T const& rhs) {
-            if constexpr (std::is_same_v<T, GL::any::fast_any> || std::is_same_v<T, GL::any>) {
+            if constexpr (std::is_same_v<T, GL::atomic_any> || std::is_same_v<T, GL::any>) {
                 //if (rhs.can_cast(GL::type_of<GL::dynamic_object&>())) {
                     if (GL::shared_ptr<GL::any>* p = rhs.cast<GL::dynamic_object>().try_at(member_name); p) {
                         return *p;
@@ -824,185 +820,123 @@ namespace GL {
                 throw std::runtime_error(err.to_string());
             }
             else {
-                static_assert(std::is_same_v<T, GL::any::fast_any> || std::is_same_v<T, GL::any>, "Must be an Any or Any::Fast_Any");
+                static_assert(std::is_same_v<T, GL::atomic_any> || std::is_same_v<T, GL::any>, "Must be an any or atomic_any");
             }
         };
 
 
     };
 
-    /* class "Var" is a generic container for dynamically typed objects for use in the scripting language.
-    It defers from "Any" because Any objects are for use in C++ to contain statically typed objects.
-    "Var" objects are wrappers for Anys that allow the scripting language to process them as
-    empty & assignable, or filled and implimented */
-    class var {
-    public:
-        var() = default;
-        explicit var(GL::shared_ptr<any>&& data_f);
-        var(var const&) = default;
-        var(var&&) = default;
-        var& operator=(var const&) = default;
-        var& operator=(var&&) = default;
-        ~var() = default;
+    // Declaration
+    namespace uuid {
+        static constexpr unsigned long TEMPORARY = 0x1000'0000;
+        static constexpr unsigned long FLAGS = 0xF000'0000;
+        static constexpr unsigned long INV_FLAGS = ~FLAGS;
 
-    public:
-        GL::type const& get_type() const;
-        GL::type const& get_actual_type();
-        GL::fast_shared_ptr<GL::any> get_data() {
-            return p_data.load_fast();
+        struct uuid_ticket {
+            size_t count{ 0 };
+            GL::shared_ptr<GL::type_erasure::any_data> data{ nullptr };
         };
-        void set_data(GL::shared_ptr<GL::any>&& rhs);
-    
-    private:
-        GL::atomic_shared_ptr<any> 
-            p_data; // may be "updated" at any time and therefore should be thread-safe. 
-        GL::type
-            p_type;
+        unsigned long new_uuid(GL::shared_ptr<GL::type_erasure::any_data>&& rhs) noexcept;
+        void free_uuid(unsigned long uuid) noexcept;
+        uuid_ticket& get_uuid(unsigned long uuid) noexcept;
     };
 
+    class Function;
+    class Function_Caller;
 
+    // not thread-safe. Should only be accessed in a single-threaded fashion.
+    class any {
+        friend class atomic_any;
 
-
-    // atomic wrapper for any object that can store and share shared_ptrs. Handles automatic casting to nearly all variants of qualified types. 
-    class /*alignas(CACHE_LINE_SIZE)*/ any {
-    public:
-        class fast_any;
-        friend class dynamic_object;
-    protected:
-        mutable GL::atomic_shared_ptr< type_erasure::any_data >
-            m_ptr; // atomic shared-ptr for the type-erased underlying data. 
-    public:
+        void*
+            m_ptr;
         GL::type
-            m_casted_type; // atomic type information. May be updated to include information such as the const-ness or temporary type. 
-
-    private:
-        void correct_type_information() {
-            if (auto f = m_ptr.load_fast(); f) {
-                if (f->get_type().is_var()/*f->can_cast_var()*/) {
-                    if (auto* V = f->cast<var>()) {
-                        m_casted_type = V->get_type();
-                        if (m_casted_type.is_void()) {
-                            m_casted_type = GL::type_of<GL::var>();
-                        }
-                    }
-                }
-                if (f->get_type().is_dynamic_object()/*f->can_cast_dynamic_object()*/) {
-                    if (auto* V = f->cast<dynamic_object>()) {
-                        m_casted_type = V->m_type;
-                    }
-                }
-            }
-        }
-        explicit any(GL::atomic_shared_ptr< type_erasure::any_data > const& p_ptr, GL::type const& p_type)
-            : m_ptr{ p_ptr }, m_casted_type{ p_type }
-        {
-            correct_type_information();
-        }
+            m_type;
+        unsigned long
+            m_uuid;
 
     public:
-        any() = default;
-        any(any const&) = default;
-        any(any&&) noexcept = default;
-        any(std::nullptr_t) noexcept : m_ptr{}, m_casted_type{} { };
-        any& operator=(any const&) = default;
-        any& operator=(any&&) noexcept = default;
-        any& operator=(std::nullptr_t) noexcept {
-            m_ptr = nullptr;
-            m_casted_type = {};
-            return *this;
+        auto& uuid() const {
+            return m_uuid;
         };
-        ~any() = default;
+        auto& ptr() const {
+            return m_ptr;
+        };
+        auto& type() const {
+            return m_type;
+        };
 
-        template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>> && !std::is_same_v<fast_any, std::decay_t<ValueType>>>> any(const ValueType& value) noexcept
-            : any(type_erasure::wrap(value), type_of<typename type_erasure::get_type<std::decay_t<ValueType>>::type>())
-        {};
-        template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>> && !std::is_same_v<fast_any, std::decay_t<ValueType>>>> any(ValueType&& value) noexcept
-            : any(type_erasure::wrap(std::forward<ValueType>(value)), type_of<typename type_erasure::get_type<std::decay_t<ValueType>>::type>())
-        {};
-        template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>> && !std::is_same_v<fast_any, std::decay_t<ValueType>>>> any& operator=(const ValueType& rhs) noexcept {
-            m_ptr = type_erasure::wrap(rhs);
-            m_casted_type = type_of<typename type_erasure::get_type<std::decay_t<ValueType>>::type>();
-            correct_type_information();
+        any(unsigned long uuid, void* data, GL::type const& type) noexcept : m_uuid{ uuid }, m_type{ type }, m_ptr{ data } {};
+        any() noexcept : m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
+        any(std::nullptr_t) noexcept : m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
+        any(any const& rhs) : m_uuid{ rhs.m_uuid & uuid::INV_FLAGS }, m_type{ rhs.m_type }, m_ptr{ rhs.m_ptr } { if (m_uuid > 0) GL::interlocked::increment(uuid::get_uuid(m_uuid).count); };
+        // declares that the parent will NOT go out-of-scope before this child does. That guarrantee allows us to skip a increment and decrement call to the counter. 
+        any(any const& rhs, bool) : m_uuid{ rhs.m_uuid | uuid::TEMPORARY }, m_type{ rhs.m_type }, m_ptr{ rhs.m_ptr } {};
+        any(any&& rhs) noexcept : m_uuid{ std::move(rhs.m_uuid) }, m_type{ std::move(rhs.m_type) }, m_ptr{ rhs.m_ptr } { rhs.m_uuid = 0; };
+        any const& operator=(any const& rhs) {
+            if ((m_uuid & uuid::TEMPORARY) == 0)
+                if ((m_uuid & uuid::INV_FLAGS) > 0)
+                    if (GL::interlocked::decrement(uuid::get_uuid(m_uuid).count) == 0)
+                        uuid::free_uuid(m_uuid);
+
+            m_uuid = rhs.m_uuid & uuid::INV_FLAGS;
+            m_type = rhs.m_type;
+            m_ptr = rhs.m_ptr;
+            if (m_uuid > 0) GL::interlocked::increment(uuid::get_uuid(m_uuid).count);
             return *this;
         };
-        template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>> && !std::is_same_v<fast_any, std::decay_t<ValueType>>>> any& operator=(ValueType&& rhs) noexcept {
-            m_ptr = type_erasure::wrap(std::forward<ValueType>(rhs));
-            m_casted_type = type_of<typename type_erasure::get_type<std::decay_t<ValueType>>::type>();
-            correct_type_information();
+        any const& operator=(any&& rhs) noexcept {
+            if ((m_uuid & uuid::TEMPORARY) == 0)
+                if ((m_uuid & uuid::INV_FLAGS) > 0)
+                    if (GL::interlocked::decrement(uuid::get_uuid(m_uuid).count) == 0)
+                        uuid::free_uuid(m_uuid);
+
+            m_uuid = std::move(rhs.m_uuid);
+            m_type = std::move(rhs.m_type);
+            m_ptr = rhs.m_ptr;
+            rhs.m_uuid = 0;
             return *this;
         };
-        
-        bool operator&(int p_modifiers) const {
-            return m_casted_type & p_modifiers;
+
+        any(atomic_any const& rhs);
+        any(atomic_any&& rhs) noexcept;
+
+        ~any() {
+            if ((m_uuid & uuid::TEMPORARY) == 0)
+                if ((m_uuid & uuid::INV_FLAGS) > 0)
+                    if (GL::interlocked::decrement(uuid::get_uuid(m_uuid).count) == 0)
+                        uuid::free_uuid(m_uuid);
         };
-        any operator|(int p_modifiers) const {
-            any out(*this);
-            out.m_casted_type |= p_modifiers;
-            return out;
+
+        template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> static any instance(const ValueType& value) noexcept {
+            auto wrapped = GL::type_erasure::wrap(value);
+            auto* ptr = wrapped->get();
+            return any(uuid::new_uuid(std::move(wrapped)), ptr, GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>());
         };
-        any operator+(int p_modifiers) const {
-            any out(*this);
-            out.m_casted_type |= p_modifiers;
-            return out;
+        template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> static any instance(ValueType&& value) noexcept {
+            auto wrapped = GL::type_erasure::wrap(std::forward<ValueType>(value));
+            auto* ptr = wrapped->get();
+            return any(uuid::new_uuid(std::move(wrapped)), ptr, GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>());
         };
-        any operator-(int p_modifiers) const {
-            any out(*this);
-            out.m_casted_type -= p_modifiers;
-            return out;
+        static any instance(any&& value) noexcept {
+            return std::forward<any>(value);
         };
-        any& operator|=(int p_modifiers) {
-            m_casted_type |= p_modifiers;
-            return *this;
+        static any& instance(any& value) noexcept {
+            return value;
         };
-        any& operator+=(int p_modifiers) {
-            m_casted_type += p_modifiers;
-            return *this;
+        static any const& instance(const any& value) noexcept {
+            return value;
         };
-        any& operator-=(int p_modifiers) {
-            m_casted_type -= p_modifiers;
-            return *this;
-        };
+        static any instance(atomic_any&& value) noexcept;
+        static any instance(atomic_any& value) noexcept;
+        static any instance(const atomic_any& value) noexcept;
 
         operator bool() const noexcept {
-            if (auto f = m_ptr.load_fast(); f) return true;
-            return false;
+            return m_ptr;
         };
-        template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>> && !std::is_same_v<fast_any, std::decay_t<ValueType>>>> static any ref(ValueType& value) {
-            auto base_t = type_of<ValueType>();
-            any out(GL::shared_ptr<std::decay_t< ValueType >>((std::decay_t< ValueType >*)(&value), [](std::decay_t< ValueType >*) {}));
-            out.m_casted_type = base_t;
-            if constexpr (std::is_const_v< ValueType>) {                
-                out.m_casted_type |= GL::type::Reference;
-                out.m_casted_type |= GL::type::Const;
-            }
-            else {
-                out.m_casted_type |= GL::type::Reference;                
-            }            
-            return out;
-        };
-
-        template <typename T> __declspec(noinline) static any wrap_member(any const& parent, T const& ref) {
-            GL::shared_ptr<T> out = GL::shared_ptr<T>(parent.shared_ptr());
-            out.set_pointer_without_modifying_control_block(&const_cast<T&>(ref));
-            return any(out) + (GL::type::Const | GL::type::Reference);
-        };
-        template <typename T> __declspec(noinline) static any wrap_member(any const& parent, T& ref) {
-            GL::shared_ptr<T> out = GL::shared_ptr<T>(parent.shared_ptr());
-            out.set_pointer_without_modifying_control_block(&const_cast<T&>(ref));
-            if (parent.m_casted_type.is_const()) {
-                return any(out) + (GL::type::Const | GL::type::Reference);
-            }
-            else {
-                return any(out) + GL::type::Reference;
-            }
-        };
-
         bool empty() const noexcept {
-            return !operator bool();
-        };
-        /*! Empties the Any and frees the memory. */
-        void clear() noexcept {
-            operator=(nullptr);
+            return !m_ptr;
         };
         friend bool operator==(const any& a, const any& b) noexcept { return a.m_ptr == b.m_ptr; };
         friend bool operator!=(const any& a, const any& b) noexcept { return a.m_ptr != b.m_ptr; };
@@ -1011,65 +945,47 @@ namespace GL {
         friend bool operator>(const any& a, const any& b) noexcept { return a.m_ptr > b.m_ptr; };
         friend bool operator>=(const any& a, const any& b) noexcept { return a.m_ptr >= b.m_ptr; };
 
-        // returns true if this type can easily match the requested type (e.g. int& -> const int&)
-        bool can_free_cast(type const& to) const {
-            if (m_casted_type.can_free_cast(to)) return true;
-            //if (auto ptr = m_ptr.load_fast()) {                    
-            //    return ptr->get_type().can_free_cast(to);
-            //}
-            return false;
+        bool operator&(int p_modifiers) const noexcept {
+            return m_type & p_modifiers;
         };
-        // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
-        bool can_cast(type const& to) const {
-            if (m_casted_type.can_cast(to)) return true;
-            if (auto ptr = m_ptr.load_fast()) {
-                if (ptr->get_type().can_cast(to)) return true;
-                
-                if (ptr->get_type().is_dynamic_object()/*ptr->can_cast_dynamic_object()*/ && (to.get_base_hash() == GL::type_of<GL::dynamic_object>().get_base_hash())) { return true; }
-                if (ptr->get_type().is_var()/*ptr->can_cast_var()*/) {
-                    if (to.get_base_hash() == GL::type_of<GL::var>().get_base_hash()) return true;
-                    if (auto f = ptr->cast<GL::var>()->get_data(); f) {
-                        return f->can_cast(to);
-                    }
-                }
-            }
-            return false;
+        any operator|(int p_modifiers) const noexcept {
+            any out(*this);
+            out.m_type |= p_modifiers;
+            return out;
         };
-        GL::type const& get_actual_type() const {
-            if (auto ptr = m_ptr.load_fast()) return ptr->get_type();
-            else {
-                static GL::type out{};
-                return out;
-            }
+        any operator+(int p_modifiers) const noexcept {
+            any out(*this);
+            out.m_type |= p_modifiers;
+            return out;
         };
-        GL::shared_ptr<type_erasure::any_data> get_underlying_ptr() const {
-            return m_ptr.load();
+        any operator-(int p_modifiers) const noexcept {
+            any out(*this);
+            out.m_type -= p_modifiers;
+            return out;
         };
-
-    private:
-        void* ptr() const {
-            if (auto p = m_ptr.load_fast())
-                if (auto p2 = p.get())
-                    return p2->get();
-            return nullptr;
+        any& operator|=(int p_modifiers) noexcept {
+            m_type |= p_modifiers;
+            return *this;
         };
-        GL::shared_ptr<void> shared_ptr() const {
-            if (auto p = m_ptr.load_fast()) {
-                return p->get(this->m_ptr.load());
-            }
-            return nullptr;
+        any& operator+=(int p_modifiers) noexcept {
+            m_type += p_modifiers;
+            return *this;
         };
-        std::shared_ptr<void> std_shared_ptr() const {
-            if (auto p = m_ptr.load_fast()) {
-                return p->get_std(this->m_ptr.load());
-            }
-            return nullptr;
+        any& operator-=(int p_modifiers) noexcept {
+            m_type -= p_modifiers;
+            return *this;
         };
 
     protected:
+        GL::shared_ptr<GL::type_erasure::any_data>& get_underlying_ptr() const noexcept {
+            if ((m_uuid & uuid::INV_FLAGS) > 0)
+                return uuid::get_uuid(m_uuid).data;
+            else {
+                static GL::shared_ptr<GL::type_erasure::any_data> out{ nullptr };
+                return out;
+            }
+        };
         class DataCaster {
-            friend struct type_erasure::any_cast;
-            friend struct type_erasure::fast_any_cast;
         public:
             template<typename T> struct is_stdSharedPtr_class { typedef std::false_type type; };
             template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>> { typedef std::true_type type; };
@@ -1090,61 +1006,20 @@ namespace GL {
             template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>&&> { typedef std::true_type type; };
 
         private:
-            template <class VType> static decltype(auto) DoCast_Shared(GL::shared_ptr<type_erasure::any_data>&& ptr) noexcept {
-                auto& any_p = ptr.operator*();
-                return GL::static_pointer_cast<VType>(any_p.get(std::move(ptr)));
+            template <class VType> static decltype(auto) DoCast_Shared_fast(GL::shared_ptr<GL::type_erasure::any_data>& ptr) noexcept {
+                return GL::static_pointer_cast<VType>(ptr->get(GL::shared_ptr<GL::type_erasure::any_data>(ptr)));
             };
-            template <class VType> static decltype(auto) DoCast_StdShared(GL::shared_ptr<type_erasure::any_data>&& ptr) noexcept {
-                auto& any_p = ptr.operator*();
-                return std::static_pointer_cast<VType>(any_p.get_std(std::forward<GL::shared_ptr<type_erasure::any_data>>(ptr)));
+            template <class VType> static decltype(auto) DoCast_StdShared_fast(GL::shared_ptr<GL::type_erasure::any_data>& ptr) noexcept {
+                return std::static_pointer_cast<VType>(ptr->get_std(GL::shared_ptr<GL::type_erasure::any_data>(ptr)));
             };
-            template<typename VType> static decltype(auto) DoCast_Unshared(GL::shared_ptr<type_erasure::any_data>&& container) /*noexcept*/ {
+            template<typename VType> static decltype(auto) DoCast_Unshared_fast(void* container) /*noexcept*/ {
                 static constexpr bool is_ptr{ std::is_pointer_v<VType> };
-                auto& any_p = container.operator*();
+
                 if constexpr (is_ptr) {
-                    if (any_p.can_cast(type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>())) {
-                        return reinterpret_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(any_p.get());
-                    }
-                    else {                                
-                        return static_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(nullptr);
-                    }
+                    return reinterpret_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(container);
                 }
                 else {
-                    //if (any_p.can_cast(type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>())) {
-                        return *any_p.cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>();
-                    //}
-                    //else {
-                    //    auto err = "Cannot cast from `" + any_p.get_type().name() + "` to `" + type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>().name() + "`";
-                    //    throw std::runtime_error(err.to_string());
-                    //}
-                }
-            };
-            
-            template <class VType> static decltype(auto) DoCast_Shared_fast(GL::shared_ptr<type_erasure::any_data>& ptr) noexcept {
-                return GL::static_pointer_cast<VType>(ptr->get(GL::shared_ptr<type_erasure::any_data>(ptr)));
-            };
-            template <class VType> static decltype(auto) DoCast_StdShared_fast(GL::shared_ptr<type_erasure::any_data>& ptr) noexcept {
-                return std::static_pointer_cast<VType>(ptr->get_std(GL::shared_ptr<type_erasure::any_data>(ptr)));
-            };
-            template<typename VType> static decltype(auto) DoCast_Unshared_fast(GL::shared_ptr<type_erasure::any_data>& container) /*noexcept*/ {
-                static constexpr bool is_ptr{ std::is_pointer_v<VType> };
-                
-                if constexpr (is_ptr) {
-                    if (container->can_cast(type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>())) {
-                        return reinterpret_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(container->get());
-                    }
-                    else {
-                        return static_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(nullptr);
-                    }
-                }
-                else {
-                    //if (container->can_cast(type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>())) {
-                        return *container->cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>();
-                    //}
-                    //else {
-                    //    auto err = "Cannot cast from `" + container->get_type().name() + "` to `" + type_of<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>().name() + "`";
-                    //    throw std::runtime_error(err.to_string());
-                    //}
+                    return *reinterpret_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(container);
                 }
             };
 
@@ -1158,73 +1033,19 @@ namespace GL {
                 static constexpr bool is_ptr{ std::is_pointer_v<T> };
                 static constexpr bool is_ref{ std::is_reference_v<T> };
                 static constexpr bool is_const{ std::is_const_v<T> };
-                static constexpr bool is_any{ std::is_same_v<GL::any, T> || std::is_same_v<GL::any::fast_any, T> || std::is_same_v<GL::any const&, T> || std::is_same_v<GL::any::fast_any const&, T> || std::is_same_v<GL::any::fast_any&, T> };
-
-                if (!p) {
-                    if constexpr (is_any) return p->fast();
-                    else {
-                        if constexpr (is_shared_ptr) {
-                            return GL::shared_ptr<typename type_erasure::get_type<T>::type>(nullptr);
-                        }
-                        else if constexpr (is_std_shared_ptr) {
-                            return std::shared_ptr<typename type_erasure::get_type<T>::type>(nullptr);
-                        }
-                        else {
-                            if constexpr (is_ptr) {
-                                return static_cast<typename std::remove_reference<typename std::remove_pointer<T>::type>::type*>(nullptr);
-                            }
-                            else {
-                                auto err = "Cannot cast from `void` to `" + GL::type_of<typename std::remove_reference<typename std::remove_pointer<T>::type>::type>().name() + "`";
-                                throw std::runtime_error(err.to_string());
-                            }
-                        }
-                    }
-                }
-                else {
-                    if constexpr (is_any) return p->fast();                    
-                    else {
-                        if constexpr (is_shared_ptr) {
-                            if constexpr (is_ptr) throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                            else if constexpr (is_ref) throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                            return DoCast_Shared<typename type_erasure::get_type<T>::type>(p->m_ptr.load());
-                        }
-                        else if constexpr (is_std_shared_ptr) {
-                            if constexpr (is_ptr) {
-                                throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                            }
-                            else if constexpr (is_ref) {
-                                throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                            }
-                            return DoCast_StdShared<typename type_erasure::get_type<T>::type>(p->m_ptr.load());
-                        }
-                        else {
-                            return DoCast_Unshared<T>(p->m_ptr.load());
-                        } 
-                    }
-                }
-            };
-            template<typename T> static decltype(auto) DoCast(fast_any* p) /*noexcept*/ {
-                typedef typename is_SharedPtr_class<T>::type isShared;
-                typedef typename is_stdSharedPtr_class<T>::type isStdShared;
-
-                static constexpr bool is_shared_ptr{ isShared::value };
-                static constexpr bool is_std_shared_ptr{ isStdShared::value };
-                static constexpr bool is_ptr{ std::is_pointer_v<T> };
-                static constexpr bool is_ref{ std::is_reference_v<T> };
-                static constexpr bool is_const{ std::is_const_v<T> };
-                static constexpr bool is_any{ std::is_same_v<GL::any, T> || std::is_same_v<GL::any::fast_any, T> || std::is_same_v<GL::any const&, T> || std::is_same_v<GL::any::fast_any const&, T> || std::is_same_v<GL::any::fast_any&, T> };
+                static constexpr bool is_any{ std::is_same_v<any, std::decay_t<T>> };
 
                 if (!p) {
                     if constexpr (is_any) {
-                        static GL::any::fast_any out{ nullptr };
+                        static any out;
                         return *&out;
                     }
                     else {
                         if constexpr (is_shared_ptr) {
-                            return GL::shared_ptr<typename type_erasure::get_type<T>::type>(nullptr);
+                            return GL::shared_ptr<typename GL::type_erasure::get_type<T>::type>(nullptr);
                         }
                         else if constexpr (is_std_shared_ptr) {
-                            return std::shared_ptr<typename type_erasure::get_type<T>::type>(nullptr);
+                            return std::shared_ptr<typename GL::type_erasure::get_type<T>::type>(nullptr);
                         }
                         else {
                             if constexpr (is_ptr) {
@@ -1243,7 +1064,7 @@ namespace GL {
                         if constexpr (is_shared_ptr) {
                             if constexpr (is_ptr) throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
                             else if constexpr (is_ref) throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                            return DoCast_Shared_fast<typename type_erasure::get_type<T>::type>(p->m_ptr);
+                            return DoCast_Shared_fast<typename GL::type_erasure::get_type<T>::type>(p->get_underlying_ptr());
                         }
                         else if constexpr (is_std_shared_ptr) {
                             if constexpr (is_ptr) {
@@ -1252,7 +1073,7 @@ namespace GL {
                             else if constexpr (is_ref) {
                                 throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
                             }
-                            return DoCast_StdShared_fast<typename type_erasure::get_type<T>::type>(p->m_ptr);
+                            return DoCast_StdShared_fast<typename GL::type_erasure::get_type<T>::type>(p->get_underlying_ptr());
                         }
                         else {
                             return DoCast_Unshared_fast<T>(p->m_ptr);
@@ -1265,354 +1086,384 @@ namespace GL {
 
     public:
         template<typename VType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
-        decltype(auto) cast() const { return DataCaster::DoCast<VType>(const_cast<any*>(this)); };
+        decltype(auto) cast() const noexcept { return DataCaster::DoCast<VType>(const_cast<any*>(this)); };
 
-        template<typename VType, typename = std::enable_if_t<!std::is_pointer<VType>::value && std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
+        template<typename VType, typename = std::enable_if_t<!std::is_pointer<VType>::value&& std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
         any& cast() const noexcept { return *const_cast<any*>(this); };
 
-        template<typename VType, typename = std::enable_if_t<std::is_pointer<VType>::value && std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
+        template<typename VType, typename = std::enable_if_t<std::is_pointer<VType>::value&& std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
         any* cast() const noexcept { return const_cast<any*>(this); };
 
-        type_erasure::any_cast cast() const noexcept;
+        /// \todo it is a performance increase to allow the return value to be "referenced" rather than incremented/decremented properly, however, is this safe in practice?
+        template <typename T> __declspec(noinline) static any wrap_member(any const& parent, T const& ref) noexcept {
+            if ((parent.m_uuid & uuid::TEMPORARY) > 0) {
+                return any((unsigned long)parent.m_uuid, &const_cast<T&>(ref), GL::type_of<T const&>());
+            }
+            else {
+                unsigned long uuid = parent.m_uuid & uuid::INV_FLAGS;
+                if (uuid > 0) GL::interlocked::increment(uuid::get_uuid(uuid).count);
+                return any(std::move(uuid), &const_cast<T&>(ref), GL::type_of<T const&>());
+            }
+        };
+        /// \todo it is a performance increase to allow the return value to be "referenced" rather than incremented/decremented properly, however, is this safe in practice?
+        template <typename T> __declspec(noinline) static any wrap_member(any const& parent, T& ref) noexcept {
+            if ((parent.m_uuid & uuid::TEMPORARY) > 0) {
+                return any((unsigned long)parent.m_uuid, &ref, GL::type_of<T&>());
+            }
+            else {
+                unsigned long uuid = parent.m_uuid & uuid::INV_FLAGS;
+                if (uuid > 0) GL::interlocked::increment(uuid::get_uuid(uuid).count);
+                return any(std::move(uuid), &ref, GL::type_of<T&>());
+            }
+        };
 
-        friend struct type_erasure::any_cast;
-        friend struct type_erasure::fast_any_cast;
-        friend struct type_erasure::wrapper;
+    };
 
-        // version of 'any' that is NOT thread-safe, but is faster as a result.
-        class fast_any {
-            friend class dynamic_object;
-        protected:
-            mutable GL::shared_ptr< type_erasure::any_data >
-                m_ptr; // atomic shared-ptr for the type-erased underlying data. 
+    // thread-safe alternative for 'any', with interop. Can be safely accessed in a multi-threaded fashion, including changing the type info.
+    class atomic_any {
+        friend class any;
+
+    protected:
+        GL::fast_shared_mutex
+            mut;
+        void*
+            m_ptr;
+        GL::type
+            m_type;
+        unsigned long
+            m_uuid;
+
+    public:
+        auto uuid() const {
+            std::shared_lock locked(mut);
+            return m_uuid;
+        };
+        auto ptr() const {
+            std::shared_lock locked(mut);
+            return m_ptr;
+        };
+        auto type() const {
+            return m_type;
+        };
+
+        atomic_any(unsigned long uuid, void* data, GL::type const& type) noexcept : mut(), m_uuid{ uuid }, m_type{ type }, m_ptr{ data } {};
+        atomic_any() noexcept : mut(), m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
+        atomic_any(std::nullptr_t) noexcept : mut(), m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
+        atomic_any(atomic_any const& rhs) : mut(), m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr }
+        {
+            if (1) {
+                std::shared_lock locked(rhs.mut);
+                m_uuid = rhs.m_uuid & uuid::INV_FLAGS;
+                m_type = rhs.m_type;
+                m_ptr = rhs.m_ptr;
+            }
+            if (m_uuid > 0) GL::interlocked::increment(uuid::get_uuid(m_uuid).count);
+        };
+        // declares that the parent will NOT go out-of-scope before this child does. That guarrantee allows us to skip a increment and decrement call to the counter. 
+        atomic_any(atomic_any const& rhs, bool) : mut(), m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr }
+        {
+            std::shared_lock locked(rhs.mut);
+            m_uuid = rhs.m_uuid | uuid::TEMPORARY;
+            m_type = rhs.m_type;
+            m_ptr = rhs.m_ptr;
+        };
+        atomic_any(atomic_any&& rhs) noexcept : mut(), m_uuid{ std::move(rhs.m_uuid) }, m_type{ std::move(rhs.m_type) }, m_ptr{ rhs.m_ptr } { rhs.m_uuid = 0; };
+        atomic_any const& operator=(atomic_any const& rhs) {
+            if (this == &rhs) return *this;
+
+            std::unique_lock locked1(mut);
+            std::shared_lock locked2(rhs.mut);
+
+            if ((m_uuid & uuid::TEMPORARY) == 0)
+                if ((m_uuid & uuid::INV_FLAGS) > 0)
+                    if (GL::interlocked::decrement(uuid::get_uuid(m_uuid).count) == 0)
+                        uuid::free_uuid(m_uuid);
+
+            m_uuid = rhs.m_uuid & uuid::INV_FLAGS;
+            m_type = rhs.m_type;
+            m_ptr = rhs.m_ptr;
+            if (m_uuid > 0) GL::interlocked::increment(uuid::get_uuid(m_uuid).count);
+            return *this;
+        };
+        atomic_any const& operator=(atomic_any&& rhs) noexcept {
+            std::unique_lock locked1(mut);
+
+            if ((m_uuid & uuid::TEMPORARY) == 0)
+                if ((m_uuid & uuid::INV_FLAGS) > 0)
+                    if (GL::interlocked::decrement(uuid::get_uuid(m_uuid).count) == 0)
+                        uuid::free_uuid(m_uuid);
+
+            m_uuid = std::move(rhs.m_uuid);
+            m_type = std::move(rhs.m_type);
+            m_ptr = rhs.m_ptr;
+            rhs.m_uuid = 0;
+            return *this;
+        };
+        atomic_any(any const& rhs);
+        atomic_any(any&& rhs) noexcept;
+
+        ~atomic_any() {
+            if ((m_uuid & uuid::TEMPORARY) == 0)
+                if ((m_uuid & uuid::INV_FLAGS) > 0)
+                    if (GL::interlocked::decrement(uuid::get_uuid(m_uuid).count) == 0)
+                        uuid::free_uuid(m_uuid);
+        };
+
+        template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<atomic_any, std::decay_t<ValueType>>>> static atomic_any instance(const ValueType& value) noexcept {
+            auto wrapped = GL::type_erasure::wrap(value);
+            auto* ptr = wrapped->get();
+            return atomic_any(uuid::new_uuid(std::move(wrapped)), ptr, GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>());
+        };
+        template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<atomic_any, std::decay_t<ValueType>>>> static atomic_any instance(ValueType&& value) noexcept {
+            auto wrapped = GL::type_erasure::wrap(std::forward<ValueType>(value));
+            auto* ptr = wrapped->get();
+            return atomic_any(uuid::new_uuid(std::move(wrapped)), ptr, GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>());
+        };
+        static atomic_any instance(atomic_any&& value) noexcept {
+            return std::forward<atomic_any>(value);
+        };
+        static atomic_any& instance(atomic_any& value) noexcept {
+            return value;
+        };
+        static atomic_any const& instance(const atomic_any& value) noexcept {
+            return value;
+        };
+        static atomic_any instance(any&& value) noexcept;
+        static atomic_any instance(any& value) noexcept;
+        static atomic_any instance(const any& value) noexcept;
+
+        operator bool() const noexcept {
+            return m_ptr;
+        };
+        bool empty() const noexcept {
+            return !m_ptr;
+        };
+        friend bool operator==(const atomic_any& a, const atomic_any& b) noexcept { return a.m_ptr == b.m_ptr; };
+        friend bool operator!=(const atomic_any& a, const atomic_any& b) noexcept { return a.m_ptr != b.m_ptr; };
+        friend bool operator<(const atomic_any& a, const atomic_any& b) noexcept { return a.m_ptr < b.m_ptr; };
+        friend bool operator<=(const atomic_any& a, const atomic_any& b) noexcept { return a.m_ptr <= b.m_ptr; };
+        friend bool operator>(const atomic_any& a, const atomic_any& b) noexcept { return a.m_ptr > b.m_ptr; };
+        friend bool operator>=(const atomic_any& a, const atomic_any& b) noexcept { return a.m_ptr >= b.m_ptr; };
+
+        bool operator&(int p_modifiers) const noexcept {
+            return m_type & p_modifiers;
+        };
+        atomic_any operator|(int p_modifiers) const noexcept {
+            atomic_any out(*this);
+            out.m_type |= p_modifiers;
+            return out;
+        };
+        atomic_any operator+(int p_modifiers) const noexcept {
+            atomic_any out(*this);
+            out.m_type |= p_modifiers;
+            return out;
+        };
+        atomic_any operator-(int p_modifiers) const noexcept {
+            atomic_any out(*this);
+            out.m_type -= p_modifiers;
+            return out;
+        };
+        atomic_any& operator|=(int p_modifiers) noexcept {
+            std::unique_lock locked1(mut);
+            m_type |= p_modifiers;
+            return *this;
+        };
+        atomic_any& operator+=(int p_modifiers) noexcept {
+            std::unique_lock locked1(mut);
+            m_type += p_modifiers;
+            return *this;
+        };
+        atomic_any& operator-=(int p_modifiers) noexcept {
+            std::unique_lock locked1(mut);
+            m_type -= p_modifiers;
+            return *this;
+        };
+
+    protected:
+        GL::shared_ptr<GL::type_erasure::any_data>& get_underlying_ptr() const noexcept {
+            std::shared_lock locked1(mut);
+            if ((m_uuid & uuid::INV_FLAGS) > 0)
+                return uuid::get_uuid(m_uuid).data;
+            else {
+                static GL::shared_ptr<GL::type_erasure::any_data> out{ nullptr };
+                return out;
+            }
+        };
+        class DataCaster {
         public:
-            GL::type
-                m_casted_type; // atomic type information. May be updated to include information such as the const-ness or temporary type. 
+            template<typename T> struct is_stdSharedPtr_class { typedef std::false_type type; };
+            template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>> { typedef std::true_type type; };
+            template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>&> { typedef std::true_type type; };
+            template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>*> { typedef std::true_type type; };
+            template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>> { typedef std::true_type type; };
+            template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>&> { typedef std::true_type type; };
+            template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>*> { typedef std::true_type type; };
+            template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>&&> { typedef std::true_type type; };
+
+            template<typename T> struct is_SharedPtr_class { typedef std::false_type type; };
+            template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>> { typedef std::true_type type; };
+            template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>&> { typedef std::true_type type; };
+            template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>*> { typedef std::true_type type; };
+            template<typename T> struct is_SharedPtr_class<const GL::shared_ptr<T>> { typedef std::true_type type; };
+            template<typename T> struct is_SharedPtr_class<const GL::shared_ptr<T>&> { typedef std::true_type type; };
+            template<typename T> struct is_SharedPtr_class<const GL::shared_ptr<T>*> { typedef std::true_type type; };
+            template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>&&> { typedef std::true_type type; };
 
         private:
-            void correct_type_information() {
-                if (m_ptr) {
-                    if (m_ptr->get_type().is_var() /*can_cast_var()*/) {
-                        if (auto* V = m_ptr->cast<var>()) {
-                            m_casted_type = V->get_type();
-                            if (m_casted_type.is_void()) {
-                                m_casted_type = GL::type_of<GL::var>();
+            template <class VType> static decltype(auto) DoCast_Shared_fast(GL::shared_ptr<GL::type_erasure::any_data>& ptr) noexcept {
+                return GL::static_pointer_cast<VType>(ptr->get(GL::shared_ptr<GL::type_erasure::any_data>(ptr)));
+            };
+            template <class VType> static decltype(auto) DoCast_StdShared_fast(GL::shared_ptr<GL::type_erasure::any_data>& ptr) noexcept {
+                return std::static_pointer_cast<VType>(ptr->get_std(GL::shared_ptr<GL::type_erasure::any_data>(ptr)));
+            };
+            template<typename VType> static decltype(auto) DoCast_Unshared_fast(void* container) /*noexcept*/ {
+                static constexpr bool is_ptr{ std::is_pointer_v<VType> };
+
+                if constexpr (is_ptr) {
+                    return reinterpret_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(container);
+                }
+                else {
+                    return *reinterpret_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(container);
+                }
+            };
+
+        public:
+            template<typename T> static decltype(auto) DoCast(atomic_any* p) /*noexcept*/ {
+                typedef typename is_SharedPtr_class<T>::type isShared;
+                typedef typename is_stdSharedPtr_class<T>::type isStdShared;
+
+                static constexpr bool is_shared_ptr{ isShared::value };
+                static constexpr bool is_std_shared_ptr{ isStdShared::value };
+                static constexpr bool is_ptr{ std::is_pointer_v<T> };
+                static constexpr bool is_ref{ std::is_reference_v<T> };
+                static constexpr bool is_const{ std::is_const_v<T> };
+                static constexpr bool is_atomic_any{ std::is_same_v<atomic_any, std::decay_t<T>> };
+
+                if (!p) {
+                    if constexpr (is_atomic_any) {
+                        static atomic_any out;
+                        return *&out;
+                    }
+                    else {
+                        if constexpr (is_shared_ptr) {
+                            return GL::shared_ptr<typename GL::type_erasure::get_type<T>::type>(nullptr);
+                        }
+                        else if constexpr (is_std_shared_ptr) {
+                            return std::shared_ptr<typename GL::type_erasure::get_type<T>::type>(nullptr);
+                        }
+                        else {
+                            if constexpr (is_ptr) {
+                                return static_cast<typename std::remove_reference<typename std::remove_pointer<T>::type>::type*>(nullptr);
+                            }
+                            else {
+                                auto err = "Cannot cast from `void` to `" + GL::type_of<typename std::remove_reference<typename std::remove_pointer<T>::type>::type>().name() + "`";
+                                throw std::runtime_error(err.to_string());
                             }
                         }
                     }
-                    if (m_ptr->can_cast_dynamic_object()) {
-                        if (auto* V = m_ptr->cast<dynamic_object>()) {
-                            m_casted_type = V->m_type;
-                        }
-                    }
                 }
-            }
-        public:
-            explicit fast_any(GL::shared_ptr< type_erasure::any_data >&& p_ptr, GL::type const& p_type)
-                : m_ptr{ std::move(p_ptr) }, m_casted_type{ p_type }
-            {
-                correct_type_information();
-            }
-
-        public:
-            fast_any() = default;
-            fast_any(fast_any const&) = default;
-            fast_any(fast_any&&) noexcept = default;
-            fast_any(std::nullptr_t) noexcept : m_ptr{}, m_casted_type{} { };
-            fast_any& operator=(fast_any const&) = default;
-            fast_any& operator=(fast_any&&) noexcept = default;
-            ~fast_any() = default;
-
-            template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>> && !std::is_same_v<fast_any, std::decay_t<ValueType>>>> static fast_any instance(const ValueType& value) noexcept {
-                return fast_any(type_erasure::wrap(value), type_of<typename type_erasure::get_type<std::decay_t<ValueType>>::type>());
-            };
-            template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>> && !std::is_same_v<fast_any, std::decay_t<ValueType>>>> static fast_any instance(ValueType&& value) noexcept {
-                return fast_any(type_erasure::wrap(std::forward<ValueType>(value)), type_of<typename type_erasure::get_type<std::decay_t<ValueType>>::type>());
-            };    
-            static fast_any instance(any&& value) noexcept {
-                return value.fast();
-            };
-            static fast_any instance(const fast_any& value) noexcept {
-                return value;
-            };
-            GL::shared_ptr<type_erasure::any_data> get_underlying_ptr() const {
-                return m_ptr;
-            };
-            operator bool() const noexcept {
-                return m_ptr.operator bool();
-            };
-            bool empty() const noexcept {
-                return !operator bool();
-            };
-            friend bool operator==(const fast_any& a, const fast_any& b) noexcept { return a.m_ptr == b.m_ptr; };
-            friend bool operator!=(const fast_any& a, const fast_any& b) noexcept { return a.m_ptr != b.m_ptr; };
-            friend bool operator<(const fast_any& a, const fast_any& b) noexcept { return a.m_ptr < b.m_ptr; };
-            friend bool operator<=(const fast_any& a, const fast_any& b) noexcept { return a.m_ptr <= b.m_ptr; };
-            friend bool operator>(const fast_any& a, const fast_any& b) noexcept { return a.m_ptr > b.m_ptr; };
-            friend bool operator>=(const fast_any& a, const fast_any& b) noexcept { return a.m_ptr >= b.m_ptr; };
-
-            bool operator&(int p_modifiers) const {
-                return m_casted_type & p_modifiers;
-            };
-            fast_any operator|(int p_modifiers) const {
-                fast_any out(*this);
-                out.m_casted_type |= p_modifiers;
-                return out;
-            };
-            fast_any operator+(int p_modifiers) const {
-                fast_any out(*this);
-                out.m_casted_type |= p_modifiers;
-                return out;
-            };
-            fast_any operator-(int p_modifiers) const {
-                fast_any out(*this);
-                out.m_casted_type -= p_modifiers;
-                return out;
-            };
-            fast_any& operator|=(int p_modifiers) {
-                m_casted_type |= p_modifiers;
-                return *this;
-            };
-            fast_any& operator+=(int p_modifiers) {
-                m_casted_type += p_modifiers;
-                return *this;
-            };
-            fast_any& operator-=(int p_modifiers) {
-                m_casted_type -= p_modifiers;
-                return *this;
-            };
-
-            // returns true if this type can easily match the requested type (e.g. int& -> const int&)
-            bool can_free_cast(type const& to) const {
-                if (m_casted_type.can_free_cast(to)) return true;
-                //if (auto ptr = m_ptr.load_fast()) {                    
-                //    return ptr->get_type().can_free_cast(to);
-                //}
-                return false;
-            };
-            // returns true if this type is the same foundational type at the requested type (e.g. int&& -> const int)
-            bool can_cast(type const& to) const {
-                if (m_casted_type.can_cast(to)) return true;
-                if (m_ptr) {
-                    if (m_ptr->get_type().can_cast(to)) return true;
-                    if (m_ptr->get_type().is_dynamic_object() /*can_cast_dynamic_object()*/ && (to.get_base_hash() == GL::type_of<GL::dynamic_object>().get_base_hash())) { return true; }
-                    if (m_ptr->get_type().is_var() /*can_cast_var()*/) {
-                        if (to.get_base_hash() == GL::type_of<GL::var>().get_base_hash()) return true;
-                        if (auto f = m_ptr->cast<GL::var>()->get_data(); f) {
-                            return f->can_cast(to);
-                        }
-                    }
-                }
-                return false;
-            };
-            GL::type const& get_actual_type() const {
-                if (m_ptr) return m_ptr->get_type();
                 else {
-                    static GL::type out{};
-                    return out;
+                    if constexpr (is_atomic_any) return *p;
+                    else {
+                        if constexpr (is_shared_ptr) {
+                            if constexpr (is_ptr) throw("Casting atomic_any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
+                            else if constexpr (is_ref) throw("Casting atomic_any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
+                            return DoCast_Shared_fast<typename GL::type_erasure::get_type<T>::type>(p->get_underlying_ptr());
+                        }
+                        else if constexpr (is_std_shared_ptr) {
+                            if constexpr (is_ptr) {
+                                throw("Casting atomic_any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
+                            }
+                            else if constexpr (is_ref) {
+                                throw("Casting atomic_any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
+                            }
+                            return DoCast_StdShared_fast<typename GL::type_erasure::get_type<T>::type>(p->get_underlying_ptr());
+                        }
+                        else {
+                            std::shared_lock locked1(p->mut);
+                            return DoCast_Unshared_fast<T>(p->m_ptr);
+                        }
+                    }
                 }
             };
 
-            fast_any fast() const { return *this; };
-
-        private:
-            void* ptr() const {
-                if (m_ptr)
-                    return m_ptr->get();
-                return nullptr;
-            };
-            GL::shared_ptr<void> shared_ptr() const {
-                if (m_ptr) {
-                    return m_ptr->get(GL::shared_ptr< type_erasure::any_data >(this->m_ptr));
-                }
-                return nullptr;
-            };
-            std::shared_ptr<void> std_shared_ptr() const {
-                if (m_ptr) {
-                    return m_ptr->get_std(GL::shared_ptr< type_erasure::any_data >(this->m_ptr));
-                }
-                return nullptr;
-            };
-
-        public:
-            template<typename VType, typename = std::enable_if_t<!std::is_same_v<fast_any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
-            decltype(auto) cast() const noexcept { return DataCaster::DoCast<VType>(const_cast<fast_any*>(this)); };
-
-            template<typename VType, typename = std::enable_if_t<!std::is_pointer<VType>::value&& std::is_same_v<fast_any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
-            fast_any& cast() const noexcept { return *const_cast<fast_any*>(this); };
-
-            template<typename VType, typename = std::enable_if_t<std::is_pointer<VType>::value&& std::is_same_v<fast_any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
-            fast_any* cast() const noexcept { return const_cast<fast_any*>(this); };
-
-            type_erasure::fast_any_cast cast() const noexcept;
-
-            friend struct type_erasure::any_cast;
-            friend struct type_erasure::fast_any_cast;
-            friend struct type_erasure::wrapper;
-            friend class any;
-
-            template <typename T> __declspec(noinline) static any::fast_any wrap_member(any::fast_any const& parent, T const& ref) {
-                return any::fast_any::instance(GL::shared_ptr<T>(&const_cast<T&>(ref), [capture = parent.m_ptr](T*) -> void {})) | (GL::type::Reference | GL::type::Const);
-            };
-            template <typename T> __declspec(noinline) static any::fast_any wrap_member(any::fast_any const& parent, T& ref) {
-                return any::fast_any::instance(GL::shared_ptr<T>(&ref, [capture = parent.m_ptr](T*) -> void {})) | GL::type::Reference;
-            };
         };
 
-        fast_any fast() const { return fast_any(this->m_ptr.load(), this->m_casted_type); };
+    public:
+        template<typename VType, typename = std::enable_if_t<!std::is_same_v<atomic_any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
+        decltype(auto) cast() const noexcept { return DataCaster::DoCast<VType>(const_cast<atomic_any*>(this)); };
 
-        any(fast_any const& rhs) noexcept : m_ptr{ GL::shared_ptr< type_erasure::any_data >{ rhs.m_ptr } }, m_casted_type{ rhs.m_casted_type } { };
-        any& operator=(fast_any const& rhs) noexcept {
-            m_ptr = GL::shared_ptr< type_erasure::any_data >{ rhs.m_ptr };
-            m_casted_type = rhs.m_casted_type;
-            return *this;
-        };
-        any(fast_any&& rhs) noexcept : m_ptr{ std::move(rhs.m_ptr) }, m_casted_type{ std::move(rhs.m_casted_type) } { };
-        any& operator=(fast_any && rhs) noexcept {
-            m_ptr = std::move(rhs.m_ptr);
-            m_casted_type = std::move(rhs.m_casted_type);
-            return *this;
-        };
-    };
+        template<typename VType, typename = std::enable_if_t<!std::is_pointer<VType>::value&& std::is_same_v<atomic_any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
+        atomic_any& cast() const noexcept { return *const_cast<atomic_any*>(this); };
 
-    __forceinline var::var(GL::shared_ptr<any>&& data_f) : p_data(std::move(data_f)) {
-        if (auto f = p_data.load_fast(); f)
-            p_type = f->m_casted_type;
-    };
-    __forceinline GL::type const& var::get_type() const {
-        return p_type;
-    };
-    __forceinline GL::type const& var::get_actual_type() {
-        if (auto f = p_data.load_fast(); f)
-            return f->get_actual_type();
-        return p_type;
-    };
-    __forceinline void var::set_data(GL::shared_ptr<GL::any>&& rhs) {
-        if (rhs) {
-            p_type = rhs->m_casted_type;
-            p_data.store(std::move(rhs));
-        }
-        else {
-            p_type = GL::type{};
-            p_data.store(nullptr);
-        }
-    };
+        template<typename VType, typename = std::enable_if_t<std::is_pointer<VType>::value&& std::is_same_v<atomic_any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
+        atomic_any* cast() const noexcept { return const_cast<atomic_any*>(this); };
 
-    namespace type_erasure {
-        struct any_cast {
-            any_cast() = default;
-            any_cast(const any_cast&) = delete;
-            any_cast(any_cast&&) = default;
-            any_cast& operator=(const any_cast&) = delete;
-            any_cast& operator=(any_cast&&) = delete;
-            ~any_cast() = default;
+        /// \todo it is a performance increase to allow the return value to be "referenced" rather than incremented/decremented properly, however, is this safe in practice?
+        template <typename T> __declspec(noinline) static atomic_any wrap_member(atomic_any const& parent, T const& ref) noexcept {
+            std::shared_lock locked1(parent.mut);
 
-            explicit operator any& () const noexcept { return *parent; };
-            explicit operator any* () const noexcept { return parent; };
-            template <typename T> operator std::shared_ptr<T>() const noexcept { 
-                return any::DataCaster::DoCast<std::shared_ptr<T>>(parent);
-            };
-            template <typename T> operator GL::shared_ptr<T>() const noexcept { 
-                return any::DataCaster::DoCast<GL::shared_ptr<T>>(parent);
-            };
-            template< typename ValueTypeT, typename U = ValueTypeT&, typename = std::enable_if<!any::DataCaster::is_SharedPtr_class<ValueTypeT>::type::value && !any::DataCaster::is_stdSharedPtr_class<ValueTypeT>::type::value> >
-            operator ValueTypeT& () const { 
-                return any::DataCaster::DoCast<ValueTypeT&>(parent);
-            };
-            template< typename ValueTypeT, typename U = ValueTypeT*, typename = std::enable_if<!any::DataCaster::is_SharedPtr_class<ValueTypeT>::type::value && !any::DataCaster::is_stdSharedPtr_class<ValueTypeT>::type::value> >
-            operator ValueTypeT* () const noexcept { 
-                return any::DataCaster::DoCast<ValueTypeT*>(parent);
-            };
-        
-            any* parent;
-        };
-        struct fast_any_cast {
-            fast_any_cast() = default;
-            fast_any_cast(const fast_any_cast&) = delete;
-            fast_any_cast(fast_any_cast&&) = default;
-            fast_any_cast& operator=(const fast_any_cast&) = delete;
-            fast_any_cast& operator=(fast_any_cast&&) = delete;
-            ~fast_any_cast() = default;
-
-            explicit operator any::fast_any& () const noexcept { return *parent; };
-            explicit operator any::fast_any* () const noexcept { return parent; };
-            template <typename T> operator std::shared_ptr<T>() const noexcept {
-                return any::DataCaster::DoCast<std::shared_ptr<T>>(parent);
-            };
-            template <typename T> operator GL::shared_ptr<T>() const noexcept {
-                return any::DataCaster::DoCast<GL::shared_ptr<T>>(parent);
-            };
-#pragma warning(push)
-#pragma warning(disable : 4172)
-            template< typename ValueTypeT, typename U = ValueTypeT&, typename = std::enable_if<!any::DataCaster::is_SharedPtr_class<ValueTypeT>::type::value && !any::DataCaster::is_stdSharedPtr_class<ValueTypeT>::type::value> >
-            operator ValueTypeT& () const {
-                return any::DataCaster::DoCast<ValueTypeT&>(parent);
-            };
-#pragma warning(pop)
-            template< typename ValueTypeT, typename U = ValueTypeT*, typename = std::enable_if<!any::DataCaster::is_SharedPtr_class<ValueTypeT>::type::value && !any::DataCaster::is_stdSharedPtr_class<ValueTypeT>::type::value> >
-            operator ValueTypeT* () const noexcept {
-                return any::DataCaster::DoCast<ValueTypeT*>(parent);
-            };
-
-            any::fast_any* parent;
-        };
-    };
-
-    //__forceinline type_erasure::any_cast any::cast() const noexcept {
-    //    return type_erasure::any_cast{ const_cast<any*>(this) };
-    //};
-    //__forceinline type_erasure::fast_any_cast any::fast_any::cast() const noexcept {
-    //    return type_erasure::fast_any_cast{ const_cast<fast_any*>(this) };
-    //};
-    ///*__forceinline*/ bool GL::type::is_any() const noexcept {
-    //    static GL::type_hash_t const h{ util::type_id<any>().hash_code() };
-    //    static GL::type_hash_t const h2{ util::type_id<any::fast_any>().hash_code() };
-    //    return (((hash ^ h) & impl::cached_type::MAGIC_MASK2) == 0) || (((hash ^ h2) & impl::cached_type::MAGIC_MASK2) == 0);
-
-    //    //static GL::type_hash_t const h{ util::type_id<any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
-    //    //static GL::type_hash_t const h2{ util::type_id<any::fast_any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
-    //    //GL::type_hash_t this_h{ get_base_hash() };
-    //    //return (this_h == h) || (this_h == h2);
-    //};
-    ///*__forceinline*/ bool GL::type::is_var() const noexcept {
-    //    static GL::type_hash_t const h{ util::type_id<var>().hash_code() };
-    //    return ((hash ^ h) & impl::cached_type::MAGIC_MASK2) == 0;
-
-    //    // static GL::type_hash_t const h{ util::type_id<var>().hash_code() & impl::cached_type::MAGIC_MASK2 };
-    //    // return (hash & impl::cached_type::MAGIC_MASK2) == h;
-    //};
-    ///*__forceinline*/ bool GL::type::is_dynamic_object() const noexcept {
-    //    static GL::type_hash_t const h{ util::type_id<dynamic_object>().hash_code() };
-    //    return ((hash ^ h) & impl::cached_type::MAGIC_MASK2) == 0;
-
-    //    //static GL::type_hash_t const h{ util::type_id<dynamic_object>().hash_code() & impl::cached_type::MAGIC_MASK2 };
-    //    //GL::type_hash_t this_h{ get_base_hash() };
-    //    //return this_h == h;
-    //};
-
-
-
-    namespace type_erasure {
-        __forceinline GL::shared_ptr<any_data> wrapper::get(const any_cast& obj) {
-            any* t = const_cast<any*>(obj.parent);
-            if (t) {
-                return t->m_ptr.load();
+            if ((parent.m_uuid & uuid::TEMPORARY) > 0) {
+                return atomic_any((unsigned long)parent.m_uuid, &const_cast<T&>(ref), GL::type_of<T const&>());
             }
-            return nullptr;
-        };
-        __forceinline GL::shared_ptr<any_data> wrapper::get(const any_cast* t) {
-            return get(*t); 
-        };
-        __forceinline GL::shared_ptr<any_data> wrapper::get(const fast_any_cast& obj) {
-            any::fast_any* t = const_cast<any::fast_any*>(obj.parent);
-            if (t) {
-                return t->m_ptr;
+            else {
+                unsigned long uuid = parent.m_uuid & uuid::INV_FLAGS;
+                if (uuid > 0) GL::interlocked::increment(uuid::get_uuid(uuid).count);
+                return atomic_any(std::move(uuid), &const_cast<T&>(ref), GL::type_of<T const&>());
             }
-            return nullptr;
         };
-        __forceinline GL::shared_ptr<any_data> wrapper::get(const fast_any_cast* t) {
-            return get(*t);
+        /// \todo it is a performance increase to allow the return value to be "referenced" rather than incremented/decremented properly, however, is this safe in practice?
+        template <typename T> __declspec(noinline) static atomic_any wrap_member(atomic_any const& parent, T& ref) noexcept {
+            std::shared_lock locked1(parent.mut);
+
+            if ((parent.m_uuid & uuid::TEMPORARY) > 0) {
+                return atomic_any((unsigned long)parent.m_uuid, &ref, GL::type_of<T&>());
+            }
+            else {
+                unsigned long uuid = parent.m_uuid & uuid::INV_FLAGS;
+                if (uuid > 0) GL::interlocked::increment(uuid::get_uuid(uuid).count);
+                return atomic_any(std::move(uuid), &ref, GL::type_of<T&>());
+            }
         };
+
+    };
+
+    /* class "Var" is a generic container for dynamically typed objects for use in the scripting language.
+    It defers from "Any" because Any objects are for use in C++ to contain statically typed objects.
+    "Var" objects are wrappers for Anys that allow the scripting language to process them as
+    empty & assignable, or filled and implimented */
+    class var {
+    public:
+        var() = default;
+        explicit var(any&& data_f) : p_data(std::move(data_f)) {
+            p_type = p_data.type();
+        }
+        var(var const&) = default;
+        var(var&&) = default;
+        var& operator=(var const&) = default;
+        var& operator=(var&&) = default;
+        ~var() = default;
+
+    public:
+        GL::type const& get_type() const {
+            return p_type;
+        };
+        GL::type get_actual_type() {
+            return p_data.type();
+        };
+        GL::atomic_any& get_data() {
+            return p_data;
+        };
+        void set_data(GL::any&& data_f) {
+            p_data = std::move(data_f);
+            p_type = p_data.type();
+        };
+
+    private:
+        GL::atomic_any
+            p_data; // may be "updated" at any time and therefore should be thread-safe. 
+        GL::type
+            p_type;
     };
 
     class is_template {
@@ -1632,7 +1483,6 @@ namespace GL {
             }
         };
     };
-
 };
 
 namespace std {

@@ -1,3 +1,5 @@
+#if 0
+
 #pragma once
 #include "scripting.h"
 // #include "datetime.h"
@@ -3916,3 +3918,5 @@ namespace GL {
         };
 	}
 }
+
+#endif

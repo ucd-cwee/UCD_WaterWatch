@@ -29,2335 +29,6 @@
 #include "datetime.h"
 #include "array_allocator.h"
 
-// Declaration
-namespace uuid {
-    static constexpr unsigned long TEMPORARY = 0x1000'0000;
-    static constexpr unsigned long FLAGS = 0xF000'0000;
-    static constexpr unsigned long INV_FLAGS = ~FLAGS;
-
-    struct uuid_ticket {
-        size_t count{ 0 };
-        GL::shared_ptr<GL::type_erasure::any_data> data{ nullptr };
-    };
-    static unsigned long new_uuid(GL::shared_ptr<GL::type_erasure::any_data>&& rhs) noexcept;
-    static void free_uuid(unsigned long uuid) noexcept;
-    static uuid_ticket& get_uuid(unsigned long uuid) noexcept;
-};
-
-class atomic_any;
-class Function;
-class Function_Caller;
-
-// not thread-safe. Should only be accessed in a single-threaded fashion.
-class any {
-    friend class atomic_any;
-
-    void* 
-        m_ptr; 
-    GL::type 
-        m_type;
-    unsigned long 
-        m_uuid; 
-
-public:
-    auto& uuid() const {
-        return m_uuid;
-    };
-    auto& ptr() const {
-        return m_ptr;
-    };
-    auto& type() const {
-        return m_type;
-    };
-
-    any(unsigned long uuid, void* data, GL::type const& type) noexcept : m_uuid{ uuid }, m_type{ type }, m_ptr{ data } {};
-    any() noexcept : m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
-    any(std::nullptr_t) noexcept : m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
-    any(any const& rhs) : m_uuid{ rhs.m_uuid & uuid::INV_FLAGS }, m_type{ rhs.m_type }, m_ptr{ rhs.m_ptr } { if (m_uuid > 0) GL::interlocked::increment(uuid::get_uuid(m_uuid).count); };
-    // declares that the parent will NOT go out-of-scope before this child does. That guarrantee allows us to skip a increment and decrement call to the counter. 
-    any(any const& rhs, bool) : m_uuid{ rhs.m_uuid | uuid::TEMPORARY }, m_type{ rhs.m_type }, m_ptr{ rhs.m_ptr } {};
-    any(any && rhs) noexcept : m_uuid{ std::move(rhs.m_uuid) }, m_type{ std::move(rhs.m_type) }, m_ptr{ rhs.m_ptr } { rhs.m_uuid = 0; };
-    any const& operator=(any const& rhs) {
-        if ((m_uuid & uuid::TEMPORARY) == 0)
-            if ((m_uuid & uuid::INV_FLAGS) > 0)
-                if (GL::interlocked::decrement(uuid::get_uuid(m_uuid).count) == 0)
-                    uuid::free_uuid(m_uuid);
-
-        m_uuid = rhs.m_uuid & uuid::INV_FLAGS;
-        m_type = rhs.m_type; 
-        m_ptr = rhs.m_ptr;
-        if (m_uuid > 0) GL::interlocked::increment(uuid::get_uuid(m_uuid).count);
-        return *this;
-    };
-    any const& operator=(any&& rhs) noexcept {
-        if ((m_uuid & uuid::TEMPORARY) == 0)
-            if ((m_uuid & uuid::INV_FLAGS) > 0)
-                if (GL::interlocked::decrement(uuid::get_uuid(m_uuid).count) == 0)
-                    uuid::free_uuid(m_uuid);
-
-        m_uuid = std::move(rhs.m_uuid);
-        m_type = std::move(rhs.m_type);
-        m_ptr = rhs.m_ptr;
-        rhs.m_uuid = 0;
-        return *this;
-    };
-
-    any(atomic_any const& rhs);
-    any(atomic_any&& rhs) noexcept;
-
-    ~any() {
-        if ((m_uuid & uuid::TEMPORARY) == 0) 
-            if ((m_uuid & uuid::INV_FLAGS) > 0) 
-                if (GL::interlocked::decrement(uuid::get_uuid(m_uuid).count) == 0)
-                    uuid::free_uuid(m_uuid);
-    };
-
-    template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> static any instance(const ValueType& value) noexcept {
-        auto wrapped = GL::type_erasure::wrap(value);
-        auto* ptr = wrapped->get();
-        return any(uuid::new_uuid(std::move(wrapped)), ptr, GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>());
-    };
-    template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> static any instance(ValueType&& value) noexcept {
-        auto wrapped = GL::type_erasure::wrap(std::forward<ValueType>(value));
-        auto* ptr = wrapped->get();
-        return any(uuid::new_uuid(std::move(wrapped)), ptr, GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>());
-    };
-    static any instance(any&& value) noexcept {
-        return std::forward<any>(value);
-    };
-    static any& instance(any& value) noexcept {
-        return value;
-    };
-    static any const& instance(const any& value) noexcept {
-        return value;
-    };
-    static any instance(atomic_any&& value) noexcept;
-    static any instance(atomic_any& value) noexcept;
-    static any instance(const atomic_any& value) noexcept;
-
-    operator bool() const noexcept {
-        return m_ptr;
-    };
-    bool empty() const noexcept {
-        return !m_ptr;
-    };
-    friend bool operator==(const any& a, const any& b) noexcept { return a.m_ptr == b.m_ptr; };
-    friend bool operator!=(const any& a, const any& b) noexcept { return a.m_ptr != b.m_ptr; };
-    friend bool operator<(const any& a, const any& b) noexcept { return a.m_ptr < b.m_ptr; };
-    friend bool operator<=(const any& a, const any& b) noexcept { return a.m_ptr <= b.m_ptr; };
-    friend bool operator>(const any& a, const any& b) noexcept { return a.m_ptr > b.m_ptr; };
-    friend bool operator>=(const any& a, const any& b) noexcept { return a.m_ptr >= b.m_ptr; };
-
-    bool operator&(int p_modifiers) const noexcept {
-        return m_type & p_modifiers;
-    };
-    any operator|(int p_modifiers) const noexcept {
-        any out(*this);
-        out.m_type |= p_modifiers;
-        return out;
-    };
-    any operator+(int p_modifiers) const noexcept {
-        any out(*this);
-        out.m_type |= p_modifiers;
-        return out;
-    };
-    any operator-(int p_modifiers) const noexcept {
-        any out(*this);
-        out.m_type -= p_modifiers;
-        return out;
-    };
-    any& operator|=(int p_modifiers) noexcept {
-        m_type |= p_modifiers;
-        return *this;
-    };
-    any& operator+=(int p_modifiers) noexcept {
-        m_type += p_modifiers;
-        return *this;
-    };
-    any& operator-=(int p_modifiers) noexcept {
-        m_type -= p_modifiers;
-        return *this;
-    };
-
-protected:
-    GL::shared_ptr<GL::type_erasure::any_data>& get_underlying_ptr() const noexcept {
-        if ((m_uuid & uuid::INV_FLAGS) > 0)
-            return uuid::get_uuid(m_uuid).data;
-        else {
-            static GL::shared_ptr<GL::type_erasure::any_data> out{ nullptr };
-            return out;
-        }
-    };
-    class DataCaster {
-    public:
-        template<typename T> struct is_stdSharedPtr_class { typedef std::false_type type; };
-        template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>> { typedef std::true_type type; };
-        template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>&> { typedef std::true_type type; };
-        template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>*> { typedef std::true_type type; };
-        template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>> { typedef std::true_type type; };
-        template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>&> { typedef std::true_type type; };
-        template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>*> { typedef std::true_type type; };
-        template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>&&> { typedef std::true_type type; };
-
-        template<typename T> struct is_SharedPtr_class { typedef std::false_type type; };
-        template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>> { typedef std::true_type type; };
-        template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>&> { typedef std::true_type type; };
-        template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>*> { typedef std::true_type type; };
-        template<typename T> struct is_SharedPtr_class<const GL::shared_ptr<T>> { typedef std::true_type type; };
-        template<typename T> struct is_SharedPtr_class<const GL::shared_ptr<T>&> { typedef std::true_type type; };
-        template<typename T> struct is_SharedPtr_class<const GL::shared_ptr<T>*> { typedef std::true_type type; };
-        template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>&&> { typedef std::true_type type; };
-
-    private:
-        template <class VType> static decltype(auto) DoCast_Shared_fast(GL::shared_ptr<GL::type_erasure::any_data>& ptr) noexcept {
-            return GL::static_pointer_cast<VType>(ptr->get(GL::shared_ptr<GL::type_erasure::any_data>(ptr)));
-        };
-        template <class VType> static decltype(auto) DoCast_StdShared_fast(GL::shared_ptr<GL::type_erasure::any_data>& ptr) noexcept {
-            return std::static_pointer_cast<VType>(ptr->get_std(GL::shared_ptr<GL::type_erasure::any_data>(ptr)));
-        };
-        template<typename VType> static decltype(auto) DoCast_Unshared_fast(void* container) /*noexcept*/ {
-            static constexpr bool is_ptr{ std::is_pointer_v<VType> };
-
-            if constexpr (is_ptr) {
-                return reinterpret_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(container);
-            }
-            else {
-                return *reinterpret_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(container);
-            }
-        };
-
-    public:
-        template<typename T> static decltype(auto) DoCast(any* p) /*noexcept*/ {
-            typedef typename is_SharedPtr_class<T>::type isShared;
-            typedef typename is_stdSharedPtr_class<T>::type isStdShared;
-
-            static constexpr bool is_shared_ptr{ isShared::value };
-            static constexpr bool is_std_shared_ptr{ isStdShared::value };
-            static constexpr bool is_ptr{ std::is_pointer_v<T> };
-            static constexpr bool is_ref{ std::is_reference_v<T> };
-            static constexpr bool is_const{ std::is_const_v<T> };
-            static constexpr bool is_any{ std::is_same_v<any, std::decay_t<T>> };
-
-            if (!p) {
-                if constexpr (is_any) {
-                    static any out;
-                    return *&out;
-                }
-                else {
-                    if constexpr (is_shared_ptr) {
-                        return GL::shared_ptr<typename GL::type_erasure::get_type<T>::type>(nullptr);
-                    }
-                    else if constexpr (is_std_shared_ptr) {
-                        return std::shared_ptr<typename GL::type_erasure::get_type<T>::type>(nullptr);
-                    }
-                    else {
-                        if constexpr (is_ptr) {
-                            return static_cast<typename std::remove_reference<typename std::remove_pointer<T>::type>::type*>(nullptr);
-                        }
-                        else {
-                            auto err = "Cannot cast from `void` to `" + GL::type_of<typename std::remove_reference<typename std::remove_pointer<T>::type>::type>().name() + "`";
-                            throw std::runtime_error(err.to_string());
-                        }
-                    }
-                }
-            }
-            else {
-                if constexpr (is_any) return *p;
-                else {
-                    if constexpr (is_shared_ptr) {
-                        if constexpr (is_ptr) throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                        else if constexpr (is_ref) throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                        return DoCast_Shared_fast<typename GL::type_erasure::get_type<T>::type>(p->get_underlying_ptr());
-                    }
-                    else if constexpr (is_std_shared_ptr) {
-                        if constexpr (is_ptr) {
-                            throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                        }
-                        else if constexpr (is_ref) {
-                            throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                        }
-                        return DoCast_StdShared_fast<typename GL::type_erasure::get_type<T>::type>(p->get_underlying_ptr());
-                    }
-                    else {
-                        return DoCast_Unshared_fast<T>(p->m_ptr);
-                    }
-                }
-            }
-        };
-
-    };
-
-public:
-    template<typename VType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
-    decltype(auto) cast() const noexcept { return DataCaster::DoCast<VType>(const_cast<any*>(this)); };
-
-    template<typename VType, typename = std::enable_if_t<!std::is_pointer<VType>::value && std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
-    any& cast() const noexcept { return *const_cast<any*>(this); };
-
-    template<typename VType, typename = std::enable_if_t<std::is_pointer<VType>::value && std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
-    any* cast() const noexcept { return const_cast<any*>(this); };
-
-    /// \todo it is a performance increase to allow the return value to be "referenced" rather than incremented/decremented properly, however, is this safe in practice?
-    template <typename T> __declspec(noinline) static any wrap_member(any const& parent, T const& ref) noexcept {       
-        if ((parent.m_uuid & uuid::TEMPORARY) > 0) {
-            return any((unsigned long)parent.m_uuid, &const_cast<T&>(ref), GL::type_of<T const&>());
-        }
-        else {
-            unsigned long uuid = parent.m_uuid & uuid::INV_FLAGS;
-            if (uuid > 0) GL::interlocked::increment(uuid::get_uuid(uuid).count);
-            return any(std::move(uuid), &const_cast<T&>(ref), GL::type_of<T const&>());
-        }
-    };
-    /// \todo it is a performance increase to allow the return value to be "referenced" rather than incremented/decremented properly, however, is this safe in practice?
-    template <typename T> __declspec(noinline) static any wrap_member(any const& parent, T& ref) noexcept {
-        if ((parent.m_uuid & uuid::TEMPORARY) > 0) {
-            return any((unsigned long)parent.m_uuid, &ref, GL::type_of<T&>());
-        }
-        else {
-            unsigned long uuid = parent.m_uuid & uuid::INV_FLAGS;
-            if (uuid > 0) GL::interlocked::increment(uuid::get_uuid(uuid).count);
-            return any(std::move(uuid), &ref, GL::type_of<T&>());
-        }
-    };
-
-};
-
-// thread-safe alternative for 'any', with interop. Can be safely accessed in a multi-threaded fashion, including changing the type info.
-class atomic_any {
-    friend class any;
-
-protected:
-    GL::fast_shared_mutex
-        mut; 
-    void* 
-        m_ptr;
-    GL::type 
-        m_type;
-    unsigned long 
-        m_uuid;
-
-public:
-    auto uuid() const {
-        std::shared_lock locked(mut);
-        return m_uuid;
-    };
-    auto ptr() const {
-        std::shared_lock locked(mut);
-        return m_ptr;
-    };
-    auto type() const {
-        return m_type;
-    };
-
-    atomic_any(unsigned long uuid, void* data, GL::type const& type) noexcept : mut(), m_uuid{ uuid }, m_type{ type }, m_ptr{ data } {};
-    atomic_any() noexcept : mut(), m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
-    atomic_any(std::nullptr_t) noexcept : mut(), m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {};
-    atomic_any(atomic_any const& rhs) : mut(), m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr }
-    {
-        if (1) {
-            std::shared_lock locked(rhs.mut);
-            m_uuid = rhs.m_uuid & uuid::INV_FLAGS;
-            m_type = rhs.m_type;
-            m_ptr = rhs.m_ptr;
-        }
-        if (m_uuid > 0) GL::interlocked::increment(uuid::get_uuid(m_uuid).count);
-    };
-    // declares that the parent will NOT go out-of-scope before this child does. That guarrantee allows us to skip a increment and decrement call to the counter. 
-    atomic_any(atomic_any const& rhs, bool) : mut(), m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr }
-    {
-        std::shared_lock locked(rhs.mut);
-        m_uuid = rhs.m_uuid | uuid::TEMPORARY;
-        m_type = rhs.m_type;
-        m_ptr = rhs.m_ptr;
-    };
-    atomic_any(atomic_any&& rhs) noexcept : mut(), m_uuid{ std::move(rhs.m_uuid) }, m_type{ std::move(rhs.m_type) }, m_ptr{ rhs.m_ptr } { rhs.m_uuid = 0; };
-    atomic_any const& operator=(atomic_any const& rhs) {
-        if (this == &rhs) return *this;
-
-        std::unique_lock locked1(mut);
-        std::shared_lock locked2(rhs.mut);
-
-        if ((m_uuid & uuid::TEMPORARY) == 0)
-            if ((m_uuid & uuid::INV_FLAGS) > 0)
-                if (GL::interlocked::decrement(uuid::get_uuid(m_uuid).count) == 0)
-                    uuid::free_uuid(m_uuid);
-
-        m_uuid = rhs.m_uuid & uuid::INV_FLAGS;
-        m_type = rhs.m_type;
-        m_ptr = rhs.m_ptr;
-        if (m_uuid > 0) GL::interlocked::increment(uuid::get_uuid(m_uuid).count);
-        return *this;
-    };
-    atomic_any const& operator=(atomic_any&& rhs) noexcept {
-        std::unique_lock locked1(mut);
-
-        if ((m_uuid & uuid::TEMPORARY) == 0)
-            if ((m_uuid & uuid::INV_FLAGS) > 0)
-                if (GL::interlocked::decrement(uuid::get_uuid(m_uuid).count) == 0)
-                    uuid::free_uuid(m_uuid);
-
-        m_uuid = std::move(rhs.m_uuid);
-        m_type = std::move(rhs.m_type);
-        m_ptr = rhs.m_ptr;
-        rhs.m_uuid = 0;
-        return *this;
-    };
-    atomic_any(any const& rhs);
-    atomic_any(any&& rhs) noexcept;
-
-    ~atomic_any() {
-        if ((m_uuid & uuid::TEMPORARY) == 0)
-            if ((m_uuid & uuid::INV_FLAGS) > 0)
-                if (GL::interlocked::decrement(uuid::get_uuid(m_uuid).count) == 0)
-                    uuid::free_uuid(m_uuid);
-    };
-
-    template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<atomic_any, std::decay_t<ValueType>>>> static atomic_any instance(const ValueType& value) noexcept {
-        auto wrapped = GL::type_erasure::wrap(value);
-        auto* ptr = wrapped->get();
-        return atomic_any(uuid::new_uuid(std::move(wrapped)), ptr, GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>());
-    };
-    template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<atomic_any, std::decay_t<ValueType>>>> static atomic_any instance(ValueType&& value) noexcept {
-        auto wrapped = GL::type_erasure::wrap(std::forward<ValueType>(value));
-        auto* ptr = wrapped->get();
-        return atomic_any(uuid::new_uuid(std::move(wrapped)), ptr, GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>());
-    };
-    static atomic_any instance(atomic_any&& value) noexcept {
-        return std::forward<atomic_any>(value);
-    };
-    static atomic_any& instance(atomic_any& value) noexcept {
-        return value;
-    };
-    static atomic_any const& instance(const atomic_any& value) noexcept {
-        return value;
-    };
-    static atomic_any instance(any&& value) noexcept;
-    static atomic_any instance(any& value) noexcept;
-    static atomic_any instance(const any& value) noexcept;
-
-    operator bool() const noexcept {
-        return m_ptr;
-    };
-    bool empty() const noexcept {
-        return !m_ptr;
-    };
-    friend bool operator==(const atomic_any& a, const atomic_any& b) noexcept { return a.m_ptr == b.m_ptr; };
-    friend bool operator!=(const atomic_any& a, const atomic_any& b) noexcept { return a.m_ptr != b.m_ptr; };
-    friend bool operator<(const atomic_any& a, const atomic_any& b) noexcept { return a.m_ptr < b.m_ptr; };
-    friend bool operator<=(const atomic_any& a, const atomic_any& b) noexcept { return a.m_ptr <= b.m_ptr; };
-    friend bool operator>(const atomic_any& a, const atomic_any& b) noexcept { return a.m_ptr > b.m_ptr; };
-    friend bool operator>=(const atomic_any& a, const atomic_any& b) noexcept { return a.m_ptr >= b.m_ptr; };
-
-    bool operator&(int p_modifiers) const noexcept {
-        return m_type & p_modifiers;
-    };
-    atomic_any operator|(int p_modifiers) const noexcept {
-        atomic_any out(*this);
-        out.m_type |= p_modifiers;
-        return out;
-    };
-    atomic_any operator+(int p_modifiers) const noexcept {
-        atomic_any out(*this);
-        out.m_type |= p_modifiers;
-        return out;
-    };
-    atomic_any operator-(int p_modifiers) const noexcept {
-        atomic_any out(*this);
-        out.m_type -= p_modifiers;
-        return out;
-    };
-    atomic_any& operator|=(int p_modifiers) noexcept {
-        std::unique_lock locked1(mut);
-        m_type |= p_modifiers;
-        return *this;
-    };
-    atomic_any& operator+=(int p_modifiers) noexcept {
-        std::unique_lock locked1(mut);
-        m_type += p_modifiers;
-        return *this;
-    };
-    atomic_any& operator-=(int p_modifiers) noexcept {
-        std::unique_lock locked1(mut);
-        m_type -= p_modifiers;
-        return *this;
-    };
-
-protected:
-    GL::shared_ptr<GL::type_erasure::any_data>& get_underlying_ptr() const noexcept {
-        std::shared_lock locked1(mut);
-        if ((m_uuid & uuid::INV_FLAGS) > 0)
-            return uuid::get_uuid(m_uuid).data;
-        else {
-            static GL::shared_ptr<GL::type_erasure::any_data> out{ nullptr };
-            return out;
-        }
-    };
-    class DataCaster {
-    public:
-        template<typename T> struct is_stdSharedPtr_class { typedef std::false_type type; };
-        template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>> { typedef std::true_type type; };
-        template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>&> { typedef std::true_type type; };
-        template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>*> { typedef std::true_type type; };
-        template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>> { typedef std::true_type type; };
-        template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>&> { typedef std::true_type type; };
-        template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>*> { typedef std::true_type type; };
-        template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>&&> { typedef std::true_type type; };
-
-        template<typename T> struct is_SharedPtr_class { typedef std::false_type type; };
-        template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>> { typedef std::true_type type; };
-        template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>&> { typedef std::true_type type; };
-        template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>*> { typedef std::true_type type; };
-        template<typename T> struct is_SharedPtr_class<const GL::shared_ptr<T>> { typedef std::true_type type; };
-        template<typename T> struct is_SharedPtr_class<const GL::shared_ptr<T>&> { typedef std::true_type type; };
-        template<typename T> struct is_SharedPtr_class<const GL::shared_ptr<T>*> { typedef std::true_type type; };
-        template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>&&> { typedef std::true_type type; };
-
-    private:
-        template <class VType> static decltype(auto) DoCast_Shared_fast(GL::shared_ptr<GL::type_erasure::any_data>& ptr) noexcept {
-            return GL::static_pointer_cast<VType>(ptr->get(GL::shared_ptr<GL::type_erasure::any_data>(ptr)));
-        };
-        template <class VType> static decltype(auto) DoCast_StdShared_fast(GL::shared_ptr<GL::type_erasure::any_data>& ptr) noexcept {
-            return std::static_pointer_cast<VType>(ptr->get_std(GL::shared_ptr<GL::type_erasure::any_data>(ptr)));
-        };
-        template<typename VType> static decltype(auto) DoCast_Unshared_fast(void* container) /*noexcept*/ {
-            static constexpr bool is_ptr{ std::is_pointer_v<VType> };
-
-            if constexpr (is_ptr) {
-                return reinterpret_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(container);
-            }
-            else {
-                return *reinterpret_cast<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type*>(container);
-            }
-        };
-
-    public:
-        template<typename T> static decltype(auto) DoCast(atomic_any* p) /*noexcept*/ {
-            typedef typename is_SharedPtr_class<T>::type isShared;
-            typedef typename is_stdSharedPtr_class<T>::type isStdShared;
-
-            static constexpr bool is_shared_ptr{ isShared::value };
-            static constexpr bool is_std_shared_ptr{ isStdShared::value };
-            static constexpr bool is_ptr{ std::is_pointer_v<T> };
-            static constexpr bool is_ref{ std::is_reference_v<T> };
-            static constexpr bool is_const{ std::is_const_v<T> };
-            static constexpr bool is_atomic_any{ std::is_same_v<atomic_any, std::decay_t<T>> };
-
-            if (!p) {
-                if constexpr (is_atomic_any) {
-                    static atomic_any out;
-                    return *&out;
-                }
-                else {
-                    if constexpr (is_shared_ptr) {
-                        return GL::shared_ptr<typename GL::type_erasure::get_type<T>::type>(nullptr);
-                    }
-                    else if constexpr (is_std_shared_ptr) {
-                        return std::shared_ptr<typename GL::type_erasure::get_type<T>::type>(nullptr);
-                    }
-                    else {
-                        if constexpr (is_ptr) {
-                            return static_cast<typename std::remove_reference<typename std::remove_pointer<T>::type>::type*>(nullptr);
-                        }
-                        else {
-                            auto err = "Cannot cast from `void` to `" + GL::type_of<typename std::remove_reference<typename std::remove_pointer<T>::type>::type>().name() + "`";
-                            throw std::runtime_error(err.to_string());
-                        }
-                    }
-                }
-            }
-            else {
-                if constexpr (is_atomic_any) return *p;
-                else {
-                    if constexpr (is_shared_ptr) {
-                        if constexpr (is_ptr) throw("Casting atomic_any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                        else if constexpr (is_ref) throw("Casting atomic_any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                        return DoCast_Shared_fast<typename GL::type_erasure::get_type<T>::type>(p->get_underlying_ptr());
-                    }
-                    else if constexpr (is_std_shared_ptr) {
-                        if constexpr (is_ptr) {
-                            throw("Casting atomic_any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                        }
-                        else if constexpr (is_ref) {
-                            throw("Casting atomic_any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                        }
-                        return DoCast_StdShared_fast<typename GL::type_erasure::get_type<T>::type>(p->get_underlying_ptr());
-                    }
-                    else {
-                        std::shared_lock locked1(p->mut);
-                        return DoCast_Unshared_fast<T>(p->m_ptr);
-                    }
-                }
-            }
-        };
-
-    };
-
-public:
-    template<typename VType, typename = std::enable_if_t<!std::is_same_v<atomic_any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
-    decltype(auto) cast() const noexcept { return DataCaster::DoCast<VType>(const_cast<atomic_any*>(this)); };
-
-    template<typename VType, typename = std::enable_if_t<!std::is_pointer<VType>::value&& std::is_same_v<atomic_any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
-    atomic_any& cast() const noexcept { return *const_cast<atomic_any*>(this); };
-
-    template<typename VType, typename = std::enable_if_t<std::is_pointer<VType>::value&& std::is_same_v<atomic_any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
-    atomic_any* cast() const noexcept { return const_cast<atomic_any*>(this); };
-
-    /// \todo it is a performance increase to allow the return value to be "referenced" rather than incremented/decremented properly, however, is this safe in practice?
-    template <typename T> __declspec(noinline) static atomic_any wrap_member(atomic_any const& parent, T const& ref) noexcept {
-        std::shared_lock locked1(parent.mut);
-
-        if ((parent.m_uuid & uuid::TEMPORARY) > 0) {
-            return atomic_any((unsigned long)parent.m_uuid, &const_cast<T&>(ref), GL::type_of<T const&>());
-        }
-        else {
-            unsigned long uuid = parent.m_uuid & uuid::INV_FLAGS;
-            if (uuid > 0) GL::interlocked::increment(uuid::get_uuid(uuid).count);
-            return atomic_any(std::move(uuid), &const_cast<T&>(ref), GL::type_of<T const&>());
-        }
-    };
-    /// \todo it is a performance increase to allow the return value to be "referenced" rather than incremented/decremented properly, however, is this safe in practice?
-    template <typename T> __declspec(noinline) static atomic_any wrap_member(atomic_any const& parent, T& ref) noexcept {
-        std::shared_lock locked1(parent.mut);
-
-        if ((parent.m_uuid & uuid::TEMPORARY) > 0) {
-            return atomic_any((unsigned long)parent.m_uuid, &ref, GL::type_of<T&>());
-        }
-        else {
-            unsigned long uuid = parent.m_uuid & uuid::INV_FLAGS;
-            if (uuid > 0) GL::interlocked::increment(uuid::get_uuid(uuid).count);
-            return atomic_any(std::move(uuid), &ref, GL::type_of<T&>());
-        }
-    };
-
-};
-
-any::any(atomic_any const& rhs) : m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } { 
-    std::shared_lock locked(rhs.mut);
-
-    m_uuid = rhs.m_uuid & uuid::INV_FLAGS;
-    m_type = rhs.m_type;
-    m_ptr = rhs.m_ptr;
-
-    if (m_uuid > 0) GL::interlocked::increment(uuid::get_uuid(m_uuid).count); 
-};
-any::any(atomic_any&& rhs) noexcept : m_uuid{ std::move(rhs.m_uuid) }, m_type{ std::move(rhs.m_type) }, m_ptr{ rhs.m_ptr } { rhs.m_uuid = 0; };
-any any::instance(atomic_any&& value) noexcept {
-    return std::forward<atomic_any>(value);
-};
-any any::instance(atomic_any& value) noexcept {
-    return value;
-};
-any any::instance(const atomic_any& value) noexcept {
-    return value;
-};
-atomic_any::atomic_any(any const& rhs) : mut(), m_uuid{ 0 }, m_type{ 0 }, m_ptr{ nullptr } {
-    if (1) {
-        m_uuid = rhs.m_uuid & uuid::INV_FLAGS;
-        m_type = rhs.m_type;
-        m_ptr = rhs.m_ptr;
-    }
-    if (m_uuid > 0) GL::interlocked::increment(uuid::get_uuid(m_uuid).count);
-};
-atomic_any::atomic_any(any&& rhs) noexcept : mut(), m_uuid{ std::move(rhs.m_uuid) }, m_type{ std::move(rhs.m_type) }, m_ptr{ rhs.m_ptr } { rhs.m_uuid = 0; };
-atomic_any atomic_any::instance(any&& value) noexcept {
-    return std::forward<any>(value);
-};
-atomic_any atomic_any::instance(any& value) noexcept {
-    return value;
-};
-atomic_any atomic_any::instance(const any& value) noexcept {
-    return value;
-};
-
-
-// Definition
-namespace uuid {
-    static GL::fast_ticket_dispensor<false> tickets;
-    static GL::atomic_vector< uuid_ticket > slots; 
-    unsigned long new_uuid(GL::shared_ptr<GL::type_erasure::any_data>&& rhs) noexcept {
-        unsigned long uuid = (unsigned long)tickets.get_ticket();
-        auto& ref = slots.get_or_make(uuid);
-        ref.count = 1;
-        ref.data = std::forward<GL::shared_ptr<GL::type_erasure::any_data>>(rhs);
-        return uuid;
-    };
-    void free_uuid(unsigned long uuid) noexcept {
-        uuid &= INV_FLAGS;
-        if (uuid > 0) {
-            auto& ref = slots[uuid];
-            // if (!ref.data->is_pod()) 
-                ref.data = nullptr;            
-            tickets.return_ticket(uuid);
-        }
-    };
-    uuid_ticket& get_uuid(unsigned long uuid) noexcept {
-        return slots.at(uuid & INV_FLAGS);
-    };
-};
-
-
-
-
-
-
-
-template <typename R, typename Class, typename... T> class Const_Member_Function_Traits {
-public:
-    using argType = std::tuple<T...>;
-    using classType = Class const&;
-    using returnType = R;
-    static constexpr auto numArgs{ std::tuple_size_v< argType > };
-    Const_Member_Function_Traits(R(Class::* f)(T...) const) {
-        if (!m_attr) m_attr = f;        
-    };
-    ~Const_Member_Function_Traits() = default;
-
-private:
-    inline static R(Class::* m_attr)(T...) const = nullptr;
-
-public:    
-    static R call(const any* begin) {
-        if constexpr (numArgs >= 15) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
-                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>(),
-                begin[13].cast<std::tuple_element_t<12, argType>>(), begin[14].cast<std::tuple_element_t<13, argType>>(), begin[15].cast<std::tuple_element_t<14, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 14) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
-                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>(),
-                begin[13].cast<std::tuple_element_t<12, argType>>(), begin[14].cast<std::tuple_element_t<13, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 13) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
-                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>(),
-                begin[13].cast<std::tuple_element_t<12, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 12) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
-                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>()
-                );
-        }
-
-        else if constexpr (numArgs == 11) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
-                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 10) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
-                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 9) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
-                begin[9].cast<std::tuple_element_t<8, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 8) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>()
-                );
-        }
-
-        else if constexpr (numArgs == 7) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 6) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 5) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 4) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>()
-                );
-        }
-
-        else if constexpr (numArgs == 3) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 2) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 1) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 0) {
-            return (begin[0].cast<classType>().*m_attr)(
-                );
-        }
-    }; 
-};
-template <typename R, typename Class, typename... T> class Member_Function_Traits {
-public:
-    using argType = std::tuple<T...>;
-    using classType = Class&;
-    using returnType = R;
-    static constexpr auto numArgs{ std::tuple_size_v< argType > };
-    Member_Function_Traits(R(Class::* f)(T...)) {
-        if (!m_attr) m_attr = f;
-    };
-    ~Member_Function_Traits() = default;
-
-private:
-    inline static R(Class::* m_attr)(T...) = nullptr;
-
-public:
-    static R call(const any* begin) {
-        if constexpr (numArgs >= 15) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
-                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>(),
-                begin[13].cast<std::tuple_element_t<12, argType>>(), begin[14].cast<std::tuple_element_t<13, argType>>(), begin[15].cast<std::tuple_element_t<14, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 14) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
-                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>(),
-                begin[13].cast<std::tuple_element_t<12, argType>>(), begin[14].cast<std::tuple_element_t<13, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 13) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
-                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>(),
-                begin[13].cast<std::tuple_element_t<12, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 12) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
-                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>(), begin[12].cast<std::tuple_element_t<11, argType>>()
-                );
-        }
-
-        else if constexpr (numArgs == 11) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
-                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>(), begin[11].cast<std::tuple_element_t<10, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 10) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
-                begin[9].cast<std::tuple_element_t<8, argType>>(), begin[10].cast<std::tuple_element_t<9, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 9) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>(),
-                begin[9].cast<std::tuple_element_t<8, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 8) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>(), begin[8].cast<std::tuple_element_t<7, argType>>()
-                );
-        }
-
-        else if constexpr (numArgs == 7) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>(), begin[7].cast<std::tuple_element_t<6, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 6) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>(), begin[6].cast<std::tuple_element_t<5, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 5) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>(),
-                begin[5].cast<std::tuple_element_t<4, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 4) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>(), begin[4].cast<std::tuple_element_t<3, argType>>()
-                );
-        }
-
-        else if constexpr (numArgs == 3) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>(), begin[3].cast<std::tuple_element_t<2, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 2) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>(), begin[2].cast<std::tuple_element_t<1, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 1) {
-            return (begin[0].cast<classType>().*m_attr)(
-                begin[1].cast<std::tuple_element_t<0, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 0) {
-            return (begin[0].cast<classType>().*m_attr)(
-                );
-        }
-    };
-};
-template <typename R, typename Class> class Attribute_Function_Traits {
-public:
-    using classType = Class;
-    using returnType = R;
-    static_assert(!std::is_same_v<void, returnType>);
-
-    Attribute_Function_Traits(R Class::* t_attr) {        
-        if (!m_attr) m_attr = t_attr;
-    };
-    ~Attribute_Function_Traits() = default;
-
-private:
-    inline static R Class::* m_attr = nullptr;
-
-public:
-    static returnType& call(const any* begin) {
-        return begin->cast<Class>().*m_attr;
-    };
-};
-template <typename R, typename... T> class Static_Function_Traits {
-public:
-    using argType = std::tuple<T...>;
-    using returnType = R;
-    static constexpr auto numArgs{ std::tuple_size_v< argType > };
-    Static_Function_Traits(R(*f)(T...)) {
-        if (!m_attr) m_attr = f;
-    };
-    ~Static_Function_Traits() = default;
-
-private:
-    inline static R(*m_attr)(T...) = nullptr;
-
-public:
-    static R call(const any* begin) {
-        if constexpr (numArgs >= 16) {
-            return (*m_attr)(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
-                begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
-                begin[13 - 1].cast<std::tuple_element_t<12, argType>>(), begin[14 - 1].cast<std::tuple_element_t<13, argType>>(), begin[15 - 1].cast<std::tuple_element_t<14, argType>>(), begin[16 - 1].cast<std::tuple_element_t<15, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 15) {
-            return (*m_attr)(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
-                begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
-                begin[13 - 1].cast<std::tuple_element_t<12, argType>>(), begin[14 - 1].cast<std::tuple_element_t<13, argType>>(), begin[15 - 1].cast<std::tuple_element_t<14, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 14) {
-            return (*m_attr)(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
-                begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
-                begin[13 - 1].cast<std::tuple_element_t<12, argType>>(), begin[14 - 1].cast<std::tuple_element_t<13, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 13) {
-            return (*m_attr)(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
-                begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
-                begin[13 - 1].cast<std::tuple_element_t<12, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 12) {
-            return (*m_attr)(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
-                begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>()
-                );
-        }
-
-        else if constexpr (numArgs == 11) {
-            return (*m_attr)(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
-                begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 10) {
-            return (*m_attr)(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
-                begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 9) {
-            return (*m_attr)(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
-                begin[9 - 1].cast<std::tuple_element_t<8, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 8) {
-            return (*m_attr)(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>()
-                );
-        }
-
-        else if constexpr (numArgs == 7) {
-            return (*m_attr)(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 6) {
-            return (*m_attr)(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 5) {
-            return (*m_attr)(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 4) {
-            return (*m_attr)(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>()
-                );
-        }
-
-        else if constexpr (numArgs == 3) {
-            return (*m_attr)(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 2) {
-            return (*m_attr)(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 1) {
-            return (*m_attr)(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 0) {
-            return (*m_attr)(
-                );
-        }
-    };
-};
-template <typename LambdaFunction> class Lambda_Function_Traits {
-private:
-    using function_traits = GL::parallel::impl::function_traits< decltype(std::function(std::declval<LambdaFunction>())) >;
-public:
-    using argType = typename function_traits::arguments;
-    using returnType = typename function_traits::result_type;
-    static constexpr auto numArgs{ std::tuple_size_v< argType > };
-    Lambda_Function_Traits() = default;
-    ~Lambda_Function_Traits() = default;
-public:
-    static returnType call(const any* begin, LambdaFunction const& m_attr) {
-        if constexpr (numArgs >= 16) {
-            return m_attr(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
-                begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
-                begin[13 - 1].cast<std::tuple_element_t<12, argType>>(), begin[14 - 1].cast<std::tuple_element_t<13, argType>>(), begin[15 - 1].cast<std::tuple_element_t<14, argType>>(), begin[16 - 1].cast<std::tuple_element_t<15, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 15) {
-            return m_attr(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
-                begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
-                begin[13 - 1].cast<std::tuple_element_t<12, argType>>(), begin[14 - 1].cast<std::tuple_element_t<13, argType>>(), begin[15 - 1].cast<std::tuple_element_t<14, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 14) {
-            return m_attr(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
-                begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
-                begin[13 - 1].cast<std::tuple_element_t<12, argType>>(), begin[14 - 1].cast<std::tuple_element_t<13, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 13) {
-            return m_attr(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
-                begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
-                begin[13 - 1].cast<std::tuple_element_t<12, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 12) {
-            return m_attr(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
-                begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>()
-                );
-        }
-
-        else if constexpr (numArgs == 11) {
-            return m_attr(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
-                begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 10) {
-            return m_attr(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
-                begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 9) {
-            return m_attr(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
-                begin[9 - 1].cast<std::tuple_element_t<8, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 8) {
-            return m_attr(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>()
-                );
-        }
-
-        else if constexpr (numArgs == 7) {
-            return m_attr(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 6) {
-            return m_attr(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 5) {
-            return m_attr(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
-                begin[5 - 1].cast<std::tuple_element_t<4, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 4) {
-            return m_attr(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>()
-                );
-        }
-
-        else if constexpr (numArgs == 3) {
-            return m_attr(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 2) {
-            return m_attr(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 1) {
-            return m_attr(
-                begin[1 - 1].cast<std::tuple_element_t<0, argType>>()
-                );
-        }
-        else if constexpr (numArgs == 0) {
-            return m_attr(
-                );
-        }
-    };
-};
-
-class Function_Caller {
-public:
-    bool UseSimplifiedArguments = false;
-
-    virtual ~Function_Caller() = default;
-    // implimentation-specific function that may include a reference, a shared pointer, a value-type, etc. 
-    virtual void call(const any* const begin, any* const out) const = 0;
-    // implimentation-specific function specifically intended copy-out the return value without wrapping it as an 'any'
-    virtual void call(const any* const begin, void* out_destination, size_t out_size) const = 0;
-    // returns true if the underlying, real function return of the underlying function exactly matches the provided type.
-    virtual bool return_type_explicit_match(std::type_info const& match) const = 0;
-
-    virtual size_t num_arguments() const = 0;
-    virtual GL::type const& argument(size_t index) const = 0;
-    virtual GL::type const& returns() const = 0;
-    std::array<const GL::type*, 16> arguments() const {
-        return std::array<const GL::type*, 16>{
-            &argument(0), & argument(1), & argument(2), & argument(3),
-                & argument(4), & argument(5), & argument(6), & argument(7),
-                & argument(8), & argument(9), & argument(10), & argument(11),
-                & argument(12), & argument(13), & argument(14), & argument(15)
-        };
-    };
-};
-
-namespace {
-    template <typename Function> class Const_Member_Function_Caller final : public Function_Caller {
-    public:
-        using traits = decltype(Const_Member_Function_Traits(std::declval< Function>()));
-        Const_Member_Function_Caller(Function&& Func) {
-            (void)Const_Member_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
-        };
-        virtual ~Const_Member_Function_Caller() = default;
-        static typename traits::returnType call(const any* begin) {
-            return traits::call(begin);
-        };
-        void call(const any* const begin, any* const out) const override {
-            if constexpr (std::is_same_v<void, typename traits::returnType>) {
-                call(begin);
-            }
-            else {
-                if (out) {
-#if 1
-                    if ((out->uuid() & uuid::TEMPORARY) == 0) {
-                        if ((out->uuid() & uuid::INV_FLAGS) > 0) {
-                            auto& ref = uuid::get_uuid(out->uuid());
-                            if (GL::interlocked::decrement(ref.count) == 0) {
-                                ref.count = 1;
-                                ref.data = GL::type_erasure::wrap(call(begin));
-                                const_cast<void*&>(out->ptr()) = ref.data->get();
-                                const_cast<GL::type&>(out->type()) = GL::type_of<typename traits::returnType>();
-                            }
-                            else {
-                                const_cast<unsigned long&>(out->uuid()) = 0;
-                                *out = any::instance(call(begin));
-                            }
-                        }
-                        else {
-                            *out = any::instance(call(begin));
-                        }
-                    }
-                    else {
-                        *out = any::instance(call(begin));
-                    }
-#else
-                    * out = any::instance(call(begin));
-#endif
-                }
-                else {
-                    call(begin);
-                }
-            }
-        };
-        void call(const any* const begin, void* out_destination, size_t out_size) const override {
-            if constexpr (std::is_same_v<void, typename traits::returnType>) {
-                call(begin);
-            }
-            else {
-                if (out_destination && (out_size >= sizeof(std::decay_t<typename traits::returnType>)))
-                    if constexpr (std::is_pod_v<std::decay_t<typename traits::returnType>>) {
-                        decltype(auto) recieved = call(begin);
-                        std::memcpy(out_destination, &recieved, sizeof(std::decay_t<typename traits::returnType>));
-                    }
-                    else {
-                        new (out_destination) std::decay_t<typename traits::returnType>(call(begin));
-                    }
-                else
-                    if (GL::string err_str = GL::prints(GL::string(R"(
-Call to function "%s" with explicit value return failed due to incorrect parameter sizing (%zu, expected %zu for return type of "%s").
-                )").remove_leading_and_trailing_whitespace(),
-                        typeid(Function).name(),
-                        out_size,
-                        sizeof(std::decay_t<typename traits::returnType>),
-                        typeid(std::decay_t<typename traits::returnType>).name()
-                    ); err_str.length() > 0)
-                        throw std::runtime_error(err_str.to_string());
-            }
-        };
-        bool return_type_explicit_match(std::type_info const& match) const override {
-            return typeid(typename traits::returnType) == match;
-        };
-        size_t num_arguments() const override {
-            return traits::numArgs + 1;
-        };
-        GL::type const& argument(size_t index) const override {
-            if (index == 0)
-                return GL::type_of<typename traits::classType>();
-            switch (index - 1) {
-            case 0: if constexpr (traits::numArgs > 0) return GL::type_of<std::tuple_element_t<0, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 1: if constexpr (traits::numArgs > 1) return GL::type_of<std::tuple_element_t<1, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 2: if constexpr (traits::numArgs > 2) return GL::type_of<std::tuple_element_t<2, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 3: if constexpr (traits::numArgs > 3) return GL::type_of<std::tuple_element_t<3, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 4: if constexpr (traits::numArgs > 4) return GL::type_of<std::tuple_element_t<4, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 5: if constexpr (traits::numArgs > 5) return GL::type_of<std::tuple_element_t<5, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 6: if constexpr (traits::numArgs > 6) return GL::type_of<std::tuple_element_t<6, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 7: if constexpr (traits::numArgs > 7) return GL::type_of<std::tuple_element_t<7, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 8: if constexpr (traits::numArgs > 8) return GL::type_of<std::tuple_element_t<8, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 9: if constexpr (traits::numArgs > 9) return GL::type_of<std::tuple_element_t<9, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 10: if constexpr (traits::numArgs > 10) return GL::type_of<std::tuple_element_t<10, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            case 11: if constexpr (traits::numArgs > 11) return GL::type_of<std::tuple_element_t<11, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            case 12: if constexpr (traits::numArgs > 12) return GL::type_of<std::tuple_element_t<12, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            case 13: if constexpr (traits::numArgs > 13) return GL::type_of<std::tuple_element_t<13, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            case 14: if constexpr (traits::numArgs > 14) return GL::type_of<std::tuple_element_t<14, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            case 15: if constexpr (traits::numArgs > 15) return GL::type_of<std::tuple_element_t<15, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            default:
-                return GL::type_of<GL::undefined>();
-            }
-        };
-        GL::type const& returns() const override {
-            return GL::type_of<typename traits::returnType>();
-        };
-    };
-    template <typename Function> class Member_Function_Caller final : public Function_Caller {
-    public:
-        using traits = decltype(Member_Function_Traits(std::declval< Function>()));
-        Member_Function_Caller(Function&& Func) {
-            (void)Member_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
-        };
-        virtual ~Member_Function_Caller() = default;
-        static typename traits::returnType call(const any* begin) {
-            return traits::call(begin);
-        };
-        void call(const any* const begin, any* const out) const override {
-            if constexpr (std::is_same_v<void, typename traits::returnType>) {
-                call(begin);
-            }
-            else {
-                if (out) {
-#if 1
-                    if ((out->uuid() & uuid::TEMPORARY) == 0) {
-                        if ((out->uuid() & uuid::INV_FLAGS) > 0) {
-                            auto& ref = uuid::get_uuid(out->uuid());
-                            if (GL::interlocked::decrement(ref.count) == 0) {
-                                ref.count = 1;
-                                ref.data = GL::type_erasure::wrap(call(begin));
-                                const_cast<void*&>(out->ptr()) = ref.data->get();
-                                const_cast<GL::type&>(out->type()) = GL::type_of<typename traits::returnType>();
-                            }
-                            else {
-                                const_cast<unsigned long&>(out->uuid()) = 0;
-                                *out = any::instance(call(begin));
-                            }
-                        }
-                        else {
-                            *out = any::instance(call(begin));
-                        }
-                    }
-                    else {
-                        *out = any::instance(call(begin));
-                    }
-#else
-                    * out = any::instance(call(begin));
-#endif
-                }
-                else {
-                    call(begin);
-                }
-            }
-        };
-        void call(const any* const begin, void* out_destination, size_t out_size) const override {
-            if constexpr (std::is_same_v<void, typename traits::returnType>) {
-                call(begin);
-            }
-            else {
-                if (out_destination && (out_size >= sizeof(std::decay_t<typename traits::returnType>)))
-                    if constexpr (std::is_pod_v<std::decay_t<typename traits::returnType>>) {
-                        decltype(auto) recieved = call(begin);
-                        std::memcpy(out_destination, &recieved, sizeof(std::decay_t<typename traits::returnType>));
-                    }
-                    else {
-                        new (out_destination) std::decay_t<typename traits::returnType>(call(begin));
-                    }
-                else
-                    if (GL::string err_str = GL::prints(GL::string(R"(
-Call to function "%s" with explicit value return failed due to incorrect parameter sizing (%zu, expected %zu for return type of "%s").
-                )").remove_leading_and_trailing_whitespace(),
-                        typeid(Function).name(),
-                        out_size,
-                        sizeof(std::decay_t<typename traits::returnType>),
-                        typeid(std::decay_t<typename traits::returnType>).name()
-                    ); err_str.length() > 0)
-                        throw std::runtime_error(err_str.to_string());
-            }
-        };
-        bool return_type_explicit_match(std::type_info const& match) const override {
-            return typeid(typename traits::returnType) == match;
-        };
-        size_t num_arguments() const override {
-            return traits::numArgs + 1;
-        };
-        GL::type const& argument(size_t index) const override {
-            if (index == 0)
-                return GL::type_of<typename traits::classType>();
-            switch (index - 1) {
-            case 0: if constexpr (traits::numArgs > 0) return GL::type_of<std::tuple_element_t<0, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 1: if constexpr (traits::numArgs > 1) return GL::type_of<std::tuple_element_t<1, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 2: if constexpr (traits::numArgs > 2) return GL::type_of<std::tuple_element_t<2, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 3: if constexpr (traits::numArgs > 3) return GL::type_of<std::tuple_element_t<3, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 4: if constexpr (traits::numArgs > 4) return GL::type_of<std::tuple_element_t<4, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 5: if constexpr (traits::numArgs > 5) return GL::type_of<std::tuple_element_t<5, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 6: if constexpr (traits::numArgs > 6) return GL::type_of<std::tuple_element_t<6, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 7: if constexpr (traits::numArgs > 7) return GL::type_of<std::tuple_element_t<7, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 8: if constexpr (traits::numArgs > 8) return GL::type_of<std::tuple_element_t<8, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 9: if constexpr (traits::numArgs > 9) return GL::type_of<std::tuple_element_t<9, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 10: if constexpr (traits::numArgs > 10) return GL::type_of<std::tuple_element_t<10, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            case 11: if constexpr (traits::numArgs > 11) return GL::type_of<std::tuple_element_t<11, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            case 12: if constexpr (traits::numArgs > 12) return GL::type_of<std::tuple_element_t<12, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            case 13: if constexpr (traits::numArgs > 13) return GL::type_of<std::tuple_element_t<13, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            case 14: if constexpr (traits::numArgs > 14) return GL::type_of<std::tuple_element_t<14, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            case 15: if constexpr (traits::numArgs > 15) return GL::type_of<std::tuple_element_t<15, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            default:
-                return GL::type_of<GL::undefined>();
-            }
-        };
-        GL::type const& returns() const override {
-            return GL::type_of<typename traits::returnType>();
-        };
-    };
-    template<typename Ret, typename Class, typename... Param> auto Member_Function_Caller_Impl(Ret(Class::* f)(Param...) const) {
-        using Type = decltype(Const_Member_Function_Caller(std::move(f)));
-        return GL::make_shared<Type>(std::move(f));
-    };
-    template<typename Ret, typename Class, typename... Param> auto Member_Function_Caller_Impl(Ret(Class::* f)(Param...)) {
-        using Type = decltype(Member_Function_Caller(std::move(f)));
-        return GL::make_shared<Type>(std::move(f));
-    };
-    template <typename Function> class Const_Attribute_Function_Caller final : public Function_Caller {
-    public:
-        using traits = decltype(Attribute_Function_Traits(std::declval< Function>()));
-        Const_Attribute_Function_Caller(Function&& Func) {
-            (void)Attribute_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
-        };
-        virtual ~Const_Attribute_Function_Caller() = default;
-        static typename traits::returnType& call(const any* begin) {
-            return traits::call(begin);
-        };
-        void call(const any* const begin, any* const out) const override {
-            if (out) {
-                if constexpr (std::is_same_v<GL::any, std::decay_t<typename traits::returnType>> || std::is_same_v<any, std::decay_t<typename traits::returnType>>) {
-                    *out = call(begin);
-                    if (begin->type().is_const()) *out |= (GL::type::Const | GL::type::Reference);
-                    else *out |= GL::type::Reference;
-                }
-                else if constexpr (std::is_pointer<typename traits::returnType>::value) {
-                    *out = any::wrap_member(*begin, *call(begin));
-                    if (begin->type().is_const()) *out |= GL::type::Const;
-                }
-                else {
-                    *out = any::wrap_member(*begin, call(begin));
-                    if (begin->type().is_const()) *out |= GL::type::Const;
-                }
-            }
-        };
-        void call(const any* const begin, void* out_destination, size_t out_size) const override {
-            if (out_destination && (out_size >= sizeof(std::decay_t<typename traits::returnType>))) {
-                typename traits::returnType& ref = call(begin);
-                if constexpr (std::is_pod_v<std::decay_t<typename traits::returnType>>) {
-                    std::memcpy(out_destination, &ref, sizeof(std::decay_t<typename traits::returnType>));
-                }
-                else {
-                    new (out_destination) std::decay_t<typename traits::returnType>(ref);
-                }
-            }
-            else
-                if (GL::string err_str = GL::prints(GL::string(R"(
-Call to function "%s" with explicit value return failed due to incorrect parameter sizing (%zu, expected %zu for return type of "%s").
-                )").remove_leading_and_trailing_whitespace(),
-                    typeid(Function).name(),
-                    out_size,
-                    sizeof(std::decay_t<typename traits::returnType>),
-                    typeid(std::decay_t<typename traits::returnType>).name()
-                ); err_str.length() > 0)
-                    throw std::runtime_error(err_str.to_string());
-        };
-        bool return_type_explicit_match(std::type_info const& match) const override {
-            return typeid(typename traits::returnType) == match;
-        };
-        size_t num_arguments() const override {
-            return 1;
-        };
-        GL::type const& argument(size_t index) const override {
-            if (index == 0) return GL::type_of<typename traits::classType const&>();
-            else return GL::type_of<GL::undefined>();
-        };
-        GL::type const& returns() const override {
-            return GL::type_of<typename traits::returnType const&>();
-        };
-    };
-    template <typename Function> class Attribute_Function_Caller final : public Function_Caller {
-    public:
-        using traits = decltype(Attribute_Function_Traits(std::declval< Function>()));
-        Attribute_Function_Caller(Function&& Func) {
-            (void)Attribute_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
-        };
-        virtual ~Attribute_Function_Caller() = default;
-        static typename traits::returnType& call(const any* begin) {
-            return traits::call(begin);
-        };
-        void call(const any* const begin, any* const out) const override {
-            if (out) {
-                if constexpr (std::is_same_v<GL::any, std::decay_t<typename traits::returnType>> || std::is_same_v<any, std::decay_t<typename traits::returnType>>) {
-                    *out = call(begin);
-                    if (begin->type().is_const()) *out |= (GL::type::Const | GL::type::Reference);
-                    else *out |= GL::type::Reference;                    
-                }
-                else if constexpr (std::is_pointer<typename traits::returnType>::value) {
-                    *out = any::wrap_member(*begin, *call(begin));
-                    if (begin->type().is_const()) *out |= GL::type::Const;
-                }
-                else {
-                    *out = any::wrap_member(*begin, call(begin));
-                    if (begin->type().is_const()) *out |= GL::type::Const;
-                }
-            }
-        };
-        void call(const any* const begin, void* out_destination, size_t out_size) const override {
-            if (out_destination && (out_size >= sizeof(std::decay_t<typename traits::returnType>))) {
-                typename traits::returnType& ref = call(begin);
-                if constexpr (std::is_pod_v<std::decay_t<typename traits::returnType>>) {
-                    std::memcpy(out_destination, &ref, sizeof(std::decay_t<typename traits::returnType>));
-                }
-                else {
-                    new (out_destination) std::decay_t<typename traits::returnType>(ref);
-                }
-            }
-            else
-                if (GL::string err_str = GL::prints(GL::string(R"(
-Call to function "%s" with explicit value return failed due to incorrect parameter sizing (%zu, expected %zu for return type of "%s").
-                )").remove_leading_and_trailing_whitespace(),
-                    typeid(Function).name(),
-                    out_size,
-                    sizeof(std::decay_t<typename traits::returnType>),
-                    typeid(std::decay_t<typename traits::returnType>).name()
-                ); err_str.length() > 0)
-                    throw std::runtime_error(err_str.to_string());
-        };
-        bool return_type_explicit_match(std::type_info const& match) const override {
-            return typeid(typename traits::returnType) == match;
-        };
-        size_t num_arguments() const override {
-            return 1;
-        };
-        GL::type const& argument(size_t index) const override {
-            if (index == 0) return GL::type_of<typename traits::classType&>();
-            else return GL::type_of<GL::undefined>();
-        };
-        GL::type const& returns() const override {
-            return GL::type_of<typename traits::returnType&>();
-        };
-    };
-    template <typename Function> class Static_Function_Caller final : public Function_Caller {
-    public:
-        using traits = decltype(Static_Function_Traits(std::declval<Function>()));
-        Static_Function_Caller(Function&& Func) {
-            (void)Static_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
-        };
-        virtual ~Static_Function_Caller() = default;
-
-        static typename traits::returnType call(const any* begin) {
-            return traits::call(begin);
-        };
-        void call(const any* const begin, any* const out) const override {
-            if constexpr (std::is_same_v<void, typename traits::returnType>) {
-                call(begin);
-            }
-            else {
-                if (out) {
-#if 1
-                    if ((out->uuid() & uuid::TEMPORARY) == 0){
-                        if ((out->uuid() & uuid::INV_FLAGS) > 0) {
-                            auto& ref = uuid::get_uuid(out->uuid());
-                            if (GL::interlocked::decrement(ref.count) == 0) {
-                                ref.count = 1;
-                                ref.data = GL::type_erasure::wrap(call(begin));
-                                const_cast<void*&>(out->ptr()) = ref.data->get();
-                                const_cast<GL::type&>(out->type()) = GL::type_of<typename traits::returnType>();
-                            }
-                            else {
-                                const_cast<unsigned long&>(out->uuid()) = 0;
-                                *out = any::instance(call(begin));
-                            }
-                        }
-                        else {
-                            *out = any::instance(call(begin));
-                        }
-                    }
-                    else {
-                        *out = any::instance(call(begin));
-                    }
-#else
-                    *out = any::instance(call(begin));
-#endif
-
-                }
-                else {
-                    call(begin);
-    }
-}
-        };
-        void call(const any* const begin, void* out_destination, size_t out_size) const override {
-            if constexpr (std::is_same_v<void, typename traits::returnType>) {
-                call(begin);
-            }
-            else {
-                if (out_destination && (out_size >= sizeof(std::decay_t<typename traits::returnType>)))
-                    if constexpr (std::is_pod_v<std::decay_t<typename traits::returnType>>) {
-                        decltype(auto) recieved = call(begin);
-                        std::memcpy(out_destination, &recieved, sizeof(std::decay_t<typename traits::returnType>));
-                    }
-                    else {
-                        new (out_destination) std::decay_t<typename traits::returnType>(call(begin));
-                    }
-                else
-                    if (GL::string err_str = GL::prints(GL::string(R"(
-Call to function "%s" with explicit value return failed due to incorrect parameter sizing (%zu, expected %zu for return type of "%s").
-                )").remove_leading_and_trailing_whitespace(),
-                        typeid(Function).name(),
-                        out_size,
-                        sizeof(std::decay_t<typename traits::returnType>),
-                        typeid(std::decay_t<typename traits::returnType>).name()
-                    ); err_str.length() > 0)
-                        throw std::runtime_error(err_str.to_string());
-            }
-        };
-        bool return_type_explicit_match(std::type_info const& match) const override {
-            return typeid(typename traits::returnType) == match;
-        };
-        size_t num_arguments() const override {
-            return traits::numArgs;
-        };
-        GL::type const& argument(size_t index) const override {
-            switch (index) {
-            case 0: if constexpr (traits::numArgs > 0) return GL::type_of<std::tuple_element_t<0, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 1: if constexpr (traits::numArgs > 1) return GL::type_of<std::tuple_element_t<1, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 2: if constexpr (traits::numArgs > 2) return GL::type_of<std::tuple_element_t<2, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 3: if constexpr (traits::numArgs > 3) return GL::type_of<std::tuple_element_t<3, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 4: if constexpr (traits::numArgs > 4) return GL::type_of<std::tuple_element_t<4, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 5: if constexpr (traits::numArgs > 5) return GL::type_of<std::tuple_element_t<5, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 6: if constexpr (traits::numArgs > 6) return GL::type_of<std::tuple_element_t<6, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 7: if constexpr (traits::numArgs > 7) return GL::type_of<std::tuple_element_t<7, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 8: if constexpr (traits::numArgs > 8) return GL::type_of<std::tuple_element_t<8, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 9: if constexpr (traits::numArgs > 9) return GL::type_of<std::tuple_element_t<9, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 10: if constexpr (traits::numArgs > 10) return GL::type_of<std::tuple_element_t<10, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            case 11: if constexpr (traits::numArgs > 11) return GL::type_of<std::tuple_element_t<11, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            case 12: if constexpr (traits::numArgs > 12) return GL::type_of<std::tuple_element_t<12, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            case 13: if constexpr (traits::numArgs > 13) return GL::type_of<std::tuple_element_t<13, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            case 14: if constexpr (traits::numArgs > 14) return GL::type_of<std::tuple_element_t<14, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            case 15: if constexpr (traits::numArgs > 15) return GL::type_of<std::tuple_element_t<15, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            default:
-                return GL::type_of<GL::undefined>();
-            }
-        };
-        GL::type const& returns() const override {
-            return GL::type_of<typename traits::returnType>();
-        };
-    };
-    /* Converts to a static function caller if the lambda does not capture. Otherwise, uses the local function copy. */
-    template <typename Function> class Lambda_Function_Caller final : public Function_Caller {
-    private:
-        Function func;
-    public:
-        using traits = typename Lambda_Function_Traits< Function >;
-        Lambda_Function_Caller(Function&& Func) : func(std::forward<Function>(Func)) {
-            if constexpr (std::is_empty_v< Function >) {
-                (void)Static_Function_Traits(+Func); // instantiate the static function pointer
-            }
-        };
-        virtual ~Lambda_Function_Caller() = default;
-        typename traits::returnType call(const any* begin) const {
-            if constexpr (std::is_empty_v< Function >) {
-                using static_traits = decltype(Static_Function_Traits(+std::declval<Function>()));
-                return static_traits::call(begin);
-            }
-            else {
-                return Lambda_Function_Traits< Function >::call(begin, func);
-            }
-        };
-        void call(const any* const begin, any* const out) const override {
-            if constexpr (std::is_same_v<void, typename traits::returnType>) {
-                call(begin);
-            }
-            else {
-                if (out) {
-#if 1
-                    if ((out->uuid() & uuid::TEMPORARY) == 0) {
-                        if ((out->uuid() & uuid::INV_FLAGS) > 0) {
-                            auto& ref = uuid::get_uuid(out->uuid());
-                            if (GL::interlocked::decrement(ref.count) == 0) {
-                                ref.count = 1;
-                                ref.data = GL::type_erasure::wrap(call(begin));
-                                const_cast<void*&>(out->ptr()) = ref.data->get();
-                                const_cast<GL::type&>(out->type()) = GL::type_of<typename traits::returnType>();
-                            }
-                            else {
-                                const_cast<unsigned long&>(out->uuid()) = 0;
-                                *out = any::instance(call(begin));
-                            }
-                        }
-                        else {
-                            *out = any::instance(call(begin));
-                        }
-                    }
-                    else {
-                        *out = any::instance(call(begin));
-                    }
-#else
-                    * out = any::instance(call(begin));
-#endif
-                }
-                else {
-                    call(begin);
-                }
-            }
-        };
-        void call(const any* const begin, void* out_destination, size_t out_size) const override {
-            if constexpr (std::is_same_v<void, typename traits::returnType>) {
-                call(begin);
-            }
-            else {
-                if (out_destination && (out_size >= sizeof(std::decay_t<typename traits::returnType>)))
-                    if constexpr (std::is_pod_v<std::decay_t<typename traits::returnType>>) {
-                        decltype(auto) recieved = call(begin);
-                        std::memcpy(out_destination, &recieved, sizeof(std::decay_t<typename traits::returnType>));
-                    }
-                    else {
-                        new (out_destination) std::decay_t<typename traits::returnType>(call(begin));
-                    }
-                else
-                    if (GL::string err_str = GL::prints(GL::string(R"(
-Call to function "%s" with explicit value return failed due to incorrect parameter sizing (%zu, expected %zu for return type of "%s").
-                )").remove_leading_and_trailing_whitespace(),
-                        typeid(Function).name(),
-                        out_size,
-                        sizeof(std::decay_t<typename traits::returnType>),
-                        typeid(std::decay_t<typename traits::returnType>).name()
-                    ); err_str.length() > 0)
-                        throw std::runtime_error(err_str.to_string());
-            }
-        };
-        bool return_type_explicit_match(std::type_info const& match) const override {
-            return typeid(typename traits::returnType) == match;
-        };
-        size_t num_arguments() const override {
-            return traits::numArgs;
-        };
-        GL::type const& argument(size_t index) const override {
-            switch (index) {
-            case 0: if constexpr (traits::numArgs > 0) return GL::type_of<std::tuple_element_t<0, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 1: if constexpr (traits::numArgs > 1) return GL::type_of<std::tuple_element_t<1, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 2: if constexpr (traits::numArgs > 2) return GL::type_of<std::tuple_element_t<2, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 3: if constexpr (traits::numArgs > 3) return GL::type_of<std::tuple_element_t<3, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 4: if constexpr (traits::numArgs > 4) return GL::type_of<std::tuple_element_t<4, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 5: if constexpr (traits::numArgs > 5) return GL::type_of<std::tuple_element_t<5, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 6: if constexpr (traits::numArgs > 6) return GL::type_of<std::tuple_element_t<6, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 7: if constexpr (traits::numArgs > 7) return GL::type_of<std::tuple_element_t<7, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 8: if constexpr (traits::numArgs > 8) return GL::type_of<std::tuple_element_t<8, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 9: if constexpr (traits::numArgs > 9) return GL::type_of<std::tuple_element_t<9, typename traits::argType>>();
-                  else return GL::type_of<GL::undefined>();
-            case 10: if constexpr (traits::numArgs > 10) return GL::type_of<std::tuple_element_t<10, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            case 11: if constexpr (traits::numArgs > 11) return GL::type_of<std::tuple_element_t<11, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            case 12: if constexpr (traits::numArgs > 12) return GL::type_of<std::tuple_element_t<12, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            case 13: if constexpr (traits::numArgs > 13) return GL::type_of<std::tuple_element_t<13, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            case 14: if constexpr (traits::numArgs > 14) return GL::type_of<std::tuple_element_t<14, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            case 15: if constexpr (traits::numArgs > 15) return GL::type_of<std::tuple_element_t<15, typename traits::argType>>();
-                   else return GL::type_of<GL::undefined>();
-            default:
-                return GL::type_of<GL::undefined>();
-            }
-        };
-        GL::type const& returns() const override {
-            return GL::type_of<typename traits::returnType>();
-        };
-    };
-};
-
-#if 0
-// Thread-safe access to a cache of data. Multiple caches are provided that are all, simultanously 
-template <typename T> class CategoricalCache {
-private: // CacheVersion -> CacheCategory -> Inputs -> Result
-    std::atomic<size_t> 
-        cache_position{ 0 };
-    GL::atomic_shared_ptr<T> 
-        current_cache{ nullptr };
-
-public:
-    CategoricalCache() = default;
-    CategoricalCache(CategoricalCache const&) = delete;
-    CategoricalCache(CategoricalCache&&) = delete;
-    CategoricalCache& operator=(CategoricalCache const&) = delete;
-    CategoricalCache& operator=(CategoricalCache&&) = delete;
-    ~CategoricalCache() = default;
-
-    void clear() { };
-
-    // Insert an item into the cache, only if it does not yet exist. If the insert succeeds, it will also remove the older caches. 
-    __declspec(noinline) void insert(size_t cache_version, GL::shared_ptr<T> result) {
-        while (true) {
-            auto old_pos = cache_position.load();
-            if (old_pos <= result) return;
-
-            if (cache_position.compare_exchange_strong(old_pos, cache_version)) {
-
-            }
-
-
-        }
-    };
-
-
-
-    //// Try to find an item from the cache.
-    //GL::shared_ptr<T> try_at(size_t cache_version) {
-    //    GL::shared_ptr<T> out;        
-    //    auto locked = _current_cache.lock_shared();
-    //    _current_cache.do_at_end([&cache_version, &out](size_t const& Key, GL::shared_ptr<T> const& Value) {
-    //        if (Key >= cache_version) {
-    //            out = Value;
-    //        }
-    //    });
-    //    return out;
-    //};
-
-    //// get or make the new ptr
-    //GL::shared_ptr<T> at(size_t cache_version) {
-    //    while (true) {
-    //        if (GL::shared_ptr<T> out = try_at(cache_version); out) 
-    //            return out;            
-    //        else 
-    //            insert(cache_version, GL::make_shared<T>());            
-    //    }
-    //};
-
-    //// get or make the new ptr
-    //template<typename F, typename... Args> GL::shared_ptr<T> at(size_t cache_version, F&& constructor, Args&&... arguments) {
-    //    while (true) {
-    //        if (GL::shared_ptr<T> out = try_at(cache_version); out) 
-    //            return out;            
-    //        else 
-    //            insert(cache_version, GL::make_shared<T>(constructor(std::forward<Args>(arguments)...)));            
-    //    }
-    //};
-
-    //// get the most current value
-    //GL::shared_ptr<T> current() {
-    //    GL::shared_ptr<T> out;
-    //    auto locked = _current_cache.lock_shared();
-    //    _current_cache.do_at_end([&out](size_t const& Key, GL::shared_ptr<T> const& Value) {
-    //        out = Value;
-    //    });
-    //    return out;
-    //};
-};
-#endif
-
-// Manager for wrapped functions, adding support for default parameters.
-class Function {
-public:
-    // Wrap any function (static, lambda, member function, attribute access, etc.) into a callable. Types and aritys must match when calling. 
-    template <typename Func> 
-    static GL::shared_ptr<Function_Caller> make_callable(Func&& func) {
-        typedef decltype(GL::details::detail::function_signature(func)) function_header;
-        if constexpr (function_header::is_object) { // function objects, e.g. auto x = [](){};
-            if constexpr (std::is_empty_v< Func >) {
-                using Type = decltype(Static_Function_Caller(+std::move(func)));
-                return GL::make_shared<Type>(+std::move(func));
-            }
-            else {
-                using Type = decltype(Lambda_Function_Caller(std::move(func)));
-                return GL::make_shared<Type>(std::move(func));
-            }
-        }
-        else if constexpr (function_header::is_member_object) { // member objects, e.g. return object.member;    
-            using Type = decltype(Attribute_Function_Caller(std::move(func)));
-            return GL::make_shared<Type>(std::move(func));
-        }
-        else if constexpr (function_header::is_member && !function_header::is_member_object) { // member functions, e.g. return object.member();
-            return Member_Function_Caller_Impl(std::move(func));
-        }
-        else if constexpr (function_header::is_static_member_function) { // static function pointers, e.g. static foo(){};   
-            using Type = decltype(Static_Function_Caller(std::move(func)));
-            return GL::make_shared<Type>(std::move(func));
-        }
-        else {
-            throw std::runtime_error("Did not handle conversion of provided function.");
-        }
-    };
-    struct function_wrapper_s {
-        struct argument_wrapper_s {
-            GL::string argument_name = GL::string::empty_string(); // argument name
-            any argument_default = nullptr; // argument's default value. Must exactly match the expected type of the function. 
-        };
-        GL::string name = GL::string::empty_string(); // function name
-        std::vector<argument_wrapper_s> arguments; // list of function arguments
-        GL::string description = GL::string::empty_string(); // function description
-        bool UseSimplifiedArguments = false; // true will result in faster code, but requires strict management of the lifetime of argument data, and dis-allows any type conversion of the argument data. 
-    };
-
-public:
-    const GL::shared_ptr<Function_Caller> ptr; // 
-    const size_t num_arguments; // 
-    const GL::type* returns; // 
-    std::array<GL::type, 16> arguments; //   
-    std::array<any, 16> defaults; // 
-    GL::string name; // 
-    GL::string description; // 
-    std::array<GL::string, 16> argument_names; // 
-
-    Function(GL::shared_ptr<Function_Caller>&& rhs)
-        : ptr{ std::forward<GL::shared_ptr<Function_Caller>>(rhs) }
-        , num_arguments{ ptr->num_arguments() }
-        , returns{ &ptr->returns() }
-        , arguments{}
-        , defaults{}
-        , name{ GL::string::empty_string() }
-        , description{ GL::string::empty_string() }   
-        , argument_names{}
-    {
-        auto actual_args = ptr->arguments();
-        for (int i = 0; i < 16; ++i)
-            if (actual_args[i]) arguments[i] = *actual_args[i];
-            else arguments[i] = GL::type_of<GL::undefined>();
-    };
-
-private:
-    GL::string returns_string() const {
-        if (returns) return returns->name();
-        return "";
-    };
-    GL::string argument_string(size_t index) const {
-        if (arguments[index] == GL::type_of<GL::undefined>()) return GL::string::empty_string();
-        else if (defaults[index]) {
-            return arguments[index].name() + " = {}"; /// \todo
-        }
-        else {
-            return arguments[index].name();
-        }
-    };
-    GL::string arguments_string() const {
-        GL::string out;
-        for (size_t i = 0; i < num_arguments; ++i)
-            out = out.add_to_delim(argument_string(i), ", ");
-        return out;
-    };
-
-public:
-    GL::string to_string() const {
-        return (returns_string() + " " + name + "(" + arguments_string() + ")").remove_leading_and_trailing(' ');
-    };
-
-public:
-    // Evaluate the error or delta between the provided arguments and the expected arguments. 
-    // Values less than 1 are safe to call using the provided arguments. 
-    template<typename... Args> double argument_error(Args&&... args) const {
-        double error = 0;
-        int position = 0;
-        ([&] { // unwrap the parameter pack and copy the relevant data
-            if constexpr (std::is_same_v<decltype(args), any const&>)
-                error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
-            else if constexpr (std::is_same_v<decltype(args), any&>)
-                error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
-            else if constexpr (std::is_same_v<decltype(args), any&&>)
-                error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
-            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>)
-                error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
-            else if constexpr (std::is_same_v<decltype(args), atomic_any const&>)
-                error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
-            else if constexpr (std::is_same_v<decltype(args), atomic_any&>)
-                error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
-            else if constexpr (std::is_same_v<decltype(args), atomic_any&&>)
-                error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
-            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, atomic_any>)
-                error += 1'000'000.0 * !args.type().can_free_cast(arguments[position++], true);
-            else
-                error += 1'000'000.0 * !GL::type_of<std::remove_reference_t<decltype(args)>>().can_free_cast(arguments[position++], true);
-        }(), ...);
-
-        for (; position < num_arguments; ++position)
-            if (defaults[position].empty() || !defaults[position].type().can_free_cast(arguments[position], true))
-                error += 1'000'000.0;
-            else 
-                error += 0.5 / num_arguments;
-
-        return error;
-    };
-
-public:
-    // Convenience function that will allow the user to easily call a proxy function with arguments.
-    // Will automatically add default parameters if the number of arguments is less than required. 
-    // Does NOT handle type-conversions and assumes perfect type matches, INCLUDING WITH THE DEFAULT VALUES.
-    template<typename T = void, typename... Args> decltype(auto) do_call(Args&&... args) const {
-        unsigned char buf[sizeof(any) * 16];
-        int position = 0;
-        bool UseSimplifiedArguments = ptr->UseSimplifiedArguments;
-        ([&] { // unwrap the parameter pack and copy the relevant data
-            if constexpr (std::is_same_v<decltype(args), any const&>)
-                std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));
-            else if constexpr (std::is_same_v<decltype(args), any&>)
-                std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));
-            else if constexpr (std::is_same_v<decltype(args), any&&>)
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<any>(args));
-            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>)
-                std::memcpy((&reinterpret_cast<any*>(&buf[0])[position++]), &args, sizeof(any));
-            else if constexpr (std::is_same_v<decltype(args), atomic_any const&>)
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
-            else if constexpr (std::is_same_v<decltype(args), atomic_any&>)
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
-            else if constexpr (std::is_same_v<decltype(args), atomic_any&&>)
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<atomic_any>(args));
-            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, atomic_any>)
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
-            else if (UseSimplifiedArguments)
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(0, &args, GL::type_of<decltype(args)>());            
-            else
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(any::instance(std::forward<decltype(args)>(args)));            
-        }(), ...);
-
-        for (; position < num_arguments; ++position) 
-            if (!defaults[position].empty())
-                std::memcpy((&reinterpret_cast<any*>(&buf[0])[position]), &defaults[position], sizeof(any));
-            else 
-                if (GL::string err_str = GL::prints(GL::string(R"(
-Arity error at call of Function "%.*s" at Argument #%i "%.*s". Number of provided arguments did not match the number of required arguments, and a default was not located to fill the gap.
-                )").remove_leading_and_trailing_whitespace(),
-                    name.length(), name.c_str().data(),
-                    position,
-                    argument_names[position].length(), argument_names[position].c_str().data()
-                ); err_str.length() > 0)
-                    throw std::runtime_error(err_str.to_string());
-        
-        defer(position = 0; ([&] { // unwrap the parameter pack and unload the non-reference data
-            if constexpr (std::is_same_v<decltype(args), any const&>)
-                position++;
-            else if constexpr (std::is_same_v<decltype(args), any&>)
-                position++;
-            else if constexpr (std::is_same_v<decltype(args), any&&>)
-                reinterpret_cast<any*>(&buf[0])[position++].~any();
-            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>)
-                position++;
-            else if constexpr (std::is_same_v<decltype(args), atomic_any const&>)
-                reinterpret_cast<any*>(&buf[0])[position++].~any();
-            else if constexpr (std::is_same_v<decltype(args), atomic_any&>)
-                reinterpret_cast<any*>(&buf[0])[position++].~any();
-            else if constexpr (std::is_same_v<decltype(args), atomic_any&&>)
-                reinterpret_cast<any*>(&buf[0])[position++].~any();
-            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, atomic_any>)
-                reinterpret_cast<any*>(&buf[0])[position++].~any();
-            else if (UseSimplifiedArguments)
-                position++;
-            else 
-                reinterpret_cast<any*>(&buf[0])[position++].~any();
-        }(), ...));
-               
-        if constexpr (std::is_same_v<void, T>) 
-            ptr->call(reinterpret_cast<any*>(&buf[0]), nullptr);        
-        else {
-            /*thread_local*/ any out;
-            thread_local unsigned char arr[sizeof(std::decay_t<T>)];
-
-            if constexpr (std::is_same_v<any, T>) {                
-                ptr->call(reinterpret_cast<any*>(&buf[0]), &out);
-                return /*std::move(*/out/*)*/;
-            }
-            else {
-                if (UseSimplifiedArguments && ptr->return_type_explicit_match(typeid(T))) {
-                    ptr->call(reinterpret_cast<any*>(&buf[0]), reinterpret_cast<void*>(&arr[0]), sizeof(arr));                    
-                    defer(if (!std::is_pod_v<std::decay_t<T>>) std::destroy_at(reinterpret_cast<std::decay_t<T>*>(&arr[0])));
-                    return (T)*reinterpret_cast<std::decay_t<T>*>(&arr[0]);
-                }
-                else {
-                    ptr->call(reinterpret_cast<any*>(&buf[0]), &out);
-                    T to_return = out.cast<T>();
-                    //if ((out.uuid() & uuid::TEMPORARY) == 0) // if not temporary, then potentially call the destructor                    
-                        //out = nullptr;
-                    return to_return;
-                }
-            }
-        }
-    };
-
-    // Convenience function that will allow the user to easily call a proxy function with arguments asynchronously.
-    // Will automatically add default parameters if the number of arguments is less than required. 
-    // Does NOT handle type-conversions and assumes perfect type matches, INCLUDING WITH THE DEFAULT VALUES.
-    template<typename T = void, typename... Args> decltype(auto) async_call(Args&&... args) const {
-        unsigned char buf[sizeof(any) * 16];
-        int position = 0;
-        ([&] { // unwrap the parameter pack and copy the relevant data
-            if constexpr (std::is_same_v<decltype(args), any const&>) 
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);            
-            else if constexpr (std::is_same_v<decltype(args), any&>) 
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);            
-            else if constexpr (std::is_same_v<decltype(args), any&&>) 
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<any>(args));            
-            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, any>) 
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);        
-            else if constexpr (std::is_same_v<decltype(args), atomic_any const&>)
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
-            else if constexpr (std::is_same_v<decltype(args), atomic_any&>)
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
-            else if constexpr (std::is_same_v<decltype(args), atomic_any&&>)
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(std::forward<atomic_any>(args));
-            else if constexpr (std::is_same_v<std::decay_t<decltype(args)>, atomic_any>)
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(args);
-            else 
-                new (&reinterpret_cast<any*>(&buf[0])[position++]) any(any::instance(std::forward<decltype(args)>(args)));            
-        }(), ...);
-        for (; position < num_arguments; ++position) 
-            if (!defaults[position].empty())
-                new (&reinterpret_cast<any*>(&buf[0])[position]) any(defaults[position]);
-            else
-                if (GL::string err_str = GL::prints(GL::string(R"(
-Arity error at call of Function "%.*s" at Argument #%i "%.*s". Number of provided arguments did not match the number of required arguments, and a default was not located to fill the gap.
-                )").remove_leading_and_trailing_whitespace(),
-                    name.length(), name.c_str().data(),
-                    position,
-                    argument_names[position].length(), argument_names[position].c_str().data()
-                ); err_str.length() > 0)
-                    throw std::runtime_error(err_str.to_string());
-            
-        // copies the buffer directly, and copies the shared_ptr with its normal protections for the underlying function
-        auto out = GL::parallel::async([buf, Ptr = (GL::shared_ptr<Function_Caller>)(this->ptr)]() {
-            defer(int position = 0; ([&] { // unwrap the parameter pack and unload the non-reference data
-                if constexpr (std::is_same_v<decltype(args), any const&>)  // this constexpr if statement forces the unroll to happen without impacting performance 
-                    const_cast<any&>(reinterpret_cast<const any*>(&buf[0])[position++]).~any();                
-                else 
-                    const_cast<any&>(reinterpret_cast<const any*>(&buf[0])[position++]).~any();                
-            }(), ...));
-            if (!Ptr) throw "Function went out-of-scope";
-
-            if constexpr (std::is_same_v<void, T>) 
-                Ptr->call(const_cast<any*>(reinterpret_cast<const any*>(&buf[0])), nullptr);            
-            else {
-                thread_local any out;
-                Ptr->call(const_cast<any*>(reinterpret_cast<const any*>(&buf[0])), &out);
-                if constexpr (std::is_same_v<any, T>) 
-                    return std::move(out);                
-                else {
-                    T to_return = out.cast<T>();
-                    if ((out.uuid() & uuid::TEMPORARY) == 0)
-                        // if not temporary, then potentially call the destructor
-                        if ((out.uuid() & uuid::INV_FLAGS) > 0)
-                            out = nullptr;
-                    return to_return;
-                }
-            }
-        });
-        if constexpr (std::is_same_v<void, T>) {
-            return out.as_promise();
-        }
-        else if constexpr (std::is_same_v<any, T>) {
-            return out.as_promise();
-        }
-        else {
-            return out;
-        }
-    };
-
-};
-// wrap any function (such as lambdas, static, member functions, etc.) into a callable object
-template <typename Func> Function wrap_function(Function::function_wrapper_s const& info, Func&& func) {
-    Function out(Function::make_callable(std::forward<Func>(func)));    
-    out.name = info.name;
-    out.description = info.description;
-    out.ptr->UseSimplifiedArguments = info.UseSimplifiedArguments;
-    bool provided_default_parameter = false;
-    for (int i = 0; (i < info.arguments.size()) && (i < out.argument_names.size()) && (i < out.defaults.size()); ++i) {
-        out.argument_names[i] = info.arguments[i].argument_name;
-        out.defaults[i] = info.arguments[i].argument_default;
-                
-        if (!out.defaults[i].empty()) {
-            // validate that the default parameter is correctly matching the type information. If it does not, this is a major risk for corruption and crashing.
-            provided_default_parameter = true;
-            if (!out.defaults[i].type().can_free_cast(out.arguments[i], true))
-                if (GL::string err_str = GL::prints(GL::string(R"(
-Argument #%i "%.*s" of Function "%.*s" was provided a default parameter of type "%.*s", but expected type "%.*s".
-                )").remove_leading_and_trailing_whitespace(),
-                    i,
-                    out.argument_names[i].length(), out.argument_names[i].c_str().data(),
-                    out.name.length(), out.name.c_str().data(),
-                    out.defaults[i].type().name().length(), out.defaults[i].type().name().c_str().data(),
-                    out.arguments[i].name().length(), out.arguments[i].name().c_str().data()
-                ); err_str.length() > 0)
-                    throw std::runtime_error(err_str.to_string());
-        }
-        else {
-            // validate that when using default parameters, a default must be provided for all arguments following the first-provided default.
-            if (provided_default_parameter)
-                if (GL::string err_str2 = GL::prints(GL::string(R"(
-Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but expected one of type "%.*s".
-                )").remove_leading_and_trailing_whitespace(),
-                    i,
-                    out.argument_names[i].length(), out.argument_names[i].c_str().data(),
-                    out.name.length(), out.name.c_str().data(),
-                    out.arguments[i].name().length(), out.arguments[i].name().c_str().data()
-                ); err_str2.length() > 0)
-                    throw std::runtime_error(err_str2.to_string());
-        }
-
-        
-    }
-    return out;
-};
-// generate a callable object to convert from one type to another, supporting polymorphic types. 
-template <typename From, typename To> Function wrap_converter(bool UseSimplifiedArguments = true) {
-    Function::function_wrapper_s info{
-        GL::type_of<From>().name() + "_to_" + GL::type_of<To>().name(),
-        { { "from", nullptr } },
-        GL::string("Compiled function to convert from ") + GL::type_of<From>().name() + " to " + GL::type_of<To>().name() + ".",
-        UseSimplifiedArguments
-    };
-        
-    if constexpr (std::is_base_of_v< To, From>) {
-        // we are attempting to cast from a Derived type to a Base type. 
-        info.UseSimplifiedArguments = false;
-        Function out = wrap_function(info, [](any const& x) -> any {
-            // uuid::get_uuid(x.uuid()).data->get_type(); // gets the actual, underlying type of the shared object. 
-
-            any out = x;
-            const_cast<GL::type&>(out.type()) = GL::type_of<To>();
-            return out;
-            // return any::wrap_member(x, *dynamic_cast<To*>(reinterpret_cast<From*>(x.ptr())));
-        });
-        out.arguments[0] = GL::type_of<From>() + GL::type::Reference;
-        const_cast<GL::type&>(out.ptr->returns()) = GL::type_of<To>() + (GL::type::Reference + GL::type_of<From>().get_qualifiers());
-        return out;
-    }
-    if constexpr (std::is_base_of_v< From, To>) {
-        // we are attempting to cast from a Base type to a Derived type. 
-        info.UseSimplifiedArguments = false;
-        Function out = wrap_function(info, [](any const& x) -> any {
-            any out = x;
-            const_cast<GL::type&>(out.type()) = GL::type_of<To>();
-            return out;
-            // return any::wrap_member(x, *dynamic_cast<To*>(reinterpret_cast<From*>(x.ptr())));
-        });
-        out.arguments[0] = GL::type_of<From>() + GL::type::Reference;
-        const_cast<GL::type&>(out.ptr->returns()) = GL::type_of<To>() + (GL::type::Reference + GL::type_of<From>().get_qualifiers());
-        return out;
-    }
-
-    // idea: if the To object cannot be assigned normally, we could create it as a shared_ptr and return an 'any' object? Would simply need to un-set the UseSimplifiedArguments argument in that case. 
-    if constexpr (std::is_pod_v<From> && std::is_constructible_v<To, From>) {
-        return wrap_function(info, [](From x) -> To { return x; });
-    }
-    else if constexpr (std::is_constructible_v<To, From const&>) {
-        return wrap_function(info, [](From const& x) -> To { return x; });
-    }
-    else if constexpr (std::is_pod_v<From>  && std::is_constructible_v<To> && std::is_assignable_v<To, From>) {
-        return wrap_function(info, [](From x) -> To { To out; out = x; return out; });
-    }
-    else if constexpr (std::is_constructible_v<To> && std::is_assignable_v<To, From const&>) {
-        return wrap_function(info, [](From const& x) -> To { To out; out = x; return out; });
-    }
-    else {
-        static_assert(false, "Attempted to create a conversion function from but failed. Objects were not convertable.");
-    }
-};
-
-
-
-
-
 
 namespace GL {
     class stopwatch_group {
@@ -2417,12 +88,12 @@ namespace GL {
                 }
 
                 auto out = std::vector{
-                    GL::millisecond(GL::nanosecond(min)).to_string(),
-                    GL::millisecond(GL::nanosecond(fst)).to_string(),
-                    GL::millisecond(GL::nanosecond(mid)).to_string(),
-                    GL::millisecond(GL::nanosecond(trd)).to_string(),
-                    GL::millisecond(GL::nanosecond(max)).to_string(),
-                    GL::millisecond(GL::nanosecond(end - start)).to_string()
+                    GL::millisecond(GL::nanosecond((float)min)).to_string(),
+                    GL::millisecond(GL::nanosecond((float)fst)).to_string(),
+                    GL::millisecond(GL::nanosecond((float)mid)).to_string(),
+                    GL::millisecond(GL::nanosecond((float)trd)).to_string(),
+                    GL::millisecond(GL::nanosecond((float)max)).to_string(),
+                    GL::millisecond(GL::nanosecond((float)end - start)).to_string()
                 };
                 if (name.length() > 0) {
                     std::cout << GL::printf("%.*s: [ Min: %.*s, 25%: %.*s, 50%: %.*s, 75%: %.*s, Max: %.*s ] Over %.*s\n",
@@ -2494,7 +165,7 @@ namespace GL {
                 return 0ull;
             }
         }
-        typedef decltype(GL::details::detail::function_signature(&guard_critical_section_impl)) function_header;
+        typedef decltype(GL::detail::function_signature(&guard_critical_section_impl)) function_header;        
         typedef typename function_header::Return_Type guard_critical_section_type;
 
     public:
@@ -2583,14 +254,179 @@ namespace GL {
 
 #include "../GpuProgramming/matrix.h"
 
-int main() {
+template <typename T>
+class GPU_job {
+public:
+    T gpu_task;
+    using return_type = typename typename T::element_type::returnType;
 
-    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED_LOOP"); true) {
+    GPU_job() = delete;
+    GPU_job(T const& job) : gpu_task(job) {
+        static_assert(std::is_base_of_v<GL::parallel::single_threaded::job_base, typename T::element_type>, "GPU job must use the single-threaded task system");
+    };
+    GPU_job(T&& job) : gpu_task(std::forward<T>(job)) {
+        static_assert(std::is_base_of_v<GL::parallel::single_threaded::job_base, typename T::element_type>, "GPU job must use the single-threaded task system");
+    };
+    GPU_job(GPU_job const&) = default;
+    GPU_job(GPU_job&&) noexcept = default;
+    GPU_job& operator=(GPU_job const&) = default;
+    GPU_job& operator=(GPU_job&&) noexcept = default;
+    ~GPU_job() = default;
+
+    decltype(auto) result() {
+        gpu_task->wait();
+        if constexpr (!std::is_same_v<void, return_type>) return gpu_task->result.cast<return_type>();
+    };
+    decltype(auto) result() const {
+        gpu_task->wait();
+        if constexpr (!std::is_same_v<void, return_type>) return gpu_task->result.cast<return_type>();
+    };
+    template<typename G> decltype(auto) and_then(G&& ToDo) {
+        return GPU_job<decltype(gpu_task->and_then(ToDo))>(gpu_task->and_then(ToDo));
+    };
+};
+
+template <typename return_t>
+class gpu_job {
+    template <typename G>
+    friend class gpu_job;
+
+public:
+    using return_type = return_t;
+protected:
+    std::function<return_type(void)> 
+        gpu_task;
+public:
+
+    gpu_job() = delete;
+    template<typename G> gpu_job(GPU_job<G> const& job) : gpu_task([job]() { 
+        if constexpr (std::is_same_v<void, return_type>) { job.result(); }
+        else { return job.result(); }
+    }) {};
+    gpu_job(gpu_job const&) = default;
+    gpu_job(gpu_job&&) noexcept = default;
+    gpu_job& operator=(gpu_job const&) = default;
+    gpu_job& operator=(gpu_job&&) noexcept = default;
+    ~gpu_job() = default;
+
+    decltype(auto) result() {
+        return gpu_task();
+    };
+    decltype(auto) result() const {
+        return gpu_task();
+    };
+    template<typename G> decltype(auto) and_then(G&& ToDo) {
+        GPU_job out = GPU_job(GL::parallel::single_threaded::task([task = gpu_task]() {
+            if constexpr (std::is_same_v<void, return_type>) { const_cast<std::function<return_type(void)>&>(task)(); }
+            else { return const_cast<std::function<return_type(void)>&>(task)(); }
+        })).and_then(ToDo);
+        return gpu_job<typename decltype(out)::return_type>(out);
+    };
+};
+template<typename G>
+__forceinline decltype(auto) make_gpu_job(G const& func) {
+    GPU_job out = GPU_job(GL::parallel::single_threaded::task(func));
+    return gpu_job<typename decltype(out)::return_type>(out);
+};
+
+
+int main() {
+    // pre-warm the thread
+    if (1) {
+        GL::GPU::matrix<float> LHS = GL::GPU::matrix<float>::constant(5, 100, 100);
+        GL::GPU::matrix<float> RHS = GL::GPU::matrix<float>::constant(6, 100, 100);
+        auto task = GL::parallel::single_threaded::async([](GL::GPU::matrix<float>& LHS, GL::GPU::matrix<float>& RHS) -> GL::GPU::matrix<float> {
+            return LHS * RHS;
+            }, LHS, RHS);
+        task.get_ref();
+    }
+    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED GPU_JOBS 0.5"); true) {
+        size_t len_bytes = 100;
+        make_gpu_job([&len_bytes]() {
+            return len_bytes;
+        }).and_then([](size_t& rhs) {
+            return make_gpu_job([rhs]() {
+                return (float)rhs;
+            }).result();
+        }).and_then([](float& rhs) {
+            std::cout << rhs << std::endl;
+        });
+    }
+    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED GPU_JOBS 1"); true) {
+        size_t len_bytes = 100;
+        GPU_job(GL::parallel::single_threaded::task([&len_bytes]() {
+            return len_bytes;
+        })).and_then([](size_t& rhs) {
+            return GPU_job(GL::parallel::single_threaded::task([rhs]() {
+                return (float)rhs;
+            })).result();
+        }).and_then([](float& rhs) {
+            std::cout << rhs << std::endl;
+        });
+    }
+    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED GPU_JOBS 2"); true) {
+        GPU_job job_a(GL::parallel::single_threaded::task([]() -> GL::foot {
+            return 1000;
+        }));
+        GPU_job job_b(GL::parallel::single_threaded::task([]() -> GL::feet_per_second {
+            return 10;
+        }));
+        GPU_job job_mult(GL::parallel::single_threaded::task([job_a, job_b]() {
+            return job_a.result() * job_b.result();
+        }));
+        std::cout << job_mult.result() << std::endl;
+    }
+    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED GPU_JOBS 3"); true) {
+        auto job_a = make_gpu_job([]() {
+            return GL::GPU::matrix<float>::constant(5, 10, 10);
+        });
+        auto job_b = job_a.and_then([]() {
+            return GL::GPU::matrix<float>::constant(6, 10, 10);
+        });
+        job_b.and_then([job_a, job_b]() {
+            return job_a.result() * job_b.result();
+        }).and_then([](GL::GPU::matrix<float>& job_mult) {
+            if (auto read = job_mult.read()) {
+                std::cout << read[0] << std::endl;
+            }
+            //std::cout << 
+            //    job_mult.cast<int>().to_string() 
+            //<< std::endl;
+        });
+            //job_mult.result();
+
+            // std::cout << job_mult.result().ASCII().to_string() << std::endl;
+    }
+
+
+
+
+
+
+
+    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED ASYNC"); true) {
+        GL::GPU::matrix<float> LHS = GL::GPU::matrix<float>::constant(5, 100, 100);
+        GL::GPU::matrix<float> RHS = GL::GPU::matrix<float>::constant(6, 100, 100);
+        auto task = GL::parallel::single_threaded::async([](GL::GPU::matrix<float>& LHS, GL::GPU::matrix<float>& RHS) -> GL::GPU::matrix<float> {
+            return LHS * RHS;
+        }, LHS, RHS);
+        task.get_ref();
+    }
+    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED ASYNC"); true) {
+        GL::GPU::matrix<float> LHS = GL::GPU::matrix<float>::constant(5, 100, 100);
+        GL::GPU::matrix<float> RHS = GL::GPU::matrix<float>::constant(6, 100, 100);
+        auto task = GL::parallel::single_threaded::async([](GL::GPU::matrix<float>& LHS, GL::GPU::matrix<float>& RHS) -> GL::GPU::matrix<float> {
+            return LHS * RHS;
+            }, LHS, RHS);
+        task.get_ref();
+    }
+    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED TASK"); true) {
         GL::GPU::matrix<float> LHS = GL::GPU::matrix<float>::constant(5, 100, 100);
         GL::GPU::matrix<float> RHS = GL::GPU::matrix<float>::constant(6, 100, 100);
         auto task = GL::parallel::single_threaded::task([&]() -> GL::GPU::matrix<float> {
             return LHS * RHS;
         });
+        
         task->wait().result;
 
 
@@ -2603,10 +439,26 @@ int main() {
         //});
         //awaiting->wait(); // will never contribute to the task - pure wait loop. 
     }
-    if (auto sw = GL::stopwatch::debug_timer("MULTI_THREADED_LOOP"); true) {
+    if (auto sw = GL::stopwatch::debug_timer("MULTI_THREADED ASYNC"); true) {
         GL::GPU::matrix<float> LHS = GL::GPU::matrix<float>::constant(5, 100, 100);
         GL::GPU::matrix<float> RHS = GL::GPU::matrix<float>::constant(6, 100, 100);
-        auto task = GL::parallel::single_threaded::task([&]() -> GL::GPU::matrix<float> {
+        auto task = GL::parallel::async([](GL::GPU::matrix<float>& LHS, GL::GPU::matrix<float>& RHS) -> GL::GPU::matrix<float> {
+            return LHS * RHS;
+            }, LHS, RHS);
+        task.get_ref();
+    }
+    if (auto sw = GL::stopwatch::debug_timer("MULTI_THREADED ASYNC"); true) {
+        GL::GPU::matrix<float> LHS = GL::GPU::matrix<float>::constant(5, 100, 100);
+        GL::GPU::matrix<float> RHS = GL::GPU::matrix<float>::constant(6, 100, 100);
+        auto task = GL::parallel::async([](GL::GPU::matrix<float>& LHS, GL::GPU::matrix<float>& RHS) -> GL::GPU::matrix<float> {
+            return LHS * RHS;
+            }, LHS, RHS);
+        task.get_ref();
+    }
+    if (auto sw = GL::stopwatch::debug_timer("MULTI_THREADED TASK"); true) {
+        GL::GPU::matrix<float> LHS = GL::GPU::matrix<float>::constant(5, 100, 100);
+        GL::GPU::matrix<float> RHS = GL::GPU::matrix<float>::constant(6, 100, 100);
+        auto task = GL::parallel::task([&]() -> GL::GPU::matrix<float> {
             return LHS * RHS;
         });
         task->wait().result;
@@ -2890,7 +742,7 @@ int main() {
             GL::mfree(p);
         });
         GL::parallel::For(0ull, 100'000ull, [&](size_t i) {
-            int* p = alloc.alloc<int>((int)GL::util::rand_very_fast(1'000, i + 1));
+            int* p = alloc.alloc<int>((int)GL::util::rand_very_fast(1'000.0, (double)(i + 1)));
             alloc.free(p);
         });
     }
@@ -3061,8 +913,6 @@ int main() {
                     stack;
                 concurrency::concurrent_unordered_map<unsigned int, unsigned int>
                     set;
-                unsigned int
-                    j;
                 GL::parallel::For(0u, 1'000'000u, [&](unsigned int i) {
                     stack.push(i);
                 });
@@ -3079,8 +929,6 @@ int main() {
                     stack2;
                 concurrency::concurrent_unordered_map<unsigned int, unsigned int>
                     set2;
-                unsigned int
-                    j;
                 GL::parallel::For(0u, 1'000'000u, [&](unsigned int i) {
                     stack2.push(i);
                 });
@@ -3098,8 +946,6 @@ int main() {
                     stack;
                 concurrency::concurrent_unordered_map<unsigned int, unsigned int>
                     set;
-                unsigned int
-                    j;
                 GL::parallel::For(0u, 1'000'000u, [&](unsigned int i) {
                     stack.push(i);
                     if (!stack.try_pop(i))
@@ -3114,8 +960,6 @@ int main() {
                     stack2;
                 concurrency::concurrent_unordered_map<unsigned int, unsigned int>
                     set2;
-                unsigned int
-                    j;
                 GL::parallel::For(0u, 1'000'000u, [&](unsigned int i) {
                     stack2.push(i);
                     if (!stack2.try_pop(i))
@@ -3256,7 +1100,7 @@ int main() {
                         if (i % 10'000 == 0) 
                             version.fetch_add(1, std::memory_order::memory_order_relaxed);
                         Wrap.store_f(version.load(), 
-                            [&]() -> GL::foot { return i; });
+                            [&]() -> GL::foot { return (float)i; });
                         if (auto p = Wrap.load_fast(); p)
                             p->second += GL::foot(1);
                     });
@@ -3273,7 +1117,7 @@ int main() {
                         if (i % 10'000 == 0) 
                             version.fetch_add(1, std::memory_order::memory_order_relaxed);
                         Wrap.store_f(version.load(), 
-                            [&]() -> GL::foot { return i; });
+                            [&]() -> GL::foot { return (float)i; });
                         if (auto p = Wrap.load_fast(); p)
                             p->second += GL::foot(1);
                     });
@@ -3290,7 +1134,7 @@ int main() {
                         if (i % 10'000 == 0) 
                             version.fetch_add(1, std::memory_order::memory_order_relaxed);
                         Wrap.store_f(version.load(), 
-                            [&]() -> GL::foot { return i; });
+                            [&]() -> GL::foot { return (float)i; });
                         auto g{ Wrap.guard_critical_section() };
                         Wrap.ref() += GL::foot(1);
                     });
@@ -3307,7 +1151,7 @@ int main() {
 
 
 
-
+#if 0
     while (false) {
         using namespace GL::literals;
         if (1) {
@@ -4584,7 +2428,7 @@ Argument Error(s):
             }
         }
     }
-
+#endif
 
     while (true) {
         GL::epoch_btree<int, int>
@@ -4964,7 +2808,7 @@ Argument Error(s):
         }
     }
 
-#if 1
+#if 0
     using namespace GL::literals;
     if (1) {
         Function unix_s = wrap_function({}, [](GL::second x, GL::minute y) -> GL::hour { return x + y; });
@@ -5220,10 +3064,10 @@ Argument Error(s):
             })->and_then([](GL::second t0) -> GL::millisecond {
                 std::cout << "Second...\n";
                 return t0;
-            })->and_then(0, 10'000, [](size_t i, GL::millisecond& t0, GL::job_base& parent) -> GL::any::fast_any {
+            })->and_then(0, 10'000, [](size_t i, GL::millisecond& t0, GL::parallel::job_base& parent) -> GL::any {
                 t0 += 1;
                 return parent.result;
-            })->and_then([](GL::any::fast_any const& t0) {
+            })->and_then([](GL::any const& t0) {
                 if (t0.cast<GL::millisecond>() != 10'000_ms) throw "SHOULD HAVE MATCHED";
                 std::cout << "Third and done.\n";
             });

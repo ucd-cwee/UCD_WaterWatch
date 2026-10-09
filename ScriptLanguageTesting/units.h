@@ -703,7 +703,7 @@ namespace GL {
             all_known_unit_types();
 
         static
-            const concurrency::concurrent_unordered_map<GL::string, GL::any::fast_any>&
+            const concurrency::concurrent_unordered_map<GL::string, GL::any>&
             abbreviations_to_type();
 
         value() : value(package{ package::bitset2{ 0ull, 0.0f } }) {};       

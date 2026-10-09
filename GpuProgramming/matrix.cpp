@@ -1973,6 +1973,25 @@ public:
     };
 };
 
+static void TEST() {
+
+
+
+
+    //// I want memory from the GPU. 
+    //
+    //auto gpu_memory_task = GL::parallel::single_threaded::task([&len_bytes]() -> mem_matrix::dynamic_gpu_allocator::unique_ptr {
+    //    return mem_matrix::gpu_allocator().make_unique(len_bytes);
+    //});
+    //gpu_memory_task->
+    //gpu_memory_task->and_then([](mem_matrix::dynamic_gpu_allocator::unique_ptr& rhs) {
+    //    rhs->sub_buffer;
+    //});
+
+
+
+};
+
 // implement the GPU-accelerated interface for matrix<T>
 namespace GL {
     namespace GPU {
@@ -3897,6 +3916,8 @@ namespace GL {
         };
     };
 };
+
+
 
 // pre-compilation of all functions to be used by matrix<T>; This is necessary is we want to keep the matrix<T> implimentation seperate but still guarrantee its compilation. 
 namespace GL {

@@ -327,7 +327,7 @@ namespace GL {
         fast_ticket_dispensor() {
             queue._before_destruction = [this](std::deque<size_t>& rhs) {
                 while (rhs.size() > 0) {
-                    shared_queue.push(rhs.front());
+                    shared_queue.push((unsigned int)rhs.front());
                     rhs.pop_front();
                 }
             };
@@ -353,7 +353,7 @@ namespace GL {
 
             auto& this_q = *queue;
             if (this_q.size() > 0) {
-                out = this_q.front();
+                out = (unsigned int)this_q.front();
                 this_q.pop_front();
             }
             else if (!shared_queue.try_pop(out)) {
