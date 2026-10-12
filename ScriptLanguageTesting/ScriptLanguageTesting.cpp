@@ -255,23 +255,23 @@ namespace GL {
 #include "../GpuProgramming/matrix.h"
 
 template <typename T>
-class GPU_job {
+class single_threaded_job_impl {
 public:
     T gpu_task;
     using return_type = typename typename T::element_type::returnType;
 
-    GPU_job() = delete;
-    GPU_job(T const& job) : gpu_task(job) {
+    single_threaded_job_impl() = delete;
+    single_threaded_job_impl(T const& job) : gpu_task(job) {
         static_assert(std::is_base_of_v<GL::parallel::single_threaded::job_base, typename T::element_type>, "GPU job must use the single-threaded task system");
     };
-    GPU_job(T&& job) : gpu_task(std::forward<T>(job)) {
+    single_threaded_job_impl(T&& job) : gpu_task(std::forward<T>(job)) {
         static_assert(std::is_base_of_v<GL::parallel::single_threaded::job_base, typename T::element_type>, "GPU job must use the single-threaded task system");
     };
-    GPU_job(GPU_job const&) = default;
-    GPU_job(GPU_job&&) noexcept = default;
-    GPU_job& operator=(GPU_job const&) = default;
-    GPU_job& operator=(GPU_job&&) noexcept = default;
-    ~GPU_job() = default;
+    single_threaded_job_impl(single_threaded_job_impl const&) = default;
+    single_threaded_job_impl(single_threaded_job_impl&&) noexcept = default;
+    single_threaded_job_impl& operator=(single_threaded_job_impl const&) = default;
+    single_threaded_job_impl& operator=(single_threaded_job_impl&&) noexcept = default;
+    ~single_threaded_job_impl() = default;
 
     decltype(auto) result() {
         gpu_task->wait();
@@ -282,7 +282,7 @@ public:
         if constexpr (!std::is_same_v<void, return_type>) return gpu_task->result.cast<return_type>();
     };
     template<typename G> decltype(auto) and_then(G&& ToDo) {
-        return GPU_job<decltype(gpu_task->and_then(ToDo))>(gpu_task->and_then(ToDo));
+        return single_threaded_job_impl<decltype(gpu_task->and_then(ToDo))>(gpu_task->and_then(ToDo));
     };
 };
 
@@ -290,44 +290,58 @@ template <typename return_t>
 class gpu_job {
     template <typename G>
     friend class gpu_job;
-
-public:
-    using return_type = return_t;
+    
 protected:
-    std::function<return_type(void)> 
-        gpu_task;
+    static decltype(auto) determine_type() {
+        if constexpr (std::is_void_v<return_t>) {
+            return;
+        } else {
+            static return_t temp;
+            //if constexpr (std::is_pod_v< return_t>) {                
+            //    return temp;
+            //}
+            //else {
+                return std::ref(temp).get();
+            //}
+        }
+    };
+public:
+    using return_type = typename decltype(GL::detail::function_signature(&determine_type))::Return_Type;
+protected:
+    std::function<return_type(void)>
+        gpu_task;    
+
 public:
 
     gpu_job() = delete;
-    template<typename G> gpu_job(GPU_job<G> const& job) : gpu_task([job]() { 
-        if constexpr (std::is_same_v<void, return_type>) { job.result(); }
-        else { return job.result(); }
+    template<typename G> gpu_job(G&& job) : gpu_task([Job = single_threaded_job_impl(std::forward<G>(job))]() -> decltype(auto) {
+        if constexpr (std::is_void_v<return_type>) { Job.result(); }
+        else { return Job.result(); }
     }) {};
     gpu_job(gpu_job const&) = default;
     gpu_job(gpu_job&&) noexcept = default;
     gpu_job& operator=(gpu_job const&) = default;
     gpu_job& operator=(gpu_job&&) noexcept = default;
-    ~gpu_job() = default;
+    ~gpu_job() = default; 
 
-    decltype(auto) result() {
-        return gpu_task();
-    };
     decltype(auto) result() const {
         return gpu_task();
     };
     template<typename G> decltype(auto) and_then(G&& ToDo) {
-        GPU_job out = GPU_job(GL::parallel::single_threaded::task([task = gpu_task]() {
-            if constexpr (std::is_same_v<void, return_type>) { const_cast<std::function<return_type(void)>&>(task)(); }
+        single_threaded_job_impl out = single_threaded_job_impl(GL::parallel::single_threaded::task([task = gpu_task]() {
+            if constexpr (std::is_void_v<return_type>) { const_cast<std::function<return_type(void)>&>(task)(); }
             else { return const_cast<std::function<return_type(void)>&>(task)(); }
         })).and_then(ToDo);
-        return gpu_job<typename decltype(out)::return_type>(out);
+        return gpu_job<typename decltype(out)::return_type>(std::move(out));
     };
 };
-template<typename G>
-__forceinline decltype(auto) make_gpu_job(G const& func) {
-    GPU_job out = GPU_job(GL::parallel::single_threaded::task(func));
-    return gpu_job<typename decltype(out)::return_type>(out);
+// performs the job on the single-threaded job queue, intended for use as part of the job system for the GPU tasks. 
+template<typename G> decltype(auto) make_gpu_job(G const& func) {
+    single_threaded_job_impl out = single_threaded_job_impl(GL::parallel::single_threaded::task(func));
+    return gpu_job<typename decltype(out)::return_type>(std::move(out));
 };
+
+
 
 
 int main() {
@@ -340,7 +354,21 @@ int main() {
             }, LHS, RHS);
         task.get_ref();
     }
-    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED GPU_JOBS 0.5"); true) {
+    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED gpu_job 0.25"); true) {
+        size_t len_bytes = 100;
+        auto job1 = make_gpu_job([&len_bytes]() {
+            return len_bytes;
+        });        
+        auto job2 = make_gpu_job([job1]() {
+            return make_gpu_job([job1]() {
+                return (float)job1.result();
+            }).result();
+        });
+        auto job3 = make_gpu_job([job2]() {
+            std::cout << job2.result() << std::endl;
+        });
+    }
+    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED gpu_job 0.5"); true) {
         size_t len_bytes = 100;
         make_gpu_job([&len_bytes]() {
             return len_bytes;
@@ -352,50 +380,44 @@ int main() {
             std::cout << rhs << std::endl;
         });
     }
-    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED GPU_JOBS 1"); true) {
+    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED single_threaded_job_impl 1"); true) {
         size_t len_bytes = 100;
-        GPU_job(GL::parallel::single_threaded::task([&len_bytes]() {
+        single_threaded_job_impl(GL::parallel::single_threaded::task([&len_bytes]() {
             return len_bytes;
         })).and_then([](size_t& rhs) {
-            return GPU_job(GL::parallel::single_threaded::task([rhs]() {
+            return single_threaded_job_impl(GL::parallel::single_threaded::task([rhs]() {
                 return (float)rhs;
             })).result();
         }).and_then([](float& rhs) {
             std::cout << rhs << std::endl;
         });
     }
-    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED GPU_JOBS 2"); true) {
-        GPU_job job_a(GL::parallel::single_threaded::task([]() -> GL::foot {
+    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED single_threaded_job_impl 2"); true) {
+        single_threaded_job_impl job_a(GL::parallel::single_threaded::task([]() -> GL::foot {
             return 1000;
         }));
-        GPU_job job_b(GL::parallel::single_threaded::task([]() -> GL::feet_per_second {
+        single_threaded_job_impl job_b(GL::parallel::single_threaded::task([]() -> GL::feet_per_second {
             return 10;
         }));
-        GPU_job job_mult(GL::parallel::single_threaded::task([job_a, job_b]() {
+        single_threaded_job_impl job_mult(GL::parallel::single_threaded::task([job_a, job_b]() {
             return job_a.result() * job_b.result();
         }));
         std::cout << job_mult.result() << std::endl;
     }
-    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED GPU_JOBS 3"); true) {
+    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED gpu_job 3"); true) {
         auto job_a = make_gpu_job([]() {
             return GL::GPU::matrix<float>::constant(5, 10, 10);
         });
-        auto job_b = job_a.and_then([]() {
+        auto job_b = make_gpu_job([]() {
             return GL::GPU::matrix<float>::constant(6, 10, 10);
         });
-        job_b.and_then([job_a, job_b]() {
+        make_gpu_job([job_a, job_b]() {
             return job_a.result() * job_b.result();
         }).and_then([](GL::GPU::matrix<float>& job_mult) {
             if (auto read = job_mult.read()) {
                 std::cout << read[0] << std::endl;
             }
-            //std::cout << 
-            //    job_mult.cast<int>().to_string() 
-            //<< std::endl;
         });
-            //job_mult.result();
-
-            // std::cout << job_mult.result().ASCII().to_string() << std::endl;
     }
 
 
