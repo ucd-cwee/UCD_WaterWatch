@@ -35,16 +35,16 @@ namespace GL {
     protected:
         GL::thread_object_no_default<std::map<long long, long long>>
             time_results;
-        GL::string 
+        GL::string
             name;
-        long long 
+        long long
             start;
     public:
         stopwatch_group(GL::string Name = GL::string::empty_string())
-            : name(Name) 
+            : name(Name)
             , start(clock::ns())
         {};
-        ~stopwatch_group() { 
+        ~stopwatch_group() {
             long long end = clock::ns();
             std::map<long long, long double> quantile;
             long double total_count = 0;
@@ -53,7 +53,7 @@ namespace GL {
                     quantile[pair.first] += pair.second;
                     total_count += pair.second;
                 }
-            });
+                });
             if (total_count > 0) {
                 long long min = -1;
                 long long fst = -1;
@@ -72,7 +72,7 @@ namespace GL {
                     if (min == -1) {
                         min = pair.first;
                     }
-                    if (fst == -1 
+                    if (fst == -1
                         && pair.second >= 0.25) {
                         fst = pair.first;
                     }
@@ -126,7 +126,7 @@ namespace GL {
         public:
             wrapper(stopwatch_group* p) : P{ p }, startTime{ clock::ns() } {};
             wrapper(wrapper const&) = delete;
-            wrapper(wrapper &&) = delete;
+            wrapper(wrapper&&) = delete;
             wrapper& operator=(wrapper const&) = delete;
             wrapper& operator=(wrapper&&) = delete;
             ~wrapper() {
@@ -135,7 +135,7 @@ namespace GL {
                 P->time_results->operator[](startTime)++;
             };
             constexpr operator bool() const { return true; };
-        };        
+        };
 
     public:
         auto debug_timer() {
@@ -147,8 +147,8 @@ namespace GL {
     template<typename T, bool use_epoch_protections = true>
     class versioned_wrapper {
     public:
-        using allocator = std::conditional_t<use_epoch_protections, 
-            GL::fast_atomic_epoch_allocator< std::pair<size_t, T> >, 
+        using allocator = std::conditional_t<use_epoch_protections,
+            GL::fast_atomic_epoch_allocator< std::pair<size_t, T> >,
             GL::fast_atomic_allocator< std::pair<size_t, T> >
         >;
 
@@ -165,7 +165,7 @@ namespace GL {
                 return 0ull;
             }
         }
-        typedef decltype(GL::detail::function_signature(&guard_critical_section_impl)) function_header;        
+        typedef decltype(GL::detail::function_signature(&guard_critical_section_impl)) function_header;
         typedef typename function_header::Return_Type guard_critical_section_type;
 
     public:
@@ -173,7 +173,7 @@ namespace GL {
             val.store(alloc.AllocShared(0ull, std::forward<T>(init)));
         };
         versioned_wrapper(versioned_wrapper const&) = delete;
-        versioned_wrapper(versioned_wrapper &&) = delete;
+        versioned_wrapper(versioned_wrapper&&) = delete;
         versioned_wrapper& operator=(versioned_wrapper const&) = delete;
         versioned_wrapper& operator=(versioned_wrapper&&) = delete;
         ~versioned_wrapper() = default;
@@ -205,7 +205,7 @@ namespace GL {
             if (auto protected_copy = val.load_fast()) {
                 if (protected_copy->first < cache_version) {
                     auto guard{ guard_critical_section_impl() };
-                    auto new_v = alloc.AllocShared(cache_version, functional_input());                    
+                    auto new_v = alloc.AllocShared(cache_version, functional_input());
                     while (true) {
                         if (protected_copy = val.load_fast()) {
                             if (protected_copy->first < cache_version) {
@@ -225,10 +225,10 @@ namespace GL {
         };
         GL::shared_ptr<std::pair<size_t, T>> load() {
             return val.load();
-        };      
+        };
         GL::fast_shared_ptr<std::pair<size_t, T>> load_fast() {
             return val.load_fast();
-        };              
+        };
         template <typename U = T> guard_critical_section_type guard_critical_section() {
             if constexpr (use_epoch_protections) {
                 return alloc.guard_critical_section();
@@ -254,245 +254,224 @@ namespace GL {
 
 #include "../GpuProgramming/matrix.h"
 
-template <typename T>
-class single_threaded_job_impl {
-public:
-    T gpu_task;
-    using return_type = typename typename T::element_type::returnType;
-
-    single_threaded_job_impl() = delete;
-    single_threaded_job_impl(T const& job) : gpu_task(job) {
-        static_assert(std::is_base_of_v<GL::parallel::single_threaded::job_base, typename T::element_type>, "GPU job must use the single-threaded task system");
-    };
-    single_threaded_job_impl(T&& job) : gpu_task(std::forward<T>(job)) {
-        static_assert(std::is_base_of_v<GL::parallel::single_threaded::job_base, typename T::element_type>, "GPU job must use the single-threaded task system");
-    };
-    single_threaded_job_impl(single_threaded_job_impl const&) = default;
-    single_threaded_job_impl(single_threaded_job_impl&&) noexcept = default;
-    single_threaded_job_impl& operator=(single_threaded_job_impl const&) = default;
-    single_threaded_job_impl& operator=(single_threaded_job_impl&&) noexcept = default;
-    ~single_threaded_job_impl() = default;
-
-    decltype(auto) result() {
-        gpu_task->wait();
-        if constexpr (!std::is_same_v<void, return_type>) return gpu_task->result.cast<return_type>();
-    };
-    decltype(auto) result() const {
-        gpu_task->wait();
-        if constexpr (!std::is_same_v<void, return_type>) return gpu_task->result.cast<return_type>();
-    };
-    template<typename G> decltype(auto) and_then(G&& ToDo) {
-        return single_threaded_job_impl<decltype(gpu_task->and_then(ToDo))>(gpu_task->and_then(ToDo));
-    };
-};
-
-template <typename return_t>
-class gpu_job {
-    template <typename G>
-    friend class gpu_job;
-    
-protected:
-    static decltype(auto) determine_type() {
-        if constexpr (std::is_void_v<return_t>) {
-            return;
-        } else {
-            static return_t temp;
-            //if constexpr (std::is_pod_v< return_t>) {                
-            //    return temp;
-            //}
-            //else {
-                return std::ref(temp).get();
-            //}
-        }
-    };
-public:
-    using return_type = typename decltype(GL::detail::function_signature(&determine_type))::Return_Type;
-protected:
-    std::function<return_type(void)>
-        gpu_task;    
-
-public:
-
-    gpu_job() = delete;
-    template<typename G> gpu_job(G&& job) : gpu_task([Job = single_threaded_job_impl(std::forward<G>(job))]() -> decltype(auto) {
-        if constexpr (std::is_void_v<return_type>) { Job.result(); }
-        else { return Job.result(); }
-    }) {};
-    gpu_job(gpu_job const&) = default;
-    gpu_job(gpu_job&&) noexcept = default;
-    gpu_job& operator=(gpu_job const&) = default;
-    gpu_job& operator=(gpu_job&&) noexcept = default;
-    ~gpu_job() = default; 
-
-    decltype(auto) result() const {
-        return gpu_task();
-    };
-    template<typename G> decltype(auto) and_then(G&& ToDo) {
-        single_threaded_job_impl out = single_threaded_job_impl(GL::parallel::single_threaded::task([task = gpu_task]() {
-            if constexpr (std::is_void_v<return_type>) { const_cast<std::function<return_type(void)>&>(task)(); }
-            else { return const_cast<std::function<return_type(void)>&>(task)(); }
-        })).and_then(ToDo);
-        return gpu_job<typename decltype(out)::return_type>(std::move(out));
-    };
-};
-// performs the job on the single-threaded job queue, intended for use as part of the job system for the GPU tasks. 
-template<typename G> decltype(auto) make_gpu_job(G const& func) {
-    single_threaded_job_impl out = single_threaded_job_impl(GL::parallel::single_threaded::task(func));
-    return gpu_job<typename decltype(out)::return_type>(std::move(out));
-};
-
-
-
-
 int main() {
     // pre-warm the thread
     if (1) {
         GL::GPU::matrix<float> LHS = GL::GPU::matrix<float>::constant(5, 100, 100);
         GL::GPU::matrix<float> RHS = GL::GPU::matrix<float>::constant(6, 100, 100);
-        auto task = GL::parallel::single_threaded::async([](GL::GPU::matrix<float>& LHS, GL::GPU::matrix<float>& RHS) -> GL::GPU::matrix<float> {
+        auto task = GL::parallel::single_threaded::async([&LHS, &RHS]() -> GL::GPU::matrix<float> {
             return LHS * RHS;
-            }, LHS, RHS);
+        });
         task.get_ref();
     }
-    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED gpu_job 0.25"); true) {
-        size_t len_bytes = 100;
-        auto job1 = make_gpu_job([&len_bytes]() {
-            return len_bytes;
-        });        
-        auto job2 = make_gpu_job([job1]() {
-            return make_gpu_job([job1]() {
-                return (float)job1.result();
-            }).result();
-        });
-        auto job3 = make_gpu_job([job2]() {
-            std::cout << job2.result() << std::endl;
-        });
-    }
-    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED gpu_job 0.5"); true) {
-        size_t len_bytes = 100;
-        make_gpu_job([&len_bytes]() {
-            return len_bytes;
-        }).and_then([](size_t& rhs) {
-            return make_gpu_job([rhs]() {
-                return (float)rhs;
-            }).result();
-        }).and_then([](float& rhs) {
-            std::cout << rhs << std::endl;
-        });
-    }
-    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED single_threaded_job_impl 1"); true) {
-        size_t len_bytes = 100;
-        single_threaded_job_impl(GL::parallel::single_threaded::task([&len_bytes]() {
-            return len_bytes;
-        })).and_then([](size_t& rhs) {
-            return single_threaded_job_impl(GL::parallel::single_threaded::task([rhs]() {
-                return (float)rhs;
-            })).result();
-        }).and_then([](float& rhs) {
-            std::cout << rhs << std::endl;
-        });
-    }
-    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED single_threaded_job_impl 2"); true) {
-        single_threaded_job_impl job_a(GL::parallel::single_threaded::task([]() -> GL::foot {
-            return 1000;
-        }));
-        single_threaded_job_impl job_b(GL::parallel::single_threaded::task([]() -> GL::feet_per_second {
-            return 10;
-        }));
-        single_threaded_job_impl job_mult(GL::parallel::single_threaded::task([job_a, job_b]() {
-            return job_a.result() * job_b.result();
-        }));
-        std::cout << job_mult.result() << std::endl;
-    }
-    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED gpu_job 3"); true) {
-        auto job_a = make_gpu_job([]() {
-            return GL::GPU::matrix<float>::constant(5, 10, 10);
-        });
-        auto job_b = make_gpu_job([]() {
-            return GL::GPU::matrix<float>::constant(6, 10, 10);
-        });
-        make_gpu_job([job_a, job_b]() {
-            return job_a.result() * job_b.result();
-        }).and_then([](GL::GPU::matrix<float>& job_mult) {
-            if (auto read = job_mult.read()) {
-                std::cout << read[0] << std::endl;
+    while (true) {
+        if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED gpu_job 0.25"); false) {
+            size_t len_bytes = 100;
+            auto job1 = GL::parallel::single_threaded::async([&len_bytes]() {
+                return len_bytes;
+            });
+            auto job2 = GL::parallel::single_threaded::async([job1]() {
+                return GL::parallel::single_threaded::async([job1]() {
+                    return (float)job1.get_ref();
+                }).get();
+            });
+            auto job3 = GL::parallel::single_threaded::async([job2]() {
+                std::cout << job2.get_ref() << std::endl;
+            });
+        }
+        if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED gpu_job 0.5"); false) {
+            size_t len_bytes = 100;
+            GL::parallel::single_threaded::async([&len_bytes]() {
+                return len_bytes;
+            }).and_then([](size_t& rhs) {
+                return GL::parallel::single_threaded::async([rhs]() {
+                    return (float)rhs;
+                }).get();
+            }).and_then([](float& rhs) {
+                std::cout << rhs << std::endl;
+            });
+        }
+        if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED gpu_job 3"); false) {
+            auto job_a = GL::parallel::single_threaded::async([]() {
+                return GL::GPU::matrix<float>::constant(5, 10, 10);
+            });
+            auto job_b = GL::parallel::single_threaded::async([]() {
+                return GL::GPU::matrix<float>::constant(6, 10, 10);
+            });
+            GL::parallel::single_threaded::async([job_a, job_b]() {
+                return job_a.get_ref() * job_b.get_ref();
+            }).and_then([](GL::GPU::matrix<float>& job_mult) {
+                if (auto read = job_mult.read()) {
+                    std::cout << read[0] << std::endl;
+                }
+            });
+        };
+
+        //GL::value progress{ 0 };
+        //auto task_1 = GL::parallel::async(0, 10'000, [&progress]() {
+        //    auto curr_prog = ++progress;
+        //    if (curr_prog % 1000 == 0) 
+        //        std::cout << GL::printf("%i percent\n", (int)(100.0f * ((float)curr_prog / 10'000.0f)));            
+        //}).and_then([&progress]() {
+        //    std::cout << GL::printf("result: %f\n", (float)progress);
+        //});
+
+        //// casting is automatic for all of these
+        //GL::parallel::single_threaded::impl::task([]() -> GL::millisecond {
+        //    std::cout << "First...\n";
+        //    return GL::millisecond(1'000);
+        //})->and_then([](GL::second t0) -> GL::millisecond {
+        //    using namespace GL::literals;
+        //    if (t0 != 1'000_ms) std::cout << "SHOULD HAVE MATCHED 325\n";
+        //    std::cout << "Second...\n";
+        //    return t0;
+        //})->and_then(0, 9'000, [](size_t i, GL::millisecond& t0, GL::parallel::single_threaded::job_base& parent) -> GL::any {
+        //    t0 += 1;
+        //    return parent.result;
+        //})->and_then([](GL::any const& t0) {
+        //    using namespace GL::literals;
+        //    if (t0.cast<GL::millisecond>() != 10'000_ms) std::cout << "SHOULD HAVE MATCHED " << __LINE__ << std::endl;
+        //    std::cout << "Third and done.\n";
+        //});
+
+        //// casting is automatic for all of these
+        //GL::parallel::single_threaded::async([]() -> GL::millisecond {
+        //    std::cout << "First...\n";
+        //    return GL::millisecond(1'000);
+        //}).and_then([](GL::second t0) -> GL::millisecond {
+        //    using namespace GL::literals;
+        //    if (t0 != 1'000_ms) std::cout << "SHOULD HAVE MATCHED " << __LINE__ << std::endl;
+        //    std::cout << "Second...\n";
+        //    return t0;
+        //}).and_then(0, 9'000, [](size_t i, GL::millisecond& t0, GL::parallel::single_threaded::job_base& parent) -> GL::any {
+        //    t0 += 1;
+        //    return parent.result;
+        //}).and_then([](GL::any const& t0) {
+        //    using namespace GL::literals;
+        //    if (t0.cast<GL::millisecond>() != 10'000_ms) std::cout << "SHOULD HAVE MATCHED " << __LINE__ << std::endl;
+        //    std::cout << "Third and done.\n";
+        //});
+
+
+        //// casting is automatic for all of these
+        //GL::parallel::impl::task([]() -> GL::millisecond {
+        //    std::cout << "First...\n";
+        //    return GL::millisecond(1'000);
+        //})->and_then([](GL::second t0) -> GL::millisecond {
+        //    using namespace GL::literals;
+        //    if (t0 != 1'000_ms) std::cout << "SHOULD HAVE MATCHED " << __LINE__ << std::endl;
+        //    std::cout << "Second...\n";
+        //    return t0;
+        //})->and_then(0, 9'000, [](size_t i, GL::millisecond& t0, GL::parallel::job_base& parent) -> GL::any {
+        //    t0 += 1;
+        //    return parent.result;
+        //})->and_then([](GL::any const& t0) {
+        //    using namespace GL::literals;
+        //    if (t0.cast<GL::millisecond>() != 10'000_ms) std::cout << "SHOULD HAVE MATCHED " << __LINE__ << std::endl;
+        //    std::cout << "Third and done.\n";
+        //});
+
+
+
+
+
+
+
+
+
+
+
+
+
+        std::cout << GL::parallel::tasks::async([]() -> GL::millisecond {
+            return GL::millisecond(1'000);
+        })->get() << std::endl;
+        std::cout << GL::parallel::tasks::async(0ull, 10'000ull, []() -> GL::millisecond {
+            return GL::millisecond(1'000);
+        })->get() << std::endl;
+
+        while (1) {
+            if (auto sw = GL::stopwatch::debug_timer("TEST"); true) {
+                auto task1 = GL::parallel::tasks::async([]() {
+                    std::cout << 1 << std::endl;
+                    return GL::make_shared<int>(100);
+                });
+                auto task2 = task1->and_then(0, 1'000'000, [](size_t i, GL::shared_ptr<int> r) -> GL::shared_ptr<int> {
+                    std::cout << *r << std::endl;
+                    return r;
+                });
+                auto task3 = task2->and_then([](GL::shared_ptr<int> r) -> GL::shared_ptr<int> {
+                    return r;
+                });
+                auto task4 = task3->and_then([](int& r) {
+                    std::cout << r << std::endl;
+                });
+
+                //auto task1 = GL::parallel::tasks::async([]() -> int {
+                //    return 100;
+                //});
+                //auto task2 = task1->and_then(0, 1'000'000, [](size_t i, int& r) -> float {
+                //    return (float)r;
+                //});
+                //auto task3 = task2->and_then([](GL::shared_ptr<float> r) {
+                //    // return r;
+                //});
+                // decltype(task2)::element_type::parent_return_cast_result_t;
+
+                // std::cout << job1->get_ref() << std::endl;
             }
+        }
+
+
+        // casting is automatic for all of these
+        auto job123 = GL::parallel::async([]() -> GL::millisecond {
+            std::cout << "First...\n";
+            return GL::millisecond(1'000);
         });
-    }
-
-
-
-
-
-
-
-    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED ASYNC"); true) {
-        GL::GPU::matrix<float> LHS = GL::GPU::matrix<float>::constant(5, 100, 100);
-        GL::GPU::matrix<float> RHS = GL::GPU::matrix<float>::constant(6, 100, 100);
-        auto task = GL::parallel::single_threaded::async([](GL::GPU::matrix<float>& LHS, GL::GPU::matrix<float>& RHS) -> GL::GPU::matrix<float> {
-            return LHS * RHS;
-        }, LHS, RHS);
-        task.get_ref();
-    }
-    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED ASYNC"); true) {
-        GL::GPU::matrix<float> LHS = GL::GPU::matrix<float>::constant(5, 100, 100);
-        GL::GPU::matrix<float> RHS = GL::GPU::matrix<float>::constant(6, 100, 100);
-        auto task = GL::parallel::single_threaded::async([](GL::GPU::matrix<float>& LHS, GL::GPU::matrix<float>& RHS) -> GL::GPU::matrix<float> {
-            return LHS * RHS;
-            }, LHS, RHS);
-        task.get_ref();
-    }
-    if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED TASK"); true) {
-        GL::GPU::matrix<float> LHS = GL::GPU::matrix<float>::constant(5, 100, 100);
-        GL::GPU::matrix<float> RHS = GL::GPU::matrix<float>::constant(6, 100, 100);
-        auto task = GL::parallel::single_threaded::task([&]() -> GL::GPU::matrix<float> {
-            return LHS * RHS;
+        auto job234 = job123.and_then([](GL::second t0) -> GL::millisecond {
+            using namespace GL::literals;
+            if (t0 != 1'000_ms) std::cout << "SHOULD HAVE MATCHED " << __LINE__ << std::endl;
+            std::cout << "Second...\n";
+            return t0;
         });
-        
-        task->wait().result;
-
-
-
-
-        //auto awaiting = GL::parallel::single_threaded::task(0, 1'000'000, [](int i) {
-        //    i = i + 1;
-        //})->and_then(0, 1'000'000, [](int i) {
-        //    i = i + 1;
-        //});
-        //awaiting->wait(); // will never contribute to the task - pure wait loop. 
-    }
-    if (auto sw = GL::stopwatch::debug_timer("MULTI_THREADED ASYNC"); true) {
-        GL::GPU::matrix<float> LHS = GL::GPU::matrix<float>::constant(5, 100, 100);
-        GL::GPU::matrix<float> RHS = GL::GPU::matrix<float>::constant(6, 100, 100);
-        auto task = GL::parallel::async([](GL::GPU::matrix<float>& LHS, GL::GPU::matrix<float>& RHS) -> GL::GPU::matrix<float> {
-            return LHS * RHS;
-            }, LHS, RHS);
-        task.get_ref();
-    }
-    if (auto sw = GL::stopwatch::debug_timer("MULTI_THREADED ASYNC"); true) {
-        GL::GPU::matrix<float> LHS = GL::GPU::matrix<float>::constant(5, 100, 100);
-        GL::GPU::matrix<float> RHS = GL::GPU::matrix<float>::constant(6, 100, 100);
-        auto task = GL::parallel::async([](GL::GPU::matrix<float>& LHS, GL::GPU::matrix<float>& RHS) -> GL::GPU::matrix<float> {
-            return LHS * RHS;
-            }, LHS, RHS);
-        task.get_ref();
-    }
-    if (auto sw = GL::stopwatch::debug_timer("MULTI_THREADED TASK"); true) {
-        GL::GPU::matrix<float> LHS = GL::GPU::matrix<float>::constant(5, 100, 100);
-        GL::GPU::matrix<float> RHS = GL::GPU::matrix<float>::constant(6, 100, 100);
-        auto task = GL::parallel::task([&]() -> GL::GPU::matrix<float> {
-            return LHS * RHS;
+        auto job345 = job234.and_then(0, 9'000, [](size_t i, GL::millisecond& t0, GL::parallel::job_base& parent) -> GL::any {
+            t0 += 1;
+            return parent.result;
         });
-        task->wait().result;
+        auto job456 = job345.and_then([](GL::any const& t0) {
+            using namespace GL::literals;
+            if (t0.cast<GL::millisecond>() != 10'000_ms) std::cout << "SHOULD HAVE MATCHED " << __LINE__ << std::endl;
+            std::cout << "Third and done.\n";
+        });
 
-
-        //auto awaiting = GL::parallel::task(0, 1'000'000, [](int i) {
-        //    i = i + 1;
-        //})->and_then(0, 1'000'000, [](int i) {
-        //    i = i + 1;
-        //});
-        //awaiting->wait(); // may contribute to the task
+        //if (auto sw = GL::stopwatch::debug_timer("MULTI_THREADED gpu_job 0.25"); false) {
+        //    size_t len_bytes = 100;
+        //    auto job1 = GL::parallel::async([&len_bytes]() {
+        //        return len_bytes;
+        //    });
+        //    auto job2 = GL::parallel::async([job1]() {
+        //        return GL::parallel::async([job1]() {
+        //            return (float)job1.get();
+        //        }).get();
+        //    });
+        //    auto job3 = GL::parallel::async([job2]() {
+        //        std::cout << job2.get() << std::endl;
+        //    });
+        //}
+        //if (auto sw = GL::stopwatch::debug_timer("MULTI_THREADED gpu_job 0.5"); false) {
+        //    size_t len_bytes = 100;
+        //    GL::parallel::async([&len_bytes]() {
+        //        return len_bytes;
+        //    }).and_then([](size_t& rhs) {
+        //        return GL::parallel::async([RHS = (size_t)rhs]() {
+        //            return (float)RHS;
+        //        }).get();
+        //    }).and_then([](float& rhs) {
+        //        std::cout << rhs << std::endl;
+        //    });
+        //}
     }
+
 
 
 
@@ -518,7 +497,7 @@ int main() {
             1, 1, 1,
             1, 0, 1,
             1, 1, 1
-        }, 3));
+            }, 3));
         auto state = (matrix<float>::random(game_h, game_w, 1) > 0.4f).cast<unsigned int>();
 
         int frame = 1;
@@ -717,59 +696,59 @@ int main() {
 
     }
 
-    while(1)
+    while (1)
         if (auto timer = GL::stopwatch().debug_timer("1B calls: \t")) {
-        CategoricalCache<any> cache;
-        
-        //for (size_t i = 0; i < 1'000'000; ++i){
-            // auto g = cache.guard_critical_section();
-        GL::parallel::For(0, 1'000'000/*'000*/, [&](size_t i) {
-            cache.insert(i % 10000, GL::make_shared<any>(any::instance(GL::printf("%zu - 0", i))));
-        });
+            CategoricalCache<any> cache;
+
+            //for (size_t i = 0; i < 1'000'000; ++i){
+                // auto g = cache.guard_critical_section();
+            GL::parallel::For(0, 1'000'000/*'000*/, [&](size_t i) {
+                cache.insert(i % 10000, GL::make_shared<any>(any::instance(GL::printf("%zu - 0", i))));
+                });
 
 
 
 
-        //// GL::atomic_shared_ptr<any> ptr;
-        //CategoricalCache<any> cache;
-        //GL::parallel::For(0, 1'000'000/*'000*/, [&](size_t i) {
-        //    switch (i % 4) {
-        //    case 0:
-        //        cache.at(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu - 0", i)); }, i);
-        //        break;
-        //    case 1:
-        //        cache.at(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu - 1", i)); }, i);
-        //        break;
-        //    case 2:
-        //        cache.at(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu - 2", i)); }, i);
-        //        break;
-        //    case 3:
-        //        cache.at(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu - 3", i)); }, i);
-        //        break;
-        //    default:
-        //        break;
-        //    }
-        //});
-        //std::cout << cache.current()->cast<GL::string&>() << std::endl;
-        ////std::cout << cache.current<1>()->cast<GL::string&>() << std::endl;
-        ////std::cout << cache.current<2>()->cast<GL::string&>() << std::endl;
-        ////std::cout << cache.current<3>()->cast<GL::string&>() << std::endl;
-    };
+            //// GL::atomic_shared_ptr<any> ptr;
+            //CategoricalCache<any> cache;
+            //GL::parallel::For(0, 1'000'000/*'000*/, [&](size_t i) {
+            //    switch (i % 4) {
+            //    case 0:
+            //        cache.at(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu - 0", i)); }, i);
+            //        break;
+            //    case 1:
+            //        cache.at(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu - 1", i)); }, i);
+            //        break;
+            //    case 2:
+            //        cache.at(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu - 2", i)); }, i);
+            //        break;
+            //    case 3:
+            //        cache.at(i % 10000, [](size_t const& i) { return any::instance(GL::printf("%zu - 3", i)); }, i);
+            //        break;
+            //    default:
+            //        break;
+            //    }
+            //});
+            //std::cout << cache.current()->cast<GL::string&>() << std::endl;
+            ////std::cout << cache.current<1>()->cast<GL::string&>() << std::endl;
+            ////std::cout << cache.current<2>()->cast<GL::string&>() << std::endl;
+            ////std::cout << cache.current<3>()->cast<GL::string&>() << std::endl;
+        };
 #endif
 
     while (1) {
         GL::parallel_generalized_allocator alloc([](size_t sz) -> void* {
             return GL::malloc(sz);
-        }, [](void* p) -> void {
-            GL::mfree(p);
-        });
+            }, [](void* p) -> void {
+                GL::mfree(p);
+            });
         GL::parallel::For(0ull, 100'000ull, [&](size_t i) {
             int* p = alloc.alloc<int>((int)GL::util::rand_very_fast(1'000.0, (double)(i + 1)));
             alloc.free(p);
-        });
+            });
     }
 
-     // experimenting with an (unlikely) memory leak associated with epoch_btree_map? Or just a design flaw?
+    // experimenting with an (unlikely) memory leak associated with epoch_btree_map? Or just a design flaw?
     while (true) {
 
 #if 0
@@ -904,14 +883,14 @@ int main() {
                     stack;
                 std::set<unsigned int>
                     set;
-                unsigned int 
+                unsigned int
                     j;
                 GL::parallel::For(0u, 1'000'000u, [&](unsigned int i) {
                     stack.push(i);
-                });                
-                while (stack.try_pop(j)) 
+                    });
+                while (stack.try_pop(j))
                     set.insert(j);
-                if (set.size() != 1'000'000ull) 
+                if (set.size() != 1'000'000ull)
                     std::cout << "atomic_uint_stack failure" << std::endl;
             }
             if (true) {
@@ -923,8 +902,8 @@ int main() {
                     j;
                 GL::parallel::For(0u, 1'000'000u, [&](unsigned int i) {
                     stack2.push(i);
-                });
-                while (stack2.try_pop(j)) 
+                    });
+                while (stack2.try_pop(j))
                     set2.insert(j);
                 if (set2.size() != 1'000'000ull)
                     std::cout << "parallel_atomic_uint_stack failure" << std::endl;
@@ -937,12 +916,12 @@ int main() {
                     set;
                 GL::parallel::For(0u, 1'000'000u, [&](unsigned int i) {
                     stack.push(i);
-                });
+                    });
                 GL::parallel::For(0u, 1'000'000u, [&](unsigned int i) {
-                    if (!stack.try_pop(i)) 
+                    if (!stack.try_pop(i))
                         std::cout << "atomic_uint_stack failure" << std::endl;
                     set[i] = i;
-                });
+                    });
                 if (set.size() != 1'000'000ull)
                     std::cout << "atomic_uint_stack failure" << std::endl;
             }
@@ -953,12 +932,12 @@ int main() {
                     set2;
                 GL::parallel::For(0u, 1'000'000u, [&](unsigned int i) {
                     stack2.push(i);
-                });
+                    });
                 GL::parallel::For(0u, 1'000'000u, [&](unsigned int i) {
                     if (!stack2.try_pop(i))
                         std::cout << "parallel_atomic_uint_stack failure" << std::endl;
                     set2[i] = i;
-                });
+                    });
                 if (set2.size() != 1'000'000ull)
                     std::cout << "parallel_atomic_uint_stack failure" << std::endl;
             }
@@ -973,7 +952,7 @@ int main() {
                     if (!stack.try_pop(i))
                         std::cout << "atomic_uint_stack failure" << std::endl;
                     set[i] = i;
-                });
+                    });
                 if (set.size() != 1'000'000ull)
                     std::cout << "atomic_uint_stack failure" << std::endl;
             }
@@ -987,7 +966,7 @@ int main() {
                     if (!stack2.try_pop(i))
                         std::cout << "parallel_atomic_uint_stack failure" << std::endl;
                     set2[i] = i;
-                });
+                    });
                 if (set2.size() != 1'000'000ull)
                     std::cout << "parallel_atomic_uint_stack failure" << std::endl;
             }
@@ -1017,7 +996,7 @@ int main() {
             if (auto timer = GL::stopwatch::debug_timer("aba_problem::stack<unsigned int>"); false) {
                 GL::aba_problem::stack<unsigned int>
                     stack;
-                
+
                 unsigned int j;
                 for (int k = 0; k < 100; ++k) {
                     while (stack.try_pop(j)) {
@@ -1066,7 +1045,7 @@ int main() {
             if (auto timer = GL::stopwatch::debug_timer("\tParallel atomic_uint_stack"); true) {
                 GL::atomic_uint_stack
                     stack;
-                GL::parallel::For(0, 100, [&](){
+                GL::parallel::For(0, 100, [&]() {
                     unsigned int j;
                     for (int i = 0; i < 10'000; ++i) {
                         stack.push(i);
@@ -1076,12 +1055,12 @@ int main() {
                             std::cout << i << std::endl;
                         }
                     }
-                });
+                    });
             }
             if (auto timer = GL::stopwatch::debug_timer("\tParallel aba_problem::stack<unsigned int>"); false) {
                 GL::aba_problem::stack<unsigned int>
-                    stack;                
-                GL::parallel::For(0, 100, [&](){
+                    stack;
+                GL::parallel::For(0, 100, [&]() {
                     unsigned int j;
                     for (int i = 0; i < 10'000; ++i) {
                         stack.push(i);
@@ -1091,7 +1070,7 @@ int main() {
                             std::cout << i << std::endl;
                         }
                     }
-                });
+                    });
             }
             if (auto timer = GL::stopwatch::debug_timer("\tParallel parallel_atomic_uint_stack"); true) {
                 GL::parallel_atomic_uint_stack
@@ -1106,7 +1085,7 @@ int main() {
                             std::cout << i << std::endl;
                         }
                     }
-                });
+                    });
             }
         }
         while (true) {
@@ -1116,16 +1095,16 @@ int main() {
                         Wrap;
                     std::atomic<long>
                         version = 0;
-                    auto timer = 
+                    auto timer =
                         GL::stopwatch::debug_timer("\tversioned_wrapper<false> load_fast");
                     GL::parallel::For(0, 1'000'000, [&](int i) {
-                        if (i % 10'000 == 0) 
+                        if (i % 10'000 == 0)
                             version.fetch_add(1, std::memory_order::memory_order_relaxed);
-                        Wrap.store_f(version.load(), 
+                        Wrap.store_f(version.load(),
                             [&]() -> GL::foot { return (float)i; });
                         if (auto p = Wrap.load_fast(); p)
                             p->second += GL::foot(1);
-                    });
+                        });
                 }
 
                 if (1) {
@@ -1133,16 +1112,16 @@ int main() {
                         Wrap;
                     std::atomic<long>
                         version = 0;
-                    auto timer = 
+                    auto timer =
                         GL::stopwatch::debug_timer("\tversioned_wrapper<true> load_fast");
                     GL::parallel::For(0, 1'000'000, [&](int i) {
-                        if (i % 10'000 == 0) 
+                        if (i % 10'000 == 0)
                             version.fetch_add(1, std::memory_order::memory_order_relaxed);
-                        Wrap.store_f(version.load(), 
+                        Wrap.store_f(version.load(),
                             [&]() -> GL::foot { return (float)i; });
                         if (auto p = Wrap.load_fast(); p)
                             p->second += GL::foot(1);
-                    });
+                        });
                 }
 
                 if (1) {
@@ -1150,16 +1129,16 @@ int main() {
                         Wrap;
                     std::atomic<long>
                         version = 0;
-                    auto timer = 
+                    auto timer =
                         GL::stopwatch::debug_timer("\tversioned_wrapper<true> guard_critical_section");
                     GL::parallel::For(0, 1'000'000, [&](int i) {
-                        if (i % 10'000 == 0) 
+                        if (i % 10'000 == 0)
                             version.fetch_add(1, std::memory_order::memory_order_relaxed);
-                        Wrap.store_f(version.load(), 
+                        Wrap.store_f(version.load(),
                             [&]() -> GL::foot { return (float)i; });
                         auto g{ Wrap.guard_critical_section() };
                         Wrap.ref() += GL::foot(1);
-                    });
+                        });
                 }
             }
             catch (std::exception& e) {
@@ -1167,7 +1146,7 @@ int main() {
             }
         }
 
-        
+
     }
 
 
@@ -1222,33 +1201,33 @@ Argument Error(s):
     2 Missing Inputs (2 Default):
         All:        %f;
 )").remove_leading_and_trailing_whitespace(),
-                unix_s.argument_error(1_s, 1_min),
-                unix_s.argument_error(any::instance(1_s), any::instance(1_min)),
-                unix_s.argument_error(atomic_any::instance(1_s), atomic_any::instance(1_min)),
+unix_s.argument_error(1_s, 1_min),
+unix_s.argument_error(any::instance(1_s), any::instance(1_min)),
+unix_s.argument_error(atomic_any::instance(1_s), atomic_any::instance(1_min)),
 
-                unix_s.argument_error(1_min, 1_min),
-                unix_s.argument_error(any::instance(1_min), any::instance(1_min)),
-                unix_s.argument_error(atomic_any::instance(1_min), atomic_any::instance(1_min)),
+unix_s.argument_error(1_min, 1_min),
+unix_s.argument_error(any::instance(1_min), any::instance(1_min)),
+unix_s.argument_error(atomic_any::instance(1_min), atomic_any::instance(1_min)),
 
-                unix_s.argument_error(1_min, 1_s),
-                unix_s.argument_error(any::instance(1_min), any::instance(1_s)),
-                unix_s.argument_error(atomic_any::instance(1_min), atomic_any::instance(1_s)),
+unix_s.argument_error(1_min, 1_s),
+unix_s.argument_error(any::instance(1_min), any::instance(1_s)),
+unix_s.argument_error(atomic_any::instance(1_min), atomic_any::instance(1_s)),
 
-                unix_s.argument_error(1_s),
-                unix_s.argument_error(any::instance(1_s)),
-                unix_s.argument_error(atomic_any::instance(1_s)),
-                unix_s.argument_error(),
+unix_s.argument_error(1_s),
+unix_s.argument_error(any::instance(1_s)),
+unix_s.argument_error(atomic_any::instance(1_s)),
+unix_s.argument_error(),
 
-                unix_s_1Default.argument_error(1_s),
-                unix_s_1Default.argument_error(any::instance(1_s)),
-                unix_s_1Default.argument_error(atomic_any::instance(1_s)),
-                unix_s_1Default.argument_error(),
+unix_s_1Default.argument_error(1_s),
+unix_s_1Default.argument_error(any::instance(1_s)),
+unix_s_1Default.argument_error(atomic_any::instance(1_s)),
+unix_s_1Default.argument_error(),
 
-                unix_s_2Default.argument_error(1_s),
-                unix_s_2Default.argument_error(any::instance(1_s)),
-                unix_s_2Default.argument_error(atomic_any::instance(1_s)),
-                unix_s_2Default.argument_error()
-            );
+unix_s_2Default.argument_error(1_s),
+unix_s_2Default.argument_error(any::instance(1_s)),
+unix_s_2Default.argument_error(atomic_any::instance(1_s)),
+unix_s_2Default.argument_error()
+);
         }
         if (1) {
             Function unix_s = wrap_function({}, [](GL::second x, GL::minute y) -> any { return any::instance<GL::hour>(x + y); });
@@ -1290,14 +1269,14 @@ Argument Error(s):
             std::cout << unix_s.do_call<GL::datetime>(N, 120000000_s) << std::endl;
         }
 
-        while (true){
+        while (true) {
             if (1) {
                 Function converter = wrap_converter<GL::foot, GL::value>();
                 GL::stopwatch_group timer2("wrap_converter<GL::foot, GL::value>");
                 GL::parallel::For(0, 1'000'000, [&](size_t i) {
                     auto timer = timer2.debug_timer();
                     if (converter.do_call<GL::value>(GL::foot(i)) != GL::foot(i)) throw "DID NOT EQUAL";
-                });
+                    });
             }
             if (1) {
                 Function converter = wrap_converter<GL::foot, GL::value>();
@@ -1305,7 +1284,7 @@ Argument Error(s):
                 GL::parallel::For(0, 1'000'000, [&](size_t i) {
                     auto timer = timer2.debug_timer();
                     if (converter.do_call<::any>(GL::foot(i)).cast<GL::value>() != GL::foot(i)) throw "DID NOT EQUAL";
-                });
+                    });
             }
             if (1) {
                 auto converter = GL::make_converter< GL::foot, GL::value>();
@@ -1313,10 +1292,10 @@ Argument Error(s):
                 GL::parallel::For(0, 1'000'000, [&](size_t i) {
                     auto timer = timer2.debug_timer();
                     if (converter->operator()(GL::any::fast_any::instance(GL::foot(i))).cast<GL::value>() != GL::foot(i)) throw "DID NOT EQUAL";
-                });
+                    });
             }
         }
-        
+
 
 
 
@@ -1327,10 +1306,10 @@ Argument Error(s):
             GL::parallel::For(0, 1'000'000, [&](size_t i) {
                 auto timer = timer2.debug_timer();
                 if (converter.do_call<GL::foot>(GL::value(GL::foot(i))) != GL::foot(i)) throw "DID NOT EQUAL";
-            });
+                });
         }
 
-        
+
 
         if (1) {
             Function converter = wrap_function({ "int_to_double", { { "from", nullptr } }, "Compiled function to convert between types.", true }, [](int x) -> double { return x; });
@@ -1338,15 +1317,15 @@ Argument Error(s):
             GL::parallel::For(0, 1'000'000, [&](size_t i) {
                 auto timer = timer2.debug_timer();
                 if (converter.do_call<double>((int)i) != (double)(int)i) throw "DID NOT EQUAL";
-            });
-        }       
+                });
+        }
         if (1) {
             Function converter = wrap_converter<int, double>();
             GL::stopwatch_group timer2("wrap_converter<int, double>");
             GL::parallel::For(0, 1'000'000, [&](size_t i) {
                 auto timer = timer2.debug_timer();
                 if (converter.do_call<double>((int)i) != (double)(int)i) throw "DID NOT EQUAL";
-            });
+                });
         }
         if (1) {
             Function converter = wrap_function({ "int_to_double", { { "from", nullptr } }, "Compiled function to convert between types.", false }, [](int const& x) -> double { return x; });
@@ -1354,7 +1333,7 @@ Argument Error(s):
             GL::parallel::For(0, 1'000'000, [&](size_t i) {
                 auto timer = timer2.debug_timer();
                 if (converter.do_call<double>((int)i) != (double)(int)i) throw "DID NOT EQUAL";
-            });
+                });
         }
 
 
@@ -1379,7 +1358,7 @@ Argument Error(s):
                 case 1: temp = any::instance(100.0); break;
                 case 2: temp = any::instance(100.0f); break;
                 }
-            });
+                });
         }
         if (1) {
             GL::stopwatch_group timer2;
@@ -1390,7 +1369,7 @@ Argument Error(s):
                 temp = any::instance(100);
                 temp.cast<int>() += 100;
                 if (temp.cast<int>() != 200) throw "SHOULD HAVE MATCHED";
-            });
+                });
         }
         if (1) {
             GL::stopwatch_group timer2;
@@ -1399,7 +1378,7 @@ Argument Error(s):
                 auto timer = timer2.debug_timer();
 
                 temp.cast<GL::meter>() += GL::meter(100);
-            });
+                });
         }
 
         std::cout << "Atomic, Linearly:\n";
@@ -1414,7 +1393,7 @@ Argument Error(s):
                 case 1: temp = atomic_any::instance(100.0); break;
                 case 2: temp = atomic_any::instance(100.0f); break;
                 }
-            });
+                });
         }
         if (1) {
             GL::stopwatch_group timer2;
@@ -1425,7 +1404,7 @@ Argument Error(s):
                 temp = atomic_any::instance(100);
                 temp.cast<int>() += 100;
                 if (temp.cast<int>() != 200) throw "SHOULD HAVE MATCHED";
-            });
+                });
         }
         if (1) {
             GL::stopwatch_group timer2;
@@ -1434,7 +1413,7 @@ Argument Error(s):
                 auto timer = timer2.debug_timer();
 
                 temp.cast<GL::meter>() += GL::meter(100);
-            });
+                });
         }
 
         std::cout << "Atomic, In Parallel:\n";
@@ -1443,13 +1422,13 @@ Argument Error(s):
             atomic_any temp;
             GL::parallel::Std_For(0, 1'000'000, [&](size_t i) {
                 auto timer = timer2.debug_timer();
-                
+
                 switch (i % 3) {
                 case 0: temp = atomic_any::instance(100); break;
                 case 1: temp = atomic_any::instance(100.0); break;
                 case 2: temp = atomic_any::instance(100.0f); break;
                 }
-            });
+                });
         }
         if (1) {
             GL::stopwatch_group timer2;
@@ -1462,7 +1441,7 @@ Argument Error(s):
                 case 1: temp = temp + GL::type::Reference; break;
                 case 2: temp = temp + GL::type::Temporary; break;
                 }
-            });
+                });
         }
         if (1) {
             GL::stopwatch_group timer2;
@@ -1470,7 +1449,7 @@ Argument Error(s):
             GL::parallel::Std_For(0, 1'000'000, [&](size_t i) {
                 auto timer = timer2.debug_timer();
                 temp.cast<GL::meter>() += GL::meter(100);
-            });
+                });
         }
 
         std::cout << "Linear with Atomics:\n";
@@ -1485,7 +1464,7 @@ Argument Error(s):
                 case 1: temp = any::instance(100.0); break;
                 case 2: temp = any::instance(100.0f); break;
                 }
-            });
+                });
         }
         if (1) {
             GL::stopwatch_group timer2;
@@ -1496,7 +1475,7 @@ Argument Error(s):
                 temp = any::instance(100);
                 temp.cast<int>() += 100;
                 if (temp.cast<int>() != 200) throw "SHOULD HAVE MATCHED";
-            });
+                });
         }
         if (1) {
             GL::stopwatch_group timer2;
@@ -1504,7 +1483,7 @@ Argument Error(s):
             GL::parallel::Std_For(0, 1'000'000, [&](size_t i) {
                 auto timer = timer2.debug_timer();
                 temp.cast<GL::meter>() += GL::meter(100);
-            });
+                });
         }
 
         std::cout << "\n";
@@ -1517,14 +1496,14 @@ Argument Error(s):
             //std::cout << GL::util::rand_very_fast() << std::endl;
 
         // GL::parallel::fire_and_forget([]() {
-            if (auto timer = GL::stopwatch::debug_timer("GL::task automatic scheduling"); true) {
-                GL::stopwatch_group timer2;
-                for (int loops = 0; loops < 100; ++loops) {
-                    auto time{ timer2.debug_timer() };
+        if (auto timer = GL::stopwatch::debug_timer("GL::task automatic scheduling"); true) {
+            GL::stopwatch_group timer2;
+            for (int loops = 0; loops < 100; ++loops) {
+                auto time{ timer2.debug_timer() };
 
-                    GL::parallel_generic_array_allocator<32768> alloc;
-                    GL::atomic_queue<void*> ptrs;
-                    GL::parallel::task(0, 1'000, [](size_t) {
+                GL::parallel_generic_array_allocator<32768> alloc;
+                GL::atomic_queue<void*> ptrs;
+                GL::parallel::task(0, 1'000, [](size_t) {
 
                     })->and_then(0, 1'000, [&](size_t i) {
                         if (GL::util::rand_very_fast(0, 100) > 50) {
@@ -1566,51 +1545,51 @@ Argument Error(s):
                         else if (void* p; ptrs.try_pop(p)) {
                             alloc.free(p);
                         }
-                    })->and_then(0, 1'000'000, [](size_t) {
+                        })->and_then(0, 1'000'000, [](size_t) {
 
-                    })->and_then(0, 1'000'000, [&](size_t i) {
-                        if (GL::util::rand_very_fast(0, 100) > 50) {
-                            switch (i % 10) {
-                            case 0:
-                                ptrs.push(alloc.alloc<int>(GL::util::rand_very_fast(100, 1'000)));
-                                break;
-                            case 1:
-                                ptrs.push(alloc.alloc<float>(GL::util::rand_very_fast(100, 10'000)));
-                                break;
-                            case 2:
-                                ptrs.push(alloc.alloc<long double>(GL::util::rand_very_fast(100, 10'000)));
-                                break;
-                            case 3:
-                                ptrs.push(alloc.alloc<std::string>(GL::util::rand_very_fast(10, 100)));
-                                break;
-                            case 4:
-                                ptrs.push(alloc.alloc<GL::string>(GL::util::rand_very_fast(10, 100)));
-                                break;
-                            case 5:
-                                ptrs.push(alloc.alloc<GL::shared_ptr<std::string>>(GL::util::rand_very_fast(10, 100)));
-                                break;
-                            case 6:
-                                ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
-                                break;
-                            case 7:
-                                ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
-                                break;
-                            case 8:
-                                ptrs.push(alloc.alloc<GL::atomic_bag<std::string>>(GL::util::rand_very_fast(10, 100)));
-                                break;
-                            case 9:
-                                ptrs.push(alloc.alloc<GL::meter>(GL::util::rand_very_fast(100, 10'000)));
-                                break;
-                            default:
-                                break;
-                            }
-                        }
-                        else if (void* p; ptrs.try_pop(p)) {
-                            alloc.free(p);
-                        }
-                    });
-                }
+                            })->and_then(0, 1'000'000, [&](size_t i) {
+                                if (GL::util::rand_very_fast(0, 100) > 50) {
+                                    switch (i % 10) {
+                                    case 0:
+                                        ptrs.push(alloc.alloc<int>(GL::util::rand_very_fast(100, 1'000)));
+                                        break;
+                                    case 1:
+                                        ptrs.push(alloc.alloc<float>(GL::util::rand_very_fast(100, 10'000)));
+                                        break;
+                                    case 2:
+                                        ptrs.push(alloc.alloc<long double>(GL::util::rand_very_fast(100, 10'000)));
+                                        break;
+                                    case 3:
+                                        ptrs.push(alloc.alloc<std::string>(GL::util::rand_very_fast(10, 100)));
+                                        break;
+                                    case 4:
+                                        ptrs.push(alloc.alloc<GL::string>(GL::util::rand_very_fast(10, 100)));
+                                        break;
+                                    case 5:
+                                        ptrs.push(alloc.alloc<GL::shared_ptr<std::string>>(GL::util::rand_very_fast(10, 100)));
+                                        break;
+                                    case 6:
+                                        ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
+                                        break;
+                                    case 7:
+                                        ptrs.push(alloc.alloc<any>(GL::util::rand_very_fast(100, 10'000)));
+                                        break;
+                                    case 8:
+                                        ptrs.push(alloc.alloc<GL::atomic_bag<std::string>>(GL::util::rand_very_fast(10, 100)));
+                                        break;
+                                    case 9:
+                                        ptrs.push(alloc.alloc<GL::meter>(GL::util::rand_very_fast(100, 10'000)));
+                                        break;
+                                    default:
+                                        break;
+                                    }
+                                }
+                                else if (void* p; ptrs.try_pop(p)) {
+                                    alloc.free(p);
+                                }
+                                });
             }
+        }
         // });
 
         if (auto timer = GL::stopwatch::debug_timer("A1. For 1'000"); false) {
@@ -1662,7 +1641,7 @@ Argument Error(s):
                         }
 #endif
                     }
-                });
+                    });
             }
         }
         if (auto timer = GL::stopwatch::debug_timer("A2. Std_For 1'000"); false) {
@@ -1714,7 +1693,7 @@ Argument Error(s):
                         }
 #endif
                     }
-                });
+                    });
             }
         }
         if (auto timer = GL::stopwatch::debug_timer("B3. For 1'000 (work)"); false) {
@@ -1870,7 +1849,7 @@ Argument Error(s):
                         }
 #endif
                     }
-                });
+                    });
             }
         }
         if (auto timer = GL::stopwatch::debug_timer("C6. Std_For 1'000'000"); false) {
@@ -2032,7 +2011,7 @@ Argument Error(s):
 
     }
 
-    while(true){
+    while (true) {
         while (0) {
             //GL::fast_atomic_general_allocator alloc;            
             //if (auto timer = GL::stopwatch::debug_timer("fast_atomic_general_allocator"); true) {
@@ -2049,7 +2028,7 @@ Argument Error(s):
             //}
 
             if (auto timer = GL::stopwatch::debug_timer("parallel_array_allocator float"); false) {
-                GL::parallel_array_allocator<float> 
+                GL::parallel_array_allocator<float>
                     allocator;
 
                 std::vector<float*> ptrs(2'000, nullptr);
@@ -2057,13 +2036,13 @@ Argument Error(s):
                     GL::parallel::For(0, 1'000'000, [&](int i) {
                         auto* ptr = allocator.alloc((int)GL::util::rand_very_fast(1 << 4, 1 << 16));
                         allocator.free(ptr);
-                    });
+                        });
                     GL::parallel::For_Each(ptrs, [&](float*& p) {
                         p = allocator.alloc((int)GL::util::rand_very_fast(1 << 4, 1 << 16));
-                    });
+                        });
                     GL::parallel::For_Each(ptrs, [&](float*& p) {
                         allocator.free(p);
-                    });
+                        });
                 }
             }
 
@@ -2076,10 +2055,10 @@ Argument Error(s):
                     GL::parallel::For(0, 1'000'000, [&](int i) {
                         auto* ptr = allocator.alloc<float>((int)GL::util::rand_very_fast(1 << 4, 1 << 16));
                         allocator.free(ptr);
-                    });
+                        });
                     GL::parallel::For_Each(ptrs, [&](float*& p) {
                         p = allocator.alloc<float>((int)GL::util::rand_very_fast(1 << 4, 1 << 16));
-                    });
+                        });
                     //GL::parallel::For_Each(ptrs, [&](float*& p) {
                     //    allocator.free(p);
                     //});
@@ -2093,19 +2072,19 @@ Argument Error(s):
                         int n = GL::util::rand_very_fast(1 << 4, 1 << 16);
                         auto* ptr = new float[n];
                         delete[] ptr;
-                    });
+                        });
                     GL::parallel::For_Each(ptrs, [&](float*& p) {
                         int n = GL::util::rand_very_fast(1 << 4, 1 << 16);
                         p = new float[n];
-                    });
+                        });
                     GL::parallel::For_Each(ptrs, [&](float*& p) {
                         delete[] p;
-                    });
+                        });
                 }
             }
 
             if (auto timer = GL::stopwatch::debug_timer("parallel_array_allocator std::string"); true) {
-                GL::parallel_array_allocator<std::string> 
+                GL::parallel_array_allocator<std::string>
                     allocator;
 
                 std::vector<std::string*> ptrs(2'000, nullptr);
@@ -2113,11 +2092,11 @@ Argument Error(s):
                     GL::parallel::For(0, 1'000'000, [&](int i) {
                         auto* ptr = allocator.alloc((int)GL::util::rand_very_fast(1 << 4, 1 << 10));
                         allocator.free(ptr);
-                    });
+                        });
                     GL::parallel::For_Each(ptrs, [&](std::string*& p) {
                         p = allocator.alloc((int)GL::util::rand_very_fast(1 << 4, 1 << 10));
                         // *p = "TESTING";
-                    });
+                        });
                     //GL::parallel::For_Each(ptrs, [&](std::string*& p) {
                     //    allocator.free(p);
                     //});
@@ -2133,10 +2112,10 @@ Argument Error(s):
                     GL::parallel::For(0, 1'000'000, [&](int i) {
                         auto* ptr = allocator.alloc<std::string>((int)GL::util::rand_very_fast(1 << 4, 1 << 10));
                         allocator.free(ptr);
-                    });
+                        });
                     GL::parallel::For_Each(ptrs, [&](std::string*& p) {
                         p = allocator.alloc<std::string>((int)GL::util::rand_very_fast(1 << 4, 1 << 10));
-                    });
+                        });
                     //GL::parallel::For_Each(ptrs, [&](std::string*& p) {
                     //    allocator.free(p);
                     //});
@@ -2150,15 +2129,15 @@ Argument Error(s):
                         int n = GL::util::rand_very_fast(1 << 4, 1 << 10);
                         auto* ptr = new std::string[n];
                         delete[] ptr;
-                    });
+                        });
                     GL::parallel::For_Each(ptrs, [&](std::string*& p) {
                         int n = GL::util::rand_very_fast(1 << 4, 1 << 10);
                         p = new std::string[n];
                         // *p = "TESTING";
-                    });
+                        });
                     GL::parallel::For_Each(ptrs, [&](std::string*& p) {
                         delete[] p;
-                    });
+                        });
                 }
             }
 
@@ -2240,10 +2219,10 @@ Argument Error(s):
                     GL::parallel::For(0, 1'000'000, [&](int i) {
                         auto* ptr = allocator.Alloc();
                         allocator.Free(ptr);
-                    });
+                        });
                     GL::parallel::For_Each(ptrs, [&](GL::epoch_map<int, int>*& p) {
                         p = allocator.Alloc();
-                    });
+                        });
                 }
             }
 
@@ -2275,10 +2254,10 @@ Argument Error(s):
                     GL::parallel::For(0, 1'000'000, [&](int i) {
                         auto* ptr = allocator.alloc<GL::epoch_map<int, int>>();
                         allocator.free(ptr);
-                    });
+                        });
                     GL::parallel::For_Each(ptrs, [&](GL::epoch_map<int, int>*& p) {
                         p = allocator.alloc<GL::epoch_map<int, int>>();
-                    });
+                        });
                     //GL::parallel::For_Each(ptrs, [&](GL::epoch_map<int, int>*& p) {
                     //    allocator.free(p);
                     //});
@@ -2307,13 +2286,13 @@ Argument Error(s):
                     GL::parallel::For(0, 1'000'000, [&](int i) {
                         auto* ptr = new GL::epoch_map<int, int>();
                         delete ptr;
-                    });
+                        });
                     GL::parallel::For_Each(ptrs, [&](GL::epoch_map<int, int>*& p) {
                         p = new GL::epoch_map<int, int>();
-                    });
+                        });
                     GL::parallel::For_Each(ptrs, [&](GL::epoch_map<int, int>*& p) {
                         delete p;
-                    });
+                        });
                 }
             }
 
@@ -2342,13 +2321,13 @@ Argument Error(s):
                     GL::parallel::For(0, 1'000'000, [&](int i) {
                         auto* ptr = new float();
                         delete ptr;
-                    });
+                        });
                     GL::parallel::For_Each(ptrs, [&](float*& p) {
                         p = new float();
-                    });
+                        });
                     GL::parallel::For_Each(ptrs, [&](float*& p) {
                         delete p;
-                    });
+                        });
                 }
             }
 
@@ -2383,7 +2362,7 @@ Argument Error(s):
                     auto time = grp.debug_timer();
                     auto g{ tree.guard_critical_section() };
                     tree[i] = i;
-                });
+                    });
             }
         }
         if (1) {
@@ -2396,7 +2375,7 @@ Argument Error(s):
                     auto g{ tree.guard_critical_section() };
                     tree[i % 10'000] = i;
                     tree.erase(i % 10'000);
-                });
+                    });
             }
         }
         if (1) {
@@ -2408,7 +2387,7 @@ Argument Error(s):
                     auto time = grp.debug_timer();
                     tree.erase(i % 100);
                     tree[i % 100] = i; // protected (temporarily!) by the epoch-based protections.                     
-                });
+                    });
             }
         }
 
@@ -2469,7 +2448,7 @@ Argument Error(s):
 
                 if (*node->object() != i) {
                     std::cout << GL::printf("Intended 1: %i, Found 1: %i\n", i, *node->object());
-                }                
+                }
 
                 //node->unlock();
                 //if (!tree.root->validate_node_structure(node)) {                                        
@@ -2504,7 +2483,7 @@ Argument Error(s):
                 //    }
                 ////}
 
-            });
+                });
 
             GL::parallel::For(0, 10'000'000, [&](int i) {
                 auto g{ tree.guard_critical_section() };
@@ -2519,16 +2498,16 @@ Argument Error(s):
 
                     }
                 }
-            });
+                });
         }
 
-        
+
 
         auto g = tree.guard_critical_section();
         auto [node, locker] = tree.GetRootShared();
         node = tree.GetNextLeaf(node, locker);
         while (node) {
-            std::cout << *node->object() << std::endl;            
+            std::cout << *node->object() << std::endl;
             node = tree.GetNextLeaf(node, locker);
         }
     }
@@ -2537,12 +2516,12 @@ Argument Error(s):
 
 
     // object pooling test. 3-4 times faster than normal allocation / deallocation. 
-    while (true) {        
+    while (true) {
         if (auto timer = GL::stopwatch().debug_timer("Normal Allocation / Deletion (int)"); false) {
             GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
                 auto* p = new int();
                 delete p;
-            });
+                });
             GL::parallel::For(0, 1'000'000, [&](size_t i) {
                 std::array<int*, 36> arrs;
                 for (int j = 0; j < 36; ++j) {
@@ -2551,13 +2530,13 @@ Argument Error(s):
                 for (int j = 0; j < 36; ++j) {
                     delete arrs[j];
                 }
-            });
+                });
         }
         if (auto timer = GL::stopwatch().debug_timer("Normal Allocation / Deletion (GL::string)"); false) {
             GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
                 auto* p = new GL::string();
                 delete p;
-            });
+                });
             GL::parallel::For(0, 1'000'000, [&](size_t i) {
                 std::array<GL::string*, 36> arrs;
                 for (int j = 0; j < 36; ++j) {
@@ -2566,7 +2545,7 @@ Argument Error(s):
                 for (int j = 0; j < 36; ++j) {
                     delete arrs[j];
                 }
-            });
+                });
         }
 
         if (auto timer = GL::stopwatch().debug_timer("atomic_parallel_allocator<int>"); true) {
@@ -2574,7 +2553,7 @@ Argument Error(s):
             GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
                 auto* p = pool.Alloc();
                 pool.Free(p);
-            });
+                });
             GL::parallel::For(0, 1'000'000, [&](size_t i) {
                 std::array<int*, 36> arrs;
                 for (int j = 0; j < 36; ++j) {
@@ -2583,14 +2562,14 @@ Argument Error(s):
                 for (int j = 0; j < 36; ++j) {
                     pool.Free(arrs[j]);
                 }
-            });
+                });
         }
         if (auto timer = GL::stopwatch().debug_timer("atomic_parallel_allocator<GL::string>"); true) {
             GL::atomic_parallel_allocator<GL::string> pool;
             GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
                 auto* p = pool.Alloc();
                 pool.Free(p);
-            });
+                });
             GL::parallel::For(0, 1'000'000, [&](size_t i) {
                 std::array<GL::string*, 36> arrs;
                 for (int j = 0; j < 36; ++j) {
@@ -2599,7 +2578,7 @@ Argument Error(s):
                 for (int j = 0; j < 36; ++j) {
                     pool.Free(arrs[j]);
                 }
-            });
+                });
         }
 
         //if (auto timer = GL::stopwatch().debug_timer("GL::epoch_search_tree<GL::string, long long, 10>"); false) {
@@ -2656,7 +2635,7 @@ Argument Error(s):
             GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
                 auto* p = pool.Alloc();
                 pool.Free(p);
-            });
+                });
             GL::parallel::For(0, 1'000'000, [&](size_t i) {
                 std::array<int*, 36> arrs;
                 for (int j = 0; j < 36; ++j) {
@@ -2665,14 +2644,14 @@ Argument Error(s):
                 for (int j = 0; j < 36; ++j) {
                     pool.Free(arrs[j]);
                 }
-            });
+                });
         }
         if (auto timer = GL::stopwatch().debug_timer("fast_atomic_allocator<GL::string>"); true) {
             GL::fast_atomic_allocator<GL::string> pool;
             GL::parallel::For(0, 1'000'000'000, [&](size_t i) {
                 auto* p = pool.Alloc();
                 pool.Free(p);
-            });
+                });
             GL::parallel::For(0, 1'000'000, [&](size_t i) {
                 std::array<GL::string*, 36> arrs;
                 for (int j = 0; j < 36; ++j) {
@@ -2681,7 +2660,7 @@ Argument Error(s):
                 for (int j = 0; j < 36; ++j) {
                     pool.Free(arrs[j]);
                 }
-            });
+                });
         }
         if (false) {
             GL::fast_atomic_allocator<GL::string> pool;
@@ -2721,7 +2700,7 @@ Argument Error(s):
                                 pool.Free(p);
                             }
                         }
-                    });
+                        });
                     GL::string* p;
                     while (ptrs.try_pop(p)) {
                         pool.Free(p);
@@ -2732,7 +2711,7 @@ Argument Error(s):
 
         if (auto timer = GL::stopwatch().debug_timer("fast_atomic_epoch_allocator<int> (linear only)"); true) {
             GL::fast_atomic_epoch_allocator<int> pool;
-            
+
             for (long long i = 1'000'000'000ll / (long long)(GL::util::get_hardware_thread_count() * 10); i > 0; --i) {
                 auto* p = pool.Alloc();
                 auto g = pool.guard_critical_section();
@@ -2755,17 +2734,17 @@ Argument Error(s):
                 auto* p = pool.Alloc();
                 auto g = pool.guard_critical_section();
                 pool.Free(p);
-            });
+                });
             GL::parallel::For(0, 1'000'000, [&](size_t i) {
                 std::array<int*, 36> arrs;
-                auto g = pool.guard_critical_section(); 
+                auto g = pool.guard_critical_section();
                 for (int j = 0; j < 36; ++j) {
                     arrs[j] = pool.Alloc();
-                }                
+                }
                 for (int j = 0; j < 36; ++j) {
                     pool.Free(arrs[j]);
                 }
-            });
+                });
         }
         if (auto timer = GL::stopwatch().debug_timer("fast_atomic_epoch_allocator<GL::string>"); true) {
             GL::fast_atomic_epoch_allocator<GL::string> pool;
@@ -2783,7 +2762,7 @@ Argument Error(s):
                 for (int j = 0; j < 36; ++j) {
                     pool.Free(arrs[j]);
                 }
-            });
+                });
         }
         if (true) {
             GL::fast_atomic_epoch_allocator<GL::string> pool;
@@ -2793,7 +2772,7 @@ Argument Error(s):
                         auto* p = pool.Alloc();
                         auto g = pool.guard_critical_section();
                         pool.Free(p);
-                    });
+                        });
                     GL::parallel::For(0, 1'000'000, [&](size_t i) {
                         std::array<GL::string*, 36> arrs;
                         for (int j = 0; j < 36; ++j) {
@@ -2803,7 +2782,7 @@ Argument Error(s):
                         for (int j = 0; j < 36; ++j) {
                             pool.Free(arrs[j]);
                         }
-                    });
+                        });
                 }
                 if (auto timer = GL::stopwatch().debug_timer("fast_atomic_epoch_allocator<GL::string> consumer-producer system"); true) {
                     concurrency::concurrent_queue< GL::string* > ptrs;
@@ -2819,7 +2798,7 @@ Argument Error(s):
                                 pool.Free(p);
                             }
                         }
-                    });
+                        });
                     GL::string* p;
                     auto g = pool.guard_critical_section();
                     while (ptrs.try_pop(p)) {
@@ -2852,7 +2831,7 @@ Argument Error(s):
         std::cout << unix_s.do_call<GL::datetime>(N, 1_d) << std::endl;
         std::cout << unix_s.do_call<GL::datetime>(N, 12000_s) << std::endl;
         std::cout << unix_s.do_call<GL::datetime>(N, 1200000_s) << std::endl;
-        std::cout << unix_s.do_call<GL::datetime>(N, 120000000_s) << std::endl;        
+        std::cout << unix_s.do_call<GL::datetime>(N, 120000000_s) << std::endl;
     }
 
     while (1) {
@@ -2863,7 +2842,7 @@ Argument Error(s):
                 // for (int i = 0; i < 1'000'000; ++i) {
                 GL::parallel::For(0, 1'000'000, [&]() {
                     (void)ref.begins_with("this");
-                });
+                    });
             }
         } break;
         case 1: {
@@ -2873,7 +2852,7 @@ Argument Error(s):
                 GL::parallel::For(0, 1'000'000, [&]() {
                     GL::string& Ref = ref;
                     (void)Ref.begins_with("this");
-                });
+                    });
             }
         } break;
         case 2: {
@@ -2882,7 +2861,7 @@ Argument Error(s):
                 //for (int i = 0; i < 1'000'000; ++i) {
                 GL::parallel::For(0, 1'000'000, [&]() {
                     (void)boxed.cast<GL::string&>().begins_with("this");
-                });
+                    });
             }
         } break;
         case 3: {
@@ -2891,7 +2870,7 @@ Argument Error(s):
                 //for (int i = 0; i < 1'000'000; ++i) {
                 GL::parallel::For(0, 1'000'000, [&]() {
                     (void)boxed.cast<GL::string&>().begins_with("this");
-                });
+                    });
             }
         } break;
         case 4: if (0) {
@@ -2913,7 +2892,7 @@ Argument Error(s):
                 //for (int i = 0; i < 1'000'000; ++i) {
                 GL::parallel::For(0, 1'000'000, [&]() {
                     (void)callable->operator()(&example[0], &example[0] + example.size(), false);
-                });
+                    });
             }
         } break;
         case 6: {
@@ -2927,7 +2906,7 @@ Argument Error(s):
                 //for (int i = 0; i < 1'000'000; ++i) {
                 GL::parallel::For(0, 1'000'000, [&]() {
                     (void)callable.call(&example[0]);
-                });
+                    });
             }
         } break;
         case 7: {
@@ -2941,7 +2920,7 @@ Argument Error(s):
                 //for (int i = 0; i < 1'000'000; ++i) {
                 GL::parallel::For(0, 1'000'000, [&]() {
                     (void)callable.do_call(example[0], example[1]);
-                });
+                    });
             }
         } break;
         case 9: {
@@ -2955,7 +2934,7 @@ Argument Error(s):
                 //for (int i = 0; i < 1'000'000; ++i) {
                 GL::parallel::For(0, 1'000'000, [&]() {
                     (void)callable.do_call(example[0], example[1]);
-                });
+                    });
             }
         } break;
         case 10: {
@@ -2970,7 +2949,7 @@ Argument Error(s):
                 GL::parallel::For(0, 1'000'000, [&]() {
                     // callable.do_call<bool>(any(example[0], true), any(example[1], true));
                     callable.do_call<bool>(example[0], example[1]);
-                });
+                    });
 
             }
         } break;
@@ -2988,7 +2967,7 @@ Argument Error(s):
                 //for (int i = 0; i < 1'000'000; ++i) {
                 GL::parallel::For(0, 1'000'000, [&]() {
                     (void)callable.do_call(any(example[0], true));
-                });
+                    });
             }
         } break;
         case 12: {
@@ -3004,9 +2983,9 @@ Argument Error(s):
             if (auto timer = GL::stopwatch().debug_timer("TEST::obj, w/ return")) {
                 //for (int i = 0; i < 1'000'000; ++i) {
                 GL::parallel::For(0, 1'000'000, [&]() { any out;
-                    (void)callable.do_call<GL::string&>(any(example[0], true));
-                    // if (callable.do_call<GL::string&>(any(example[0], true)) != GL::string("that")) throw "ERROR";
-                });                
+                (void)callable.do_call<GL::string&>(any(example[0], true));
+                // if (callable.do_call<GL::string&>(any(example[0], true)) != GL::string("that")) throw "ERROR";
+                    });
             }
         } break;
         case 13: {
@@ -3021,7 +3000,7 @@ Argument Error(s):
                 // for (int i = 0; i < 1'000'000; ++i) {
                 GL::parallel::For(0, 1'000'000, [&]() {
                     callable.do_call(any(example[0], true));
-                });
+                    });
             }
         } break;
         case 14: {
@@ -3042,16 +3021,16 @@ Argument Error(s):
                 //for (int i = 0; i < 1'000'000; ++i) {
                 GL::parallel::For(0, 1'000'000, [&]() {
                     callable.do_call(any(example[0], true));
-                });
+                    });
             }
         } break;
         case 15: {
-            Function callable{ []() { 
+            Function callable{ []() {
                 Function out { wrap_function({}, [](GL::string const& LHS, GL::string const& RHS) -> bool { return LHS.begins_with(RHS); }) };
                 out.name = "begins_with";
                 out.defaults[1] = any::instance(GL::string("this"));
-                return out; 
-            }() };            
+                return out;
+            }() };
             std::array<any, 1> example{
                 any::instance(GL::string("this"))
             };
@@ -3059,7 +3038,7 @@ Argument Error(s):
                 std::vector<GL::parallel::promise> jobs(1'000'000ull, GL::parallel::promise{});
                 GL::parallel::For(0, 1'000'000, [&](size_t i) {
                     jobs[i] = callable.async_call(example[0]);
-                });
+                    });
             }
         } break;
         }
@@ -3077,25 +3056,25 @@ Argument Error(s):
 
     // in parallel, each thread attempts this parallel-tasking test suite
     GL::parallel::While(
-        []() -> bool { return true; }, 
+        []() -> bool { return true; },
         []() {
             // casting is automatic for all of these
-            auto task_sequence = GL::parallel::task([]() -> GL::millisecond {
+            auto task_sequence = GL::parallel::async([]() -> GL::millisecond {
                 std::cout << "First...\n";
                 return GL::millisecond(0);
-            })->and_then([](GL::second t0) -> GL::millisecond {
+            }).and_then([](GL::second t0) -> GL::millisecond {
                 std::cout << "Second...\n";
                 return t0;
-            })->and_then(0, 10'000, [](size_t i, GL::millisecond& t0, GL::parallel::job_base& parent) -> GL::any {
+            }).and_then(0, 10'000, [](size_t i, GL::millisecond& t0, GL::parallel::job_base& parent) -> GL::any {
                 t0 += 1;
                 return parent.result;
-            })->and_then([](GL::any const& t0) {
+            }).and_then([](GL::any const& t0) {
                 if (t0.cast<GL::millisecond>() != 10'000_ms) throw "SHOULD HAVE MATCHED";
                 std::cout << "Third and done.\n";
             });
-            
+
             GL::value progress = 0;
-            auto task_1 = GL::parallel::task(0, 10'000, [&progress]() {
+            auto task_1 = GL::parallel::async(0, 10'000, [&progress]() {
                 if ((++progress).mod(1000) == 0) {
                     std::cout << GL::printf("%i percent\n", (int)(100.0f * ((float)progress / 10'000.0f)));
                 }
@@ -3105,8 +3084,6 @@ Argument Error(s):
 
             // casting is automatic for this
             GL::parallel::For(0, 1'000'000, [](size_t i) {});
-            // casting is automatic for this
-            (void)GL::parallel::async([](double i) { return i; }, 100);
             // no casting required
             GL::parallel::Until(
                 []() {},
@@ -3121,17 +3098,6 @@ Argument Error(s):
         }
     );
 
-    for (int j = 0; j < 1'000'000; ++j) {
-        auto future1 = GL::parallel::async(&F::AsyncTest, 10_ft);
-        if (GL::type_of<GL::meter>() != future1.as_promise().Type()) throw "SHOULD HAVE MATCHED";
-        if (future1.get_ref() != 10_ft) throw "SHOULD HAVE MATCHED";
-
-        auto future2 = GL::parallel::async([](GL::millisecond const& t) {
-            ::Sleep((long long)t.operator float());
-        }, 0.01_s);
-
-        GL::parallel::For(0, -1'000'000, &F::ToDo);
-    }
     return 0;
 };
 

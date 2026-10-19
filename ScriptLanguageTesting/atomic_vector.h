@@ -116,6 +116,8 @@ namespace GL {
         size_t
             current_pos{ 0 };
         size_t
+            current_size{ 0 };
+        size_t
             valid_pos{ 0 };
         short
             current_blockN{ -1 };
@@ -172,9 +174,10 @@ namespace GL {
     public:
         atomic_vector() = default;
         atomic_vector(atomic_vector const&) = delete;
-        atomic_vector(atomic_vector&& rhs) : blocks{ rhs.blocks }, current_pos{ rhs.current_pos }, valid_pos{ rhs.valid_pos }, current_blockN{ rhs.current_blockN } {
+        atomic_vector(atomic_vector&& rhs) : blocks{ rhs.blocks }, current_pos{ rhs.current_pos }, current_size{ rhs.current_size }, valid_pos{ rhs.valid_pos }, current_blockN{ rhs.current_blockN } {
             for (auto& x : rhs.blocks) x = nullptr;
             rhs.current_pos = 0;
+            rhs.current_size = 0;
             rhs.valid_pos = 0;
             rhs.current_blockN = -1;
         };
@@ -234,6 +237,19 @@ namespace GL {
                 InterlockedExchange16(reinterpret_cast<volatile short*>(&current_blockN), blockN);
             }
             blocks[blockN][global_index_to_local_index(position, blockN)] = srce;
+
+            while (true) {
+                size_t prevValid = current_size;
+                if (prevValid < (position + 1)) {
+                    if (InterlockedCompareExchangeNoFence(reinterpret_cast<volatile size_t*>(&current_size), position + 1, prevValid) == prevValid) {
+                        break;
+                    }
+                }
+                else {
+                    break;
+                }
+            }
+
             return position;
         };
         size_t push_back(element_t&& srce) noexcept {
@@ -247,10 +263,23 @@ namespace GL {
                 InterlockedExchange16(reinterpret_cast<volatile short*>(&current_blockN), blockN);
             }
             blocks[blockN][global_index_to_local_index(position, blockN)] = std::move(srce);
+
+            while (true) {
+                size_t prevValid = current_size;
+                if (prevValid < (position + 1)) {
+                    if (InterlockedCompareExchangeNoFence(reinterpret_cast<volatile size_t*>(&current_size), position + 1, prevValid) == prevValid) {
+                        break;
+                    }
+                }
+                else {
+                    break;
+                }
+            }
+
             return position;
         };
         size_t size() const {
-            return std::max(valid_pos, current_pos);
+            return std::max(valid_pos, current_size);
         };
         element_t& get_or_make(size_t index) {
             grow_to_at_least(index + 1);
@@ -422,6 +451,8 @@ namespace GL {
         size_t
             current_pos{ 0 };
         size_t
+            current_size{ 0 };
+        size_t
             valid_pos{ 0 };
         short
             current_blockN{ -1 };     
@@ -514,6 +545,19 @@ namespace GL {
                 InterlockedExchange16(reinterpret_cast<volatile short*>(&current_blockN), blockN);
             }
             blocks[blockN][global_index_to_local_index(position, blockN)] = srce;
+
+            while (true) {
+                size_t prevValid = current_size;
+                if (prevValid < (position + 1)) {
+                    if (InterlockedCompareExchangeNoFence(reinterpret_cast<volatile size_t*>(&current_size), position + 1, prevValid) == prevValid) {
+                        break;
+                    }
+                }
+                else {
+                    break;
+                }
+            }
+
             return position;
         };
         size_t push_back(element_t&& srce) noexcept {
@@ -527,10 +571,23 @@ namespace GL {
                 InterlockedExchange16(reinterpret_cast<volatile short*>(&current_blockN), blockN);
             }
             blocks[blockN][global_index_to_local_index(position, blockN)] = std::move(srce);
+
+            while (true) {
+                size_t prevValid = current_size;
+                if (prevValid < (position + 1)) {
+                    if (InterlockedCompareExchangeNoFence(reinterpret_cast<volatile size_t*>(&current_size), position + 1, prevValid) == prevValid) {
+                        break;
+                    }
+                }
+                else {
+                    break;
+                }
+            }
+
             return position;
         };
         size_t size() const {
-            return std::max(valid_pos, current_pos);
+            return std::max(valid_pos, current_size);
         };
 
         class Iterator {
@@ -747,6 +804,8 @@ namespace GL {
         size_t
             current_pos{ 0 };
         size_t
+            current_size{ 0 };
+        size_t
             valid_pos{ 0 };
         short
             current_blockN{ -1 };
@@ -855,6 +914,19 @@ namespace GL {
                 InterlockedExchange16(reinterpret_cast<volatile short*>(&current_blockN), blockN);
             }
             blocks[blockN][global_index_to_local_index(position, blockN)] = srce;
+
+            while (true) {
+                size_t prevValid = current_size;
+                if (prevValid < (position + 1)) {
+                    if (InterlockedCompareExchangeNoFence(reinterpret_cast<volatile size_t*>(&current_size), position + 1, prevValid) == prevValid) {
+                        break;
+                    }
+                }
+                else {
+                    break;
+                }
+            }
+
             return position;
         };
         size_t push_back(element_t&& srce) noexcept {
@@ -868,10 +940,23 @@ namespace GL {
                 InterlockedExchange16(reinterpret_cast<volatile short*>(&current_blockN), blockN);
             }
             blocks[blockN][global_index_to_local_index(position, blockN)] = std::move(srce);
+
+            while (true) {
+                size_t prevValid = current_size;
+                if (prevValid < (position + 1)) {
+                    if (InterlockedCompareExchangeNoFence(reinterpret_cast<volatile size_t*>(&current_size), position + 1, prevValid) == prevValid) {
+                        break;
+                    }
+                }
+                else {
+                    break;
+                }
+            }
+
             return position;
         };
         size_t size() const {
-            return std::max(valid_pos, current_pos);
+            return std::max(valid_pos, current_size);
         };
         element_t& get_or_make(size_t index) {
             grow_to_at_least(index + 1);

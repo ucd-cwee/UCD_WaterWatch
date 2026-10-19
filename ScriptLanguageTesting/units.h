@@ -1078,6 +1078,9 @@ namespace GL {
                 return out / (value(rhs) = 1.0f);
             }
         };
+        value operator%(value const& rhs) const {
+            return mod(rhs);
+        };
         // wraps the number between [min, max]. Numbers larger than max or smaller than min wrap to the other side, and stay within that range. For example, (2).wrap(0, 1) returns 1, whereas (-1).wrap(-2,0) returns -1. 
         value wrap(value const& min_bound, value const& max_bound) const {
             auto this_copy = this->packed;      

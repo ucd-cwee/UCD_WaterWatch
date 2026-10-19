@@ -40,7 +40,7 @@ namespace GL {
     using type_hash_t = unsigned long;
 
     namespace interlocked {
-        template <typename T> __forceinline bool compare_exchange(T& rhs, T compare, T exchange) {
+        template <typename T> /*__forceinline*/ bool compare_exchange(T& rhs, T compare, T exchange) {
             if constexpr (std::is_pointer_v<T>) {
                 return InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&rhs), exchange, compare) == compare;
             }
@@ -60,7 +60,7 @@ namespace GL {
                 return InterlockedCompareExchangeNoFence(reinterpret_cast<volatile T*>(&rhs), exchange, compare) == compare;
             }
         };
-        template <typename T> __forceinline T exchange(T& rhs, T exchange) {
+        template <typename T> /*__forceinline*/ T exchange(T& rhs, T exchange) {
             if constexpr (std::is_pointer_v<T>) {
                 return reinterpret_cast<T>(InterlockedExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&rhs), exchange));
             }
@@ -80,7 +80,7 @@ namespace GL {
                 return InterlockedExchangeNoFence(reinterpret_cast<volatile T*>(&rhs), exchange);
             }
         };
-        template <typename T> __forceinline T increment(T& rhs) {
+        template <typename T> /*__forceinline*/ T increment(T& rhs) {
             if constexpr (std::is_same_v<size_t, T>) {
                 return InterlockedIncrementNoFence(reinterpret_cast<volatile size_t*>(&rhs));
             }
@@ -97,7 +97,7 @@ namespace GL {
                 return InterlockedIncrementNoFence(reinterpret_cast<volatile T*>(&rhs));
             }
         };
-        template <typename T> __forceinline T decrement(T& rhs) {
+        template <typename T> /*__forceinline*/ T decrement(T& rhs) {
             if constexpr (std::is_same_v<size_t, T>) {
                 return InterlockedDecrementNoFence(reinterpret_cast<volatile size_t*>(&rhs));
             }
@@ -114,7 +114,7 @@ namespace GL {
                 return InterlockedDecrementNoFence(reinterpret_cast<volatile T*>(&rhs));
             }
         };
-        template <typename T> __forceinline T add(T& rhs, T add) {
+        template <typename T> /*__forceinline*/ T add(T& rhs, T add) {
             if constexpr (std::is_same_v<size_t, T>) {
                 return InterlockedAddNoFence(reinterpret_cast<volatile size_t*>(&rhs), add);
             }

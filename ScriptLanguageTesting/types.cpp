@@ -45,7 +45,7 @@ namespace GL {
 
     // Definition
     namespace uuid {
-        static GL::fast_ticket_dispensor<false> tickets;
+        static GL::ticket_dispensor<false> tickets;
         static GL::atomic_vector< uuid_ticket > slots;
         unsigned long new_uuid(GL::shared_ptr<GL::type_erasure::any_data>&& rhs) noexcept {
             unsigned long uuid = (unsigned long)tickets.get_ticket();

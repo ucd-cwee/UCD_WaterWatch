@@ -677,14 +677,14 @@ namespace GL {
             static GL::shared_ptr<any_data> get_v(H<S> obj) {
                 if (obj) {
                     if constexpr (std::is_same<GL::any, S>::value) 
-                        return obj->m_ptr.load(); // return self                    
+                        return obj->get_underlying_ptr(); // return self                    
                     else if constexpr (std::is_same<GL::atomic_any, S>::value)
-                        return obj->m_ptr; // return self                    
+                        return obj->get_underlying_ptr(); // return self                    
                     else {
                         if constexpr (std::is_same<GL::shared_ptr<S>, H<S>>::value) 
-                            return GL::make_shared<shared_data<S>>(std::move(obj));                        
+                            return GL::make_shared<shared_data<S>>(std::move(obj));
                         else if constexpr (std::is_same<std::shared_ptr<S>, H<S>>::value) 
-                            return GL::static_pointer_cast<any_data>(GL::make_shared<std_shared_data<S>>(std::move(obj)));                        
+                            return GL::static_pointer_cast<any_data>(GL::make_shared<std_shared_data<S>>(std::move(obj)));
                         else 
                             return nullptr;                        
                     }
@@ -697,15 +697,15 @@ namespace GL {
             template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>> || std::is_same_v<H<S>, GL::shared_ptr<S>>>>
             static GL::shared_ptr<any_data> get(H<S> obj) {
                 if (obj) {
-                    if constexpr (std::is_same<GL::any, S>::value) 
-                        return obj->m_ptr.load(); // return self                    
+                    if constexpr (std::is_same<GL::any, S>::value)
+                        return obj->get_underlying_ptr(); // return self                    
                     else if constexpr (std::is_same<GL::atomic_any, S>::value)
-                        return obj->m_ptr; // return self                    
+                        return obj->get_underlying_ptr(); // return self                    
                     else {
                         if constexpr (std::is_same<GL::shared_ptr<S>, H<S>>::value) 
-                            return GL::make_shared<shared_data<S>>(std::move(obj));                        
+                            return GL::make_shared<shared_data<S>>(std::move(obj));
                         else if constexpr (std::is_same<std::shared_ptr<S>, H<S>>::value) 
-                            return GL::static_pointer_cast<any_data>(GL::make_shared<std_shared_data<S>>(std::move(obj)));                        
+                            return GL::static_pointer_cast<any_data>(GL::make_shared<std_shared_data<S>>(std::move(obj)));
                         else 
                             return nullptr;                        
                     }
@@ -909,12 +909,14 @@ namespace GL {
                         uuid::free_uuid(m_uuid);
         };
 
-        template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> static any instance(const ValueType& value) noexcept {
+        template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>> && !std::is_same_v<atomic_any, std::decay_t<ValueType>>>> static any instance(const ValueType& value) noexcept {
+            // std::cout << GL::string("Instancing const ") + GL::type_of<ValueType>().name() + "&\n";
             auto wrapped = GL::type_erasure::wrap(value);
             auto* ptr = wrapped->get();
             return any(uuid::new_uuid(std::move(wrapped)), ptr, GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>());
         };
-        template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>>>> static any instance(ValueType&& value) noexcept {
+        template<typename ValueType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<ValueType>> && !std::is_same_v<atomic_any, std::decay_t<ValueType>>>> static any instance(ValueType&& value) noexcept {
+            // std::cout << GL::string("Instancing ") + GL::type_of<ValueType>().name() + "&&\n";
             auto wrapped = GL::type_erasure::wrap(std::forward<ValueType>(value));
             auto* ptr = wrapped->get();
             return any(uuid::new_uuid(std::move(wrapped)), ptr, GL::type_of<typename GL::type_erasure::get_type<std::decay_t<ValueType>>::type>());
@@ -977,6 +979,8 @@ namespace GL {
         };
 
     protected:
+        friend struct GL::type_erasure::wrapper;
+
         GL::shared_ptr<GL::type_erasure::any_data>& get_underlying_ptr() const noexcept {
             if ((m_uuid & uuid::INV_FLAGS) > 0)
                 return uuid::get_uuid(m_uuid).data;
@@ -985,6 +989,7 @@ namespace GL {
                 return out;
             }
         };
+    public:
         class DataCaster {
         public:
             template<typename T> struct is_stdSharedPtr_class { typedef std::false_type type; };
@@ -1088,10 +1093,10 @@ namespace GL {
         template<typename VType, typename = std::enable_if_t<!std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
         decltype(auto) cast() const noexcept { return DataCaster::DoCast<VType>(const_cast<any*>(this)); };
 
-        template<typename VType, typename = std::enable_if_t<!std::is_pointer<VType>::value&& std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
+        template<typename VType, typename = std::enable_if_t<!std::is_pointer<VType>::value && std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
         any& cast() const noexcept { return *const_cast<any*>(this); };
 
-        template<typename VType, typename = std::enable_if_t<std::is_pointer<VType>::value&& std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
+        template<typename VType, typename = std::enable_if_t<std::is_pointer<VType>::value && std::is_same_v<any, std::decay_t<typename std::remove_reference<typename std::remove_pointer<VType>::type>::type>>>>
         any* cast() const noexcept { return const_cast<any*>(this); };
 
         /// \todo it is a performance increase to allow the return value to be "referenced" rather than incremented/decremented properly, however, is this safe in practice?

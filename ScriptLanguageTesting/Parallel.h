@@ -21,6 +21,354 @@
 
 // Good Language namespace
 namespace GL {
+	namespace detail {
+		template <typename T>
+		struct is_static_member_function : std::false_type {};
+
+		template <typename R, typename C, typename... Args>
+		struct is_static_member_function<R(C::*)(Args...) const> : std::false_type {};
+
+		template <typename R, typename C, typename... Args>
+		struct is_static_member_function<R(C::*)(Args...)> : std::false_type {};
+
+		template <typename R, typename C, typename... Args>
+		struct is_static_member_function<R(C::*)(Args...) const volatile> : std::false_type {};
+
+		template <typename R, typename C, typename... Args>
+		struct is_static_member_function<R(C::*)(Args...) volatile> : std::false_type {};
+
+		template <typename R, typename C, typename... Args>
+		struct is_static_member_function<R(C::*)(Args...)&> : std::false_type {};
+
+		template <typename R, typename C, typename... Args>
+		struct is_static_member_function<R(C::*)(Args...) const&> : std::false_type {};
+
+		template <typename R, typename C, typename... Args>
+		struct is_static_member_function<R(C::*)(Args...)&&> : std::false_type {};
+
+		template <typename R, typename C, typename... Args>
+		struct is_static_member_function<R(C::*)(Args...) const&&> : std::false_type {};
+
+		template <typename R, typename C, typename... Args>
+		struct is_static_member_function<R(C::*)(Args...) noexcept> : std::true_type {};
+
+		template <typename R, typename C, typename... Args>
+		struct is_static_member_function<R(C::*)(Args...) const noexcept> : std::true_type {};
+
+		template <typename R, typename C, typename... Args>
+		struct is_static_member_function<R(C::*)(Args...) volatile noexcept> : std::true_type {};
+
+		template <typename R, typename C, typename... Args>
+		struct is_static_member_function<R(C::*)(Args...) const volatile noexcept> : std::true_type {};
+
+		template<typename... Param> struct Function_Params {
+			typedef std::tuple<Param...> argType;
+			static constexpr auto numArgs = std::tuple_size_v<argType>;
+
+			// Specialization to unpack the tuple's internal parameter pack
+			template <typename Ret>
+			struct to_function_pointer {
+				using type = Ret(*)(Param...);
+			};
+		};
+
+		template<typename Ret, typename Class, typename Params, bool IsMember = false, bool IsMemberObject = false, bool IsObject = false/*, bool IsStatelessObject = false*/>
+		struct Function_Signature {
+			typedef Params Param_Types;
+			typedef Class Class_Type;
+			typedef Ret Return_Type;
+
+			// constexpr static const bool is_stateless_object = IsStatelessObject; // e.g. lambda object that does not capture anything
+			constexpr static const bool is_object = IsObject; // e.g. lambda object
+			constexpr static const bool is_member = IsMember; // e.g. first param MUST be an alive Class type. May be function or parameter.
+			constexpr static const bool is_member_object = IsMemberObject; // e.g. first param MUST be an alive Class type. Will be a parameter of the Class.
+			constexpr static const bool is_member_function = !is_member_object && is_member; // e.g. first param MUST be an alive Class type. Will be a parameter of the Class.
+			constexpr static const bool is_static_member_function = std::is_same_v< Class_Type, void>; // e.g. free function
+
+			template<typename T> constexpr Function_Signature(T&&) noexcept { };
+			constexpr Function_Signature() noexcept = default;
+		};
+
+		// Free functions
+		template<typename Ret, typename... Param>
+		Function_Signature(Ret(*f)(Param...))
+			->Function_Signature<Ret, void, Function_Params<Param...>, false, false, false>; // static function
+
+		// no reference specifier
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...) volatile)
+			->Function_Signature<Ret, Class, Function_Params<volatile Class&, Param...>, true, false, false>; // member function
+
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...) volatile const)
+			->Function_Signature<Ret, Class, Function_Params<volatile const Class&, Param...>, true, false, false>; // member function
+
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...))
+			->Function_Signature<Ret, Class, Function_Params<Class&, Param...>, true, false, false>; // member function
+
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...) const)
+			->Function_Signature<Ret, Class, Function_Params<const Class&, Param...>, true, false, false>; // member function
+
+		// & reference specifier
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...) volatile&)
+			->Function_Signature<Ret, Class, Function_Params<volatile Class&, Param...>, true, false, false>; // member function
+
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...) volatile const&)
+			->Function_Signature<Ret, Class, Function_Params<volatile const Class&, Param...>, true, false, false>; // member function
+
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...)&)
+			->Function_Signature<Ret, Class, Function_Params<Class&, Param...>, true, false, false>; // member function
+
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...) const&)
+			->Function_Signature<Ret, Class, Function_Params<const Class&, Param...>, true, false, false>; // member function
+
+		// && reference specifier
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...) volatile&&)
+			->Function_Signature<Ret, Class, Function_Params<volatile Class&&, Param...>, true, false, false>; // member function
+
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...) volatile const&&)
+			->Function_Signature<Ret, Class, Function_Params<volatile const Class&&, Param...>, true, false, false>; // member function
+
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...)&&)
+			->Function_Signature<Ret, Class, Function_Params<Class&&, Param...>, true, false, false>; // member function
+
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...) const&&)
+			->Function_Signature<Ret, Class, Function_Params<const Class&&, Param...>, true, false, false>; // member function
+
+		// Free functions
+		template<typename Ret, typename... Param>
+		Function_Signature(Ret(*f)(Param...) noexcept)
+			->Function_Signature<Ret, void, Function_Params<Param...>, false, false, false>; // static function
+
+		// no reference specifier
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...) volatile noexcept)
+			->Function_Signature<Ret, Class, Function_Params<volatile Class&, Param...>, true, false, false>; // member function
+
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...) volatile const noexcept)
+			->Function_Signature<Ret, Class, Function_Params<volatile const Class&, Param...>, true, false, false>; // member function
+
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...) noexcept)
+			->Function_Signature<Ret, Class, Function_Params<Class&, Param...>, true, false, false>; // member function
+
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...) const noexcept)
+			->Function_Signature<Ret, Class, Function_Params<const Class&, Param...>, true, false, false>; // member function
+
+		// & reference specifier
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...) volatile& noexcept)
+			->Function_Signature<Ret, Class, Function_Params<volatile Class&, Param...>, true, false, false>; // member function
+
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...) volatile const& noexcept)
+			->Function_Signature<Ret, Class, Function_Params<volatile const Class&, Param...>, true, false, false>; // member function
+
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...) & noexcept)
+			->Function_Signature<Ret, Class, Function_Params<Class&, Param...>, true, false, false>; // member function
+
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...) const& noexcept)
+			->Function_Signature<Ret, Class, Function_Params<const Class&, Param...>, true, false, false>; // member function
+
+		// && reference specifier
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...) volatile&& noexcept)
+			->Function_Signature<Ret, Class, Function_Params<volatile Class&&, Param...>, true, false, false>; // member function
+
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...) volatile const&& noexcept)
+			->Function_Signature<Ret, Class, Function_Params<volatile const Class&&, Param...>, true, false, false>; // member function
+
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...) && noexcept)
+			->Function_Signature<Ret, Class, Function_Params<Class&&, Param...>, true, false, false>; // member function
+
+		template<typename Ret, typename Class, typename... Param>
+		Function_Signature(Ret(Class::* f)(Param...) const&& noexcept)
+			->Function_Signature<Ret, Class, Function_Params<const Class&&, Param...>, true, false, false>; // member function
+
+		template<typename Ret, typename Class>
+		Function_Signature(Ret Class::* f)
+			->Function_Signature<Ret, Class, Function_Params<Class&>, true, true, false>; // member object
+
+		namespace impl {
+			template<typename Ret, typename Class, typename Params, bool IsMember = false, bool IsMemberObject = false, bool IsObject = false/*, bool IsStatelessObject = false*/>
+			struct Function_Signature_m1 {
+				typedef Params Param_Types;
+				typedef Class Class_Type;
+				typedef Ret Return_Type;
+
+				// constexpr static const bool is_stateless_object = IsStatelessObject; // e.g. lambda object that does not capture anything
+				constexpr static const bool is_object = IsObject; // e.g. lambda object
+				constexpr static const bool is_member = IsMember; // e.g. first param MUST be an alive Class type. May be function or parameter.
+				constexpr static const bool is_member_object = IsMemberObject; // e.g. first param MUST be an alive Class type. Will be a parameter of the Class.
+				constexpr static const bool is_member_function = !is_member_object && is_member; // e.g. first param MUST be an alive Class type. Will be a parameter of the Class.
+				constexpr static const bool is_static_member_function = std::is_same_v< Class_Type, void>; // e.g. free function
+
+				template<typename T> constexpr Function_Signature_m1(T&&) noexcept { };
+				constexpr Function_Signature_m1() noexcept = default;
+			};
+
+			// Free functions
+			template<typename Ret, typename... Param>
+			Function_Signature_m1(Ret(*f)(Param...))
+				->Function_Signature_m1<Ret, void, Function_Params<Param...>, false, false, false>; // static function
+
+			// no reference specifier
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...) volatile)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...) volatile const)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...))
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...) const)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			// & reference specifier
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...) volatile&)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...) volatile const&)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...)&)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...) const&)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			// && reference specifier
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...) volatile&&)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...) volatile const&&)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...)&&)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...) const&&)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			// Free functions
+			template<typename Ret, typename... Param>
+			Function_Signature_m1(Ret(*f)(Param...) noexcept)
+				->Function_Signature_m1<Ret, void, Function_Params<Param...>, false, false, false>; // static function
+
+			// no reference specifier
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...) volatile noexcept)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...) volatile const noexcept)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...) noexcept)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...) const noexcept)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			// & reference specifier
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...) volatile& noexcept)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...) volatile const& noexcept)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...) & noexcept)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...) const& noexcept)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			// && reference specifier
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...) volatile&& noexcept)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...) volatile const&& noexcept)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...) && noexcept)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+			template<typename Ret, typename Class, typename... Param>
+			Function_Signature_m1(Ret(Class::* f)(Param...) const&& noexcept)
+				->Function_Signature_m1<Ret, Class, Function_Params<Param...>, true, false, false>; // member function
+
+		}
+
+		// primary template handles types that have no nested ::type member:
+		template<class, class = std::void_t<>>
+		struct has_call_operator : std::false_type {};
+
+		// specialization recognizes types that do have a nested ::type member:
+		template<class T>
+		struct has_call_operator<T, std::void_t<decltype(&T::operator())>> : std::true_type {};
+
+		template<typename Func>
+		auto function_signature(Func const& f) {
+			if constexpr (has_call_operator<Func>::value) {
+				return Function_Signature<
+					typename decltype(Function_Signature{ &std::decay_t<Func>::operator() })::Return_Type,
+					void,
+					typename decltype(impl::Function_Signature_m1{ &std::decay_t<Func>::operator() })::Param_Types,
+					false,
+					false,
+					true
+					// , std::is_empty_v<Func>
+				> {};
+			}
+			else {
+				return Function_Signature{ f };
+			}
+		};
+
+		template<typename Obj, typename Param1, typename... Rest>
+		Param1 get_first_param(Function_Params<Param1, Rest...>, Obj&& obj) {
+			return static_cast<Param1>(std::forward<Obj>(obj));
+		};
+	}
+
 	namespace parallel {
 		namespace impl {
 			// each dispatch call will be "observed" by this context wrapper.
@@ -142,49 +490,49 @@ namespace GL {
 			//	);
 			//}
 			//else {
-				GL::sequence<iteratorType> seq(start, end); // 0..999
-				std::exception_ptr* e{ nullptr };
-				std::for_each(
-					std::execution::par,
-					seq.begin(),
-					seq.end(),
-					[&](auto& x) { // copies are safer, and the resulting code will be as quick.
-						try {
-							if (!e) {
-								if constexpr (std::tuple_size_v<f_t::arguments> == 0) {
-									(void)ToDo();
-								}
-								else if constexpr (std::is_reference_v<std::tuple_element_t<0, f_t::arguments> > && !std::is_const_v< std::remove_reference_t<std::tuple_element_t<0, f_t::arguments>>>) {
-									iteratorType t = static_cast<iteratorType>(x);
-									(void)ToDo(t);
-								}
-								else {
-									(void)ToDo(x);
-								}
+			GL::sequence<iteratorType> seq(start, end); // 0..999
+			std::exception_ptr* e{ nullptr };
+			std::for_each(
+				std::execution::par,
+				seq.begin(),
+				seq.end(),
+				[&](auto& x) { // copies are safer, and the resulting code will be as quick.
+					try {
+						if (!e) {
+							if constexpr (std::tuple_size_v<f_t::arguments> == 0) {
+								(void)ToDo();
 							}
-						}
-						catch (...) {
-							if (!e) {
-								auto ptr = new std::exception_ptr(std::current_exception());
-								if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&e), ptr, nullptr) != nullptr) {
-									delete ptr;
-								}
+							else if constexpr (std::is_reference_v<std::tuple_element_t<0, f_t::arguments> > && !std::is_const_v< std::remove_reference_t<std::tuple_element_t<0, f_t::arguments>>>) {
+								iteratorType t = static_cast<iteratorType>(x);
+								(void)ToDo(t);
+							}
+							else {
+								(void)ToDo(x);
 							}
 						}
 					}
-				);
-				if (e) {
-					std::exception_ptr copy{ *e };
-					delete e;
-					std::rethrow_exception(std::move(copy));
+					catch (...) {
+						if (!e) {
+							auto ptr = new std::exception_ptr(std::current_exception());
+							if (InterlockedCompareExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&e), ptr, nullptr) != nullptr) {
+								delete ptr;
+							}
+						}
+					}
 				}
+			);
+			if (e) {
+				std::exception_ptr copy{ *e };
+				delete e;
+				std::rethrow_exception(std::move(copy));
+			}
 			//}
 		};
 
 		/* parallel_for (auto i = start; i < end; i++){ todo(i); }
 		If the todo(i) returns anything, it will be collected into a vector at the end. */
 		template<typename iteratorType, class F> void Std_For(iteratorType start, iteratorType end, iteratorType step, F const& ToDo) {
-			using f_t = impl::function_traits<decltype(std::function(ToDo))>; 
+			using f_t = impl::function_traits<decltype(std::function(ToDo))>;
 			GL::sequence<iteratorType> seq(start, end, step); // 0..999
 			std::exception_ptr* e{ nullptr };
 
@@ -291,7 +639,7 @@ namespace GL {
 				return Std_For(start, end, ToDo);
 #else
 				using f_t = impl::function_traits<decltype(std::function(ToDo))>;
-				
+
 
 				impl::dispatch_context ctx{ 0, nullptr, nullptr };
 				if (start == static_cast<iteratorType>(0)) {
@@ -387,7 +735,7 @@ namespace GL {
 					iterType& iter = *static_cast<iterType*>(_args.group_memory);
 					if (_args.group_index == 0) {
 						// start of a group, so help it
-						new (&iter) iterType{ data->_begin };						
+						new (&iter) iterType{ data->_begin };
 						std::advance(iter, _args.job_index);
 					}
 					else {
@@ -408,10 +756,10 @@ namespace GL {
 
 			impl::dispatch_context ctx{ 0, nullptr, nullptr };
 			impl::Dispatch(
-				ctx, 
+				ctx,
 				std::distance(begin, end),
-				&IterData::DoTask, 
-				reinterpret_cast<void*>(&data), 
+				&IterData::DoTask,
+				reinterpret_cast<void*>(&data),
 				sizeof(iterType),
 				&IterData::GroupStart,
 				&IterData::GroupEnd
@@ -481,7 +829,7 @@ namespace GL {
 					For(0, num_thread_jobs, [&](int i) {
 						if (WhileBoolean()) Do();
 						else throw WhileException{};
-				    });
+						});
 				}
 				catch (WhileException const&) {
 					break;
@@ -499,7 +847,7 @@ namespace GL {
 					For(0, num_thread_jobs, [&](int i) {
 						Do();
 						if (UntilBoolean()) throw UntilException{};
-				    });
+						});
 				}
 				catch (UntilException const&) {
 					break;
@@ -512,10 +860,10 @@ namespace GL {
 		/* for (int i = 0; i < numToDispatch; i++){ ToDo(i, SharedObject); } return SharedObject; */
 		template<typename F, typename G> F Dispatch(size_t numToDispatch, F&& SharedObject, G const& ToDo) {
 #if 0
-			F out{ std::forward<F>(SharedObject) }; 
+			F out{ std::forward<F>(SharedObject) };
 			Std_For(0, numToDispatch, [&](size_t i) {
 				ToDo(i, out);
-			});
+				});
 			return out;
 #else
 			F out{ std::forward<F>(SharedObject) };
@@ -545,7 +893,7 @@ namespace GL {
 #if 0
 			Std_For(0, numToDispatch, [&](size_t i) {
 				ToDo(i, SharedObject);
-			});
+				});
 			return SharedObject;
 #else
 			struct IterData {
@@ -568,7 +916,7 @@ namespace GL {
 			return SharedObject;
 #endif
 		};
-		
+
 		namespace impl {
 			template<typename F, typename Parent> class job;
 			template<typename F, typename Parent> class jobs;
@@ -613,7 +961,7 @@ namespace GL {
 
 			public:
 				std::weak_ptr<job> self;
-				concurrency::concurrent_vector< std::weak_ptr<job_base> > children;
+				GL::atomic_vector< std::weak_ptr<job_base> > children;
 
 			protected:
 				std::atomic<bool> dispatch_once;
@@ -633,26 +981,58 @@ namespace GL {
 				static decltype(auto) Argument(impl::job_argument const& _args) {
 					if constexpr (this_num_args > i) {
 						using arg = typename std::tuple_element_t<i, typename functionType::arguments>;
-						static constexpr bool arg_is_jobBase = std::is_same_v<std::remove_const_t <arg>, job_base&>;
-						static constexpr bool arg_is_any = std::is_same_v<std::decay_t<arg>, GL::any>;
-						static constexpr bool arg_is_atomic_any = std::is_same_v<std::decay_t <arg>, GL::atomic_any>;
+						static constexpr bool arg_is_jobBase = std::is_same_v<std::decay_t<arg>, job_base>;
+						static constexpr bool arg_is_any =
+							std::is_same_v<std::decay_t<arg>, GL::any> ||
+							std::is_same_v<std::decay_t <arg>, GL::atomic_any>;
 
 						job* data = reinterpret_cast<job*>(_args.task_memory);
-						if constexpr (arg_is_jobBase) {
-							return *dynamic_cast<job_base*>(data->parent.get());
-						}
-						else if constexpr (arg_is_any || arg_is_atomic_any) {
-							return data->parent->result;
-						}
-						else if constexpr (!this_is_job_start) {
-							return data->parent->result.cast<typename Parent::returnType>();
+						if constexpr (!this_is_job_start) {
+							static constexpr bool returnVal_is_any =
+								std::is_same_v<std::decay_t<typename Parent::returnType>, GL::any> ||
+								std::is_same_v<std::decay_t<typename Parent::returnType>, GL::atomic_any>;
+
+							typedef typename GL::any::DataCaster::is_SharedPtr_class<typename Parent::returnType>::type isShared;
+							typedef typename GL::any::DataCaster::is_stdSharedPtr_class<typename Parent::returnType>::type isStdShared;
+							static constexpr bool is_shared_ptr{ isShared::value };
+							static constexpr bool is_std_shared_ptr{ isStdShared::value };
+							static constexpr bool returnVal_is_shared_ptr =
+								isShared::value ||
+								isStdShared::value;
+
+							if constexpr (arg_is_any) {
+								//std::cout << GL::printf("ARG %i IS ANY @ %i\n", i, __LINE__);
+								return data->parent->result;
+							}
+							else if constexpr (arg_is_jobBase) {
+								//std::cout << GL::printf("ARG %i IS JOB BASE @ %i\n", i, __LINE__);
+								return *dynamic_cast<job_base*>(data->parent.get());
+							}
+							else if constexpr (returnVal_is_any) {
+								if constexpr (std::is_convertible_v<typename Parent::returnType, arg>) {
+									//std::cout << GL::printf("ARG %i IS CONSTRUCTABLE FROM PARENT'S ANY RESULT @ %i\n", i, __LINE__);
+									return data->parent->result.cast<typename Parent::returnType>();
+								}
+								else {
+									//std::cout << GL::printf("ARG %i IS NOT CONSTRUCTABLE FROM PARENT'S ANY RESULT -- !GUESSING THE TYPE! -- @ %i\n", i, __LINE__);
+									return data->parent->result.cast<arg>();
+								}
+							}
+							else if constexpr (returnVal_is_shared_ptr) {
+								//std::cout << GL::printf("ARG %i IS RECIEVING PARENT'S RETURNED SHARED_PTR @ %i\n", i, __LINE__);
+								return data->parent->result.cast<typename GL::type_erasure::get_type<typename Parent::returnType>::type&>();
+							}
+							else {
+								//std::cout << GL::printf("ARG %i IS RECIEVING PARENT'S RETURNED VALUE-TYPE @ %i\n", i, __LINE__);
+								return data->parent->result.cast<typename Parent::returnType>();
+							}
 						}
 						else {
-							return;
+							static_assert(false, "Job starts cannot evaluate arguments using this path");
 						}
 					}
 					else {
-						return;
+						static_assert(false, "Wrong argument index in evaluation of argument in task");
 					}
 				};
 
@@ -745,7 +1125,7 @@ namespace GL {
 
 			public:
 				std::weak_ptr<jobs> self;
-				concurrency::concurrent_vector< std::weak_ptr<job_base> > children;
+				GL::atomic_vector< std::weak_ptr<job_base> > children;
 
 			protected:
 				std::atomic<bool> dispatch_once;
@@ -767,17 +1147,59 @@ namespace GL {
 				static decltype(auto) Argument(impl::job_argument const& _args) {
 					if constexpr (this_num_args > i) {
 						using arg = typename std::tuple_element_t<i, typename functionType::arguments>;
-						static constexpr bool arg_is_jobBase = std::is_same_v<std::remove_const_t <arg>, job_base&>;
-						static constexpr bool arg_is_any = std::is_same_v<std::decay_t<arg>, GL::any>;
-						static constexpr bool arg_is_atomic_any = std::is_same_v<std::decay_t <arg>, GL::atomic_any>;
+						static constexpr bool arg_is_jobBase = std::is_same_v<std::decay_t<arg>, job_base>;
+						static constexpr bool arg_is_any =
+							std::is_same_v<std::decay_t<arg>, GL::any> ||
+							std::is_same_v<std::decay_t <arg>, GL::atomic_any>;
 
 						jobs* data = reinterpret_cast<jobs*>(_args.task_memory);
-						if constexpr (arg_is_jobBase) return *dynamic_cast<job_base*>(data->parent.get());
-						else if constexpr (arg_is_any || arg_is_atomic_any) return data->parent->result;
-						else if constexpr (!this_is_job_start) return data->parent->result.cast<typename Parent::returnType>();
-						else return;
+						if constexpr (!this_is_job_start) {
+							static constexpr bool returnVal_is_any =
+								std::is_same_v<std::decay_t<typename Parent::returnType>, GL::any> ||
+								std::is_same_v<std::decay_t<typename Parent::returnType>, GL::atomic_any>;
+
+							typedef typename GL::any::DataCaster::is_SharedPtr_class<typename Parent::returnType>::type isShared;
+							typedef typename GL::any::DataCaster::is_stdSharedPtr_class<typename Parent::returnType>::type isStdShared;
+							static constexpr bool is_shared_ptr{ isShared::value };
+							static constexpr bool is_std_shared_ptr{ isStdShared::value };
+							static constexpr bool returnVal_is_shared_ptr =
+								isShared::value ||
+								isStdShared::value;
+
+							if constexpr (arg_is_any) {
+								//std::cout << GL::printf("ARGs %i IS ANY @ %i\n", i, __LINE__);
+								return data->parent->result;
+							}
+							else if constexpr (arg_is_jobBase) {
+								//std::cout << GL::printf("ARGs %i IS JOB BASE @ %i\n", i, __LINE__);
+								return *dynamic_cast<job_base*>(data->parent.get());
+							}
+							else if constexpr (returnVal_is_any) {
+								if constexpr (std::is_convertible_v<typename Parent::returnType, arg>) {
+									//std::cout << GL::printf("ARGs %i IS CONSTRUCTABLE FROM PARENT'S ANY RESULT @ %i\n", i, __LINE__);
+									return data->parent->result.cast<typename Parent::returnType>();
+								}
+								else {
+									//std::cout << GL::printf("ARGs %i IS NOT CONSTRUCTABLE FROM PARENT'S ANY RESULT -- !GUESSING THE TYPE! -- @ %i\n", i, __LINE__);
+									return data->parent->result.cast<arg>();
+								}
+							}
+							else if constexpr (returnVal_is_shared_ptr) {
+								//std::cout << GL::printf("ARGs %i IS RECIEVING PARENT'S RETURNED SHARED_PTR @ %i\n", i, __LINE__);
+								return data->parent->result.cast<typename GL::type_erasure::get_type<typename Parent::returnType>::type&>();
+							}
+							else {
+								//std::cout << GL::printf("ARGs %i IS RECIEVING PARENT'S RETURNED VALUE-TYPE @ %i\n", i, __LINE__);
+								return data->parent->result.cast<typename Parent::returnType>();
+							}
+						}
+						else {
+							static_assert(false, "Jobs starts cannot evaluate arguments using this path");
+						}
 					}
-					else return;
+					else {
+						static_assert(false, "Wrong argument index in evaluation of argument in task");
+					}
 				};
 
 				static void DoTask(impl::job_argument const& _args) {
@@ -877,52 +1299,371 @@ namespace GL {
 			};
 		};
 
-		// start a task-chain with a argument-free function, e.g.:
-		// task([]() -> int { return 10; })
-		template<typename F, typename Parent = void> __forceinline decltype(auto) task(F&& ToDo, Parent* parent = nullptr) {
-			auto out = std::make_shared<impl::job<F, Parent>>(std::move(ToDo), std::move(parent));
-			out->self = out;
-			if constexpr (!std::is_same_v<void, Parent>) parent->children.push_back(out);			
-			else out->dispatch();			
-			return out;
+		namespace tasks {
+			class AsyncJobBaseBase {
+				template <typename return_t> friend class AsyncJobBase;
+
+			protected:
+				impl::dispatch_context
+					ctx;
+				std::shared_ptr<AsyncJobBaseBase>
+					_parent;
+				GL::atomic_any
+					_result;
+				GL::atomic_vector< std::weak_ptr<AsyncJobBaseBase> >
+					_children;
+				std::weak_ptr<AsyncJobBaseBase>
+					_self;
+			public:
+				AsyncJobBaseBase(void (*callback)(void*), void* callback_data, std::shared_ptr<AsyncJobBaseBase>&& parent)
+					: ctx{ 0, nullptr, callback, callback_data }
+					, _parent{ std::forward<std::shared_ptr<AsyncJobBaseBase>>(parent) }
+					, _result(nullptr)	
+					, _children()
+					, _self()
+				{};
+				AsyncJobBaseBase(AsyncJobBaseBase const&) = delete;
+				AsyncJobBaseBase(AsyncJobBaseBase&&) noexcept = delete;
+				AsyncJobBaseBase& operator=(AsyncJobBaseBase const&) = delete;
+				AsyncJobBaseBase& operator=(AsyncJobBaseBase&&) noexcept = delete;
+				virtual ~AsyncJobBaseBase() {
+					this->wait();					
+				};
+				void wait() {
+					if (this->_parent) this->_parent->wait();
+					if (ctx.is_busy()) {
+						impl::Wait(this->ctx, true);
+					}
+				};
+				bool is_busy() {
+					if (this->_parent && this->_parent->is_busy())
+						return true;
+					else 
+						return ctx.is_busy();
+				};
+				virtual void dispatch() = 0;
+				void set_self(std::weak_ptr<AsyncJobBaseBase> self) {
+					this->_self = self;
+					if (_parent) {
+						_parent->_children.push_back(this->_self);
+					}
+				};
+			};
+
+			template <typename return_t>
+			class AsyncJobBase : public AsyncJobBaseBase {
+			protected:
+				static constexpr bool this_returns_void = std::is_void_v<return_t>;
+
+			public:
+				AsyncJobBase(void (*callback)(void*), void* callback_data, std::shared_ptr<AsyncJobBaseBase>&& parent)
+					: AsyncJobBaseBase(callback, callback_data, std::forward<std::shared_ptr<AsyncJobBaseBase>>(parent))
+				{};
+				AsyncJobBase(AsyncJobBase const&) = delete;
+				AsyncJobBase(AsyncJobBase&&) noexcept = delete;
+				AsyncJobBase& operator=(AsyncJobBase const&) = delete;
+				AsyncJobBase& operator=(AsyncJobBase&&) noexcept = delete;
+				virtual ~AsyncJobBase() {
+					this->wait();
+				};
+				GL::atomic_any& get_any() {
+					this->wait();
+					if constexpr (!this_returns_void) {
+						return _result;
+					}
+				};
+				decltype(auto) get_ref() {
+					this->wait();
+					if constexpr (!this_returns_void) {
+						if constexpr (std::is_same_v<GL::any, return_t> || std::is_same_v<GL::atomic_any, return_t>) {
+							return get_any();
+						}
+						else {
+							return _result.cast<return_t>();
+						}
+					}
+				};
+				decltype(auto) get() {
+					this->wait();
+					if constexpr (!this_returns_void) {
+						if constexpr (std::is_same_v<GL::any, return_t> || std::is_same_v<GL::atomic_any, return_t>) {
+							return get_any();
+						}
+						else {
+							return (return_t)_result.cast<return_t>();
+						}
+					}
+				};
+				decltype(auto) get_shared() {
+					this->wait();
+					if constexpr (!this_returns_void) {
+						if constexpr (!this_returns_void) {
+							if constexpr (std::is_same_v<GL::any, return_t> || std::is_same_v<GL::atomic_any, return_t>) {
+								return get_any();
+							}
+							else {
+								return _result.cast<GL::shared_ptr<return_t>>();
+							}
+						}
+					}
+				};
+
+				template<typename G, bool dispatch_multiple, typename ParentReturnType>
+				class AsyncJob final : public AsyncJobBase<return_t> {
+				public:
+					static constexpr bool this_returns_void = std::is_void_v<return_t>;
+
+				protected:
+					G/* const& */
+						function;
+					size_t 
+						offset;
+					size_t 
+						count;
+
+
+				public:
+					// called once the dispatched job ends
+					static void Callback(void* _args) {
+						if (auto* data = reinterpret_cast<AsyncJob*>(_args); data != nullptr) {
+							for (std::weak_ptr<AsyncJobBaseBase>& child : data->_children) 
+								if (std::shared_ptr<AsyncJobBaseBase> Child = child.lock())
+									Child->dispatch(); // will only ever dispatch once. 							
+						}
+					};
+					static decltype(auto) cast_return(GL::atomic_any const& rhs) {
+						using function_t = impl::function_traits<decltype(std::function(reinterpret_cast<AsyncJob*>(0)->function))>;
+						static constexpr size_t num_arg = std::tuple_size_v<typename function_t::arguments>;
+						if constexpr (std::is_void_v<ParentReturnType>) return;
+						else if constexpr (num_arg == 0) return;
+						else if constexpr (dispatch_multiple && (num_arg == 1)) return;
+						else {
+							using function_arg_t = std::tuple_element_t<num_arg - 1, typename function_t::arguments>;
+							static constexpr bool returned_any = std::is_same_v<GL::any, ParentReturnType> || std::is_same_v<GL::atomic_any, ParentReturnType>; // this means they are no help in determining the return type...
+							if constexpr (returned_any) {
+								if constexpr (std::is_same_v<std::decay_t<function_arg_t>, GL::any> || std::is_same_v<std::decay_t<function_arg_t>, GL::atomic_any>) {
+									return rhs;
+								}
+								else {
+									return rhs.cast<function_arg_t>();
+								}
+							}
+							else {
+								if constexpr (std::is_same_v<function_arg_t, std::shared_ptr<ParentReturnType>>) {
+									return rhs.cast<std::shared_ptr<ParentReturnType>>();
+								}
+								else if constexpr (std::is_same_v<function_arg_t, GL::shared_ptr<ParentReturnType>>) {
+									return rhs.cast<GL::shared_ptr<ParentReturnType>>();
+								}
+								else if constexpr (std::is_convertible_v<ParentReturnType&, function_arg_t>) {
+									return rhs.cast<ParentReturnType&>();
+								}
+								else {
+									return rhs.cast<ParentReturnType>();
+								}
+							}
+						}
+					};
+					static void DoTask(impl::job_argument const& _args) {
+						using function_t = impl::function_traits<decltype(std::function(reinterpret_cast<AsyncJob*>(_args.task_memory)->function))>;
+						static constexpr size_t num_arg = std::tuple_size_v<typename function_t::arguments>;
+
+						AsyncJob* data = reinterpret_cast<AsyncJob*>(_args.task_memory);
+						if constexpr (std::is_void_v<ParentReturnType>) {
+							if constexpr (dispatch_multiple) {
+								if constexpr (this_returns_void) {
+									if constexpr (num_arg == 0) data->function();
+									else if constexpr (num_arg == 1) data->function(_args.job_index + data->offset);
+								}
+								else {
+									if (_args.job_index == 0) {
+										if constexpr (num_arg == 0) data->_result = GL::any::instance(data->function());
+										else if constexpr (num_arg == 1) data->_result = GL::any::instance(data->function(_args.job_index + data->offset));
+									}
+									else {
+										if constexpr (num_arg == 0) data->function();
+										else if constexpr (num_arg == 1) data->function(_args.job_index + data->offset);
+									}
+								}
+							}
+							else {
+								if constexpr (this_returns_void) data->function();
+								else data->_result = GL::any::instance(data->function());
+							}
+						}
+						else {
+							if constexpr (dispatch_multiple) {
+								if constexpr (this_returns_void) {
+									if constexpr (num_arg == 0) data->function();
+									else if constexpr (num_arg == 1) data->function(_args.job_index + data->offset);
+									else if constexpr (num_arg == 2) data->function(_args.job_index + data->offset, cast_return(data->_parent->_result));
+								}
+								else {
+									if (_args.job_index == 0) {
+										if constexpr (num_arg == 0) data->_result = GL::any::instance(data->function());
+										else if constexpr (num_arg == 1) data->_result = GL::any::instance(data->function(_args.job_index + data->offset));
+										else if constexpr (num_arg == 2) data->_result = GL::any::instance(data->function(_args.job_index + data->offset, cast_return(data->_parent->_result)));
+									}
+									else {
+										if constexpr (num_arg == 0) data->function();
+										else if constexpr (num_arg == 1) data->function(_args.job_index + data->offset);
+										else if constexpr (num_arg == 2) data->function(_args.job_index + data->offset, cast_return(data->_parent->_result));
+									}
+								}
+							}
+							else {
+								if constexpr (num_arg == 0) {
+									if constexpr (this_returns_void) data->function();
+									else data->_result = GL::any::instance(data->function());
+								}
+								else if constexpr (num_arg == 1) {
+									if constexpr (this_returns_void) data->function(cast_return(data->_parent->_result));
+									else data->_result = GL::any::instance(data->function(cast_return(data->_parent->_result)));
+								}
+							}
+						}
+					};
+
+				protected:
+					void dispatch() override {
+						if constexpr (!dispatch_multiple) {
+							if (GL::interlocked::exchange(count, 0ull) > 0) {
+								impl::DispatchOnce(this->ctx, &DoTask, reinterpret_cast<void*>(this));
+							}
+						}
+						else {
+							if (auto final_count = GL::interlocked::exchange(count, 0ull); final_count > 0) {
+								impl::Dispatch(this->ctx, final_count, &DoTask, reinterpret_cast<void*>(this));
+							}
+						}
+					};
+
+				public:
+					AsyncJob(G const& func, std::shared_ptr<AsyncJobBaseBase>&& parent)
+						: AsyncJobBase<return_t>(&Callback, reinterpret_cast<void*>(this), std::forward<std::shared_ptr<AsyncJobBaseBase>>(parent))
+						, function{ func }
+						, offset{ 0 }
+						, count{ 1 }
+					{
+						if (!this->is_busy()) dispatch();
+					};
+					AsyncJob(size_t start, size_t end, G const& func, std::shared_ptr<AsyncJobBaseBase>&& parent)
+						: AsyncJobBase<return_t>(&Callback, reinterpret_cast<void*>(this), std::forward<std::shared_ptr<AsyncJobBaseBase>>(parent))
+						, function{ func }
+						, offset{ start }
+						, count{ end - start }
+					{						
+						if (!this->is_busy()) dispatch();
+					};
+					AsyncJob(AsyncJob const&) = delete;
+					AsyncJob(AsyncJob&&) noexcept = delete;
+					AsyncJob& operator=(AsyncJob const&) = delete;
+					AsyncJob& operator=(AsyncJob&&) noexcept = delete;
+					virtual ~AsyncJob() {
+						this->wait();
+					};
+				};
+
+				template <typename G> decltype(auto) and_then(G const& func) {
+					static constexpr bool and_then_num_args = std::tuple_size_v<typename impl::function_traits<decltype(std::function(func))>::arguments>;
+					if constexpr (and_then_num_args == 0) {
+						auto out = std::make_shared<AsyncJobBase<typename GL::type_erasure::get_type< typename impl::function_traits<decltype(std::function(func))>::result_type>::type>::template AsyncJob<G, false, void>>(func, this->_self.lock());
+						out->set_self(std::dynamic_pointer_cast<AsyncJobBaseBase>(out));
+						// return out;
+						return std::dynamic_pointer_cast<AsyncJobBase<typename GL::type_erasure::get_type< typename impl::function_traits<decltype(std::function(func))>::result_type>::type>>(out);
+					}
+					else {
+						auto out = std::make_shared < AsyncJobBase<typename GL::type_erasure::get_type< typename impl::function_traits<decltype(std::function(func))>::result_type >::type>::template AsyncJob<G, false, return_t>>(func, this->_self.lock());
+						out->set_self(std::dynamic_pointer_cast<AsyncJobBaseBase>(out));
+						// return out;
+						return std::dynamic_pointer_cast<AsyncJobBase<typename GL::type_erasure::get_type< typename impl::function_traits<decltype(std::function(func))>::result_type>::type>>(out);
+					}
+				};
+				template <typename G> decltype(auto) and_then(size_t start, size_t end, G const& func) {
+					static constexpr bool and_then_num_args = std::tuple_size_v<typename impl::function_traits<decltype(std::function(func))>::arguments>;
+					if constexpr (and_then_num_args == 0) {
+						auto out = std::make_shared < AsyncJobBase<typename GL::type_erasure::get_type< typename impl::function_traits<decltype(std::function(func))>::result_type >::type>::template AsyncJob<G, true, void>>(start, end, func, this->_self.lock());
+						out->set_self(std::dynamic_pointer_cast<AsyncJobBaseBase>(out));
+						//return out;
+					    return std::dynamic_pointer_cast<AsyncJobBase<typename GL::type_erasure::get_type< typename impl::function_traits<decltype(std::function(func))>::result_type >::type>>(out);
+					}
+					else {
+						auto out = std::make_shared < AsyncJobBase<typename GL::type_erasure::get_type< typename impl::function_traits<decltype(std::function(func))>::result_type >::type>::template AsyncJob<G, true, return_t>>(start, end, func, this->_self.lock());
+						out->set_self(std::dynamic_pointer_cast<AsyncJobBaseBase>(out));
+						//return out;
+						return std::dynamic_pointer_cast<AsyncJobBase<typename GL::type_erasure::get_type< typename impl::function_traits<decltype(std::function(func))>::result_type >::type>>(out);
+					}
+				};
+			};
+			template<typename G> decltype(auto) async(G const& func) {
+				auto out = std::make_shared < AsyncJobBase<typename GL::type_erasure::get_type< typename impl::function_traits<decltype(std::function(func))>::result_type >::type>::template AsyncJob<G, false, void>>(func, nullptr);
+				out->set_self(std::dynamic_pointer_cast<AsyncJobBaseBase>(out));
+				//return out;
+				return std::dynamic_pointer_cast<AsyncJobBase<typename GL::type_erasure::get_type< typename impl::function_traits<decltype(std::function(func))>::result_type >::type>>(out);
+			};
+			template<typename G> decltype(auto) async(size_t start, size_t end, G const& func) {
+				auto out = std::make_shared < AsyncJobBase<typename GL::type_erasure::get_type< typename impl::function_traits<decltype(std::function(func))>::result_type >::type>::template AsyncJob<G, true, void>>(start, end, func, nullptr);
+				out->set_self(std::dynamic_pointer_cast<AsyncJobBaseBase>(out));
+				//return out;
+				return std::dynamic_pointer_cast<AsyncJobBase<typename GL::type_erasure::get_type< typename impl::function_traits<decltype(std::function(func))>::result_type >::type>>(out);
+			};
 		};
-		// start a task-chain with a for-loop with an indexed function, e.g.:
-		// task(0, 1'000'000, [](size_t index) -> int { return index + 10; })
-		// returning values from a for-loop task will only return the value from the first call. Returns from future calls will be discarded.
-		template<typename F, typename Parent = void> __forceinline decltype(auto) task(size_t start, size_t end, F&& ToDo, Parent* parent = nullptr) {
-			auto out = std::make_shared<impl::jobs<F, Parent>>(start, end, std::move(ToDo), std::move(parent));
-			out->self = out;
-			if constexpr (!std::is_same_v<void, Parent>) parent->children.push_back(out);			
-			else out->dispatch();			
-			return out;
-		};
-		// task(...).and_then([](){ ... });
-		// task([]() -> int { return 0; }).and_then([](int prev_job_result){ ... });
-		// task(...).and_then([](job_base& prev_job){ ... });
-		// task([]() -> int { return 0; }).and_then([](int prev_job_result, job_base& prev_job){ ... });
-		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) impl::job<F, Parent>::and_then(G&& ToDo) {
-			return task(std::move(ToDo), this);
-		};
-		// task(...).and_then(0, 100, [](size_t index){ ... });
-		// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result){ ... });
-		// task(...).and_then(0, 100, [](size_t index, job_base& prev_job){ ... });
-		// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result, job_base& prev_job){ ... });
-		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) impl::job<F, Parent>::and_then(size_t start, size_t end, G&& ToDo) {
-			return task(start, end, std::move(ToDo), this);
-		};
-		// task(...).and_then([](){ ... });
-		// task([]() -> int { return 0; }).and_then([](int prev_job_result){ ... });
-		// task(...).and_then([](job_base& prev_job){ ... });
-		// task([]() -> int { return 0; }).and_then([](int prev_job_result, job_base& prev_job){ ... });
-		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) impl::jobs<F, Parent>::and_then(G&& ToDo) {
-			return task(std::move(ToDo), this);
-		};
-		// task(...).and_then(0, 100, [](size_t index){ ... });
-		// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result){ ... });
-		// task(...).and_then(0, 100, [](size_t index, job_base& prev_job){ ... });
-		// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result, job_base& prev_job){ ... });
-		template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) impl::jobs<F, Parent>::and_then(size_t start, size_t end, G&& ToDo) {
-			return task(start, end, std::move(ToDo), this);
+
+
+
+
+
+
+
+		namespace impl {
+			// start a task-chain with a argument-free function, e.g.:
+            // task([]() -> int { return 10; })
+			template<typename F, typename Parent = void> __forceinline decltype(auto) task(F&& ToDo, Parent* parent = nullptr) {
+				auto out = std::make_shared<impl::job<F, Parent>>(std::move(ToDo), std::move(parent));
+				out->self = out;
+				if constexpr (!std::is_same_v<void, Parent>) parent->children.push_back(out);
+				else out->dispatch();
+				return out;
+			};
+			// start a task-chain with a for-loop with an indexed function, e.g.:
+			// task(0, 1'000'000, [](size_t index) -> int { return index + 10; })
+			// returning values from a for-loop task will only return the value from the first call. Returns from future calls will be discarded.
+			template<typename F, typename Parent = void> __forceinline decltype(auto) task(size_t start, size_t end, F&& ToDo, Parent* parent = nullptr) {
+				auto out = std::make_shared<impl::jobs<F, Parent>>(start, end, std::move(ToDo), std::move(parent));
+				out->self = out;
+				if constexpr (!std::is_same_v<void, Parent>) parent->children.push_back(out);
+				else out->dispatch();
+				return out;
+			};
+			// task(...).and_then([](){ ... });
+			// task([]() -> int { return 0; }).and_then([](int prev_job_result){ ... });
+			// task(...).and_then([](job_base& prev_job){ ... });
+			// task([]() -> int { return 0; }).and_then([](int prev_job_result, job_base& prev_job){ ... });
+			template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) impl::job<F, Parent>::and_then(G&& ToDo) {
+				return task(std::move(ToDo), this);
+			};
+			// task(...).and_then(0, 100, [](size_t index){ ... });
+			// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result){ ... });
+			// task(...).and_then(0, 100, [](size_t index, job_base& prev_job){ ... });
+			// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result, job_base& prev_job){ ... });
+			template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) impl::job<F, Parent>::and_then(size_t start, size_t end, G&& ToDo) {
+				return task(start, end, std::move(ToDo), this);
+			};
+			// task(...).and_then([](){ ... });
+			// task([]() -> int { return 0; }).and_then([](int prev_job_result){ ... });
+			// task(...).and_then([](job_base& prev_job){ ... });
+			// task([]() -> int { return 0; }).and_then([](int prev_job_result, job_base& prev_job){ ... });
+			template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) impl::jobs<F, Parent>::and_then(G&& ToDo) {
+				return task(std::move(ToDo), this);
+			};
+			// task(...).and_then(0, 100, [](size_t index){ ... });
+			// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result){ ... });
+			// task(...).and_then(0, 100, [](size_t index, job_base& prev_job){ ... });
+			// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result, job_base& prev_job){ ... });
+			template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) impl::jobs<F, Parent>::and_then(size_t start, size_t end, G&& ToDo) {
+				return task(start, end, std::move(ToDo), this);
+			};
+
 		};
 
 		__forceinline void fire_and_forget(void(*Func)(void)) {
@@ -1024,115 +1765,57 @@ namespace GL {
 					return get_any().cast<GL::shared_ptr<T>>();
 				}
 			};
+
+			template<typename G>
+			__forceinline decltype(auto) and_then(G const& func) {
+				using function_t = impl::function_traits<decltype(std::function(func))>;				
+				return future<typename function_t::result_type>(impl::task([_old_state = _state]() {
+					_old_state->wait();
+					if constexpr (!std::is_void_v<T>) {
+						if constexpr (std::is_same_v<GL::any, std::decay_t<T>> || std::is_same_v<GL::atomic_any, std::decay_t<T>>) {
+							return _old_state->result;
+						}
+						else {
+							return _old_state->result.cast<GL::shared_ptr<T>>();
+						}
+					}
+				})->and_then(func));
+			};
+
+			template<typename G>
+			__forceinline decltype(auto) and_then(size_t start, size_t end, G const& func) {
+				using function_t = impl::function_traits<decltype(std::function(func))>;
+				return future<typename function_t::result_type>(impl::task([_old_state = _state]() {
+					_old_state->wait();
+					if constexpr (!std::is_void_v<T>) {
+						if constexpr (std::is_same_v<GL::any, std::decay_t<T>> || std::is_same_v<GL::atomic_any, std::decay_t<T>>) {
+							return _old_state->result;
+						}
+						else {
+							return _old_state->result.cast<GL::shared_ptr<T>>();
+						}
+					}
+				})->and_then(start, end, func));
+			};
 		};
 
-		/* returns a future<T> object for awaiting the results of the task, with optional inputs to the job, that are submitted at the time the job is performed. */
-		template < typename F, typename... Args >
-		static auto async(F&& function, Args... Fargs) {
-			static constexpr size_t num_args = sizeof...(Args);
-			using function_t = impl::function_traits<decltype(std::function(function))>;
-			using tuple_t = std::tuple<Args...>;
-			
-			if constexpr (num_args == 0) {
-				return future<typename function_t::result_type>(task(std::move(function)));
-			}
-			else {
-				return future<typename function_t::result_type>(task([ToDo = std::forward<F>(function), Arg = std::array<any, num_args>{ GL::any::instance(Fargs)... }]() {
-					if constexpr (num_args == 1) {
-						return ToDo(Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>());
-					}
-					else if constexpr (num_args == 2) {
-						return ToDo(
-							Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>()
-						);
-					}
-					else if constexpr (num_args == 3) {
-						return ToDo(
-							Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>()
-						);
-					}
-					else if constexpr (num_args == 4) {
-						return ToDo(
-							Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>()
-						);
-					}
-					else if constexpr (num_args == 5) {
-						return ToDo(
-							Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>()
-						);
-					}
-					else if constexpr (num_args == 6) {
-						return ToDo(
-							Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>()
-						);
-					}
-					else if constexpr (num_args == 7) {
-						return ToDo(
-							Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>(), Arg[6].cast<std::tuple_element_t<6, typename function_t::arguments>>()
-						);
-					}
-					else if constexpr (num_args == 8) {
-						return ToDo(
-							Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>(), Arg[6].cast<std::tuple_element_t<6, typename function_t::arguments>>(), Arg[7].cast<std::tuple_element_t<7, typename function_t::arguments>>()
-						);
-					}
-					else if constexpr (num_args == 9) {
-						return ToDo(
-							Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>(), Arg[6].cast<std::tuple_element_t<6, typename function_t::arguments>>(), Arg[7].cast<std::tuple_element_t<7, typename function_t::arguments>>(),
-							Arg[8].cast<std::tuple_element_t<8, typename function_t::arguments>>()
-						);
-					}
-					else if constexpr (num_args == 10) {
-						return ToDo(
-							Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>(), Arg[6].cast<std::tuple_element_t<6, typename function_t::arguments>>(), Arg[7].cast<std::tuple_element_t<7, typename function_t::arguments>>(),
-							Arg[8].cast<std::tuple_element_t<8, typename function_t::arguments>>(), Arg[9].cast<std::tuple_element_t<9, typename function_t::arguments>>()
-						);
-					}
-					else if constexpr (num_args == 11) {
-						return ToDo(
-							Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>(), Arg[6].cast<std::tuple_element_t<6, typename function_t::arguments>>(), Arg[7].cast<std::tuple_element_t<7, typename function_t::arguments>>(),
-							Arg[8].cast<std::tuple_element_t<8, typename function_t::arguments>>(), Arg[9].cast<std::tuple_element_t<9, typename function_t::arguments>>(), Arg[10].cast<std::tuple_element_t<10, typename function_t::arguments>>()
-						);
-					}
-					else if constexpr (num_args == 12) {
-						return ToDo(
-							Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>(), Arg[6].cast<std::tuple_element_t<6, typename function_t::arguments>>(), Arg[7].cast<std::tuple_element_t<7, typename function_t::arguments>>(),
-							Arg[8].cast<std::tuple_element_t<8, typename function_t::arguments>>(), Arg[9].cast<std::tuple_element_t<9, typename function_t::arguments>>(), Arg[10].cast<std::tuple_element_t<10, typename function_t::arguments>>(), Arg[11].cast<std::tuple_element_t<11, typename function_t::arguments>>()
-						);
-					}
-					else if constexpr (num_args == 13) {
-						return ToDo(
-							Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>(), Arg[6].cast<std::tuple_element_t<6, typename function_t::arguments>>(), Arg[7].cast<std::tuple_element_t<7, typename function_t::arguments>>(),
-							Arg[8].cast<std::tuple_element_t<8, typename function_t::arguments>>(), Arg[9].cast<std::tuple_element_t<9, typename function_t::arguments>>(), Arg[10].cast<std::tuple_element_t<10, typename function_t::arguments>>(), Arg[11].cast<std::tuple_element_t<11, typename function_t::arguments>>(), Arg[12].cast<std::tuple_element_t<12, typename function_t::arguments>>()
-						);
-					}
-					else if constexpr (num_args == 14) {
-						return ToDo(
-							Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>(), Arg[6].cast<std::tuple_element_t<6, typename function_t::arguments>>(), Arg[7].cast<std::tuple_element_t<7, typename function_t::arguments>>(),
-							Arg[8].cast<std::tuple_element_t<8, typename function_t::arguments>>(), Arg[9].cast<std::tuple_element_t<9, typename function_t::arguments>>(), Arg[10].cast<std::tuple_element_t<10, typename function_t::arguments>>(), Arg[11].cast<std::tuple_element_t<11, typename function_t::arguments>>(), Arg[12].cast<std::tuple_element_t<12, typename function_t::arguments>>(), Arg[13].cast<std::tuple_element_t<13, typename function_t::arguments>>()
-						);
-					}
-					else if constexpr (num_args == 15) {
-						return ToDo(
-							Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>(), Arg[6].cast<std::tuple_element_t<6, typename function_t::arguments>>(), Arg[7].cast<std::tuple_element_t<7, typename function_t::arguments>>(),
-							Arg[8].cast<std::tuple_element_t<8, typename function_t::arguments>>(), Arg[9].cast<std::tuple_element_t<9, typename function_t::arguments>>(), Arg[10].cast<std::tuple_element_t<10, typename function_t::arguments>>(), Arg[11].cast<std::tuple_element_t<11, typename function_t::arguments>>(), Arg[12].cast<std::tuple_element_t<12, typename function_t::arguments>>(), Arg[13].cast<std::tuple_element_t<13, typename function_t::arguments>>(), Arg[14].cast<std::tuple_element_t<14, typename function_t::arguments>>()
-						);
-					}
-					else if constexpr (num_args == 16) {
-						return ToDo(
-							Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>(), Arg[6].cast<std::tuple_element_t<6, typename function_t::arguments>>(), Arg[7].cast<std::tuple_element_t<7, typename function_t::arguments>>(),
-							Arg[8].cast<std::tuple_element_t<8, typename function_t::arguments>>(), Arg[9].cast<std::tuple_element_t<9, typename function_t::arguments>>(), Arg[10].cast<std::tuple_element_t<10, typename function_t::arguments>>(), Arg[11].cast<std::tuple_element_t<11, typename function_t::arguments>>(), Arg[12].cast<std::tuple_element_t<12, typename function_t::arguments>>(), Arg[13].cast<std::tuple_element_t<13, typename function_t::arguments>>(), Arg[14].cast<std::tuple_element_t<14, typename function_t::arguments>>(), Arg[15].cast<std::tuple_element_t<15, typename function_t::arguments>>()
-						);
-					}
-					else {
-						static_assert("Not able to process more than 16 inputs to an async job without further specialization");
-					}
-			    }));
-			}
+
+
+
+		/* performs the job on the single-threaded job queue, intended for use as part of the job system for the GPU tasks. */
+		template<typename G> decltype(auto) async(G const& func) {
+			using function_t = impl::function_traits<decltype(std::function(func))>;
+			return future<typename function_t::result_type>(impl::task(func));
+		};
+
+		/* performs the job on the single-threaded job queue, intended for use as part of the job system for the GPU tasks. */
+		template<typename G> decltype(auto) async(size_t start, size_t end, G const& func) {
+			using function_t = impl::function_traits<decltype(std::function(func))>;
+			return future<typename function_t::result_type>(impl::task(start, end, func));
 		};
 	};
 
-	namespace parallel {		
+	namespace parallel {
 		namespace single_threaded {
 			class job_base {
 			public:
@@ -1245,17 +1928,17 @@ namespace GL {
 			template<typename iteratorType, class F> void For(iteratorType start, iteratorType end, F const& ToDo) {
 				if (end >= start) {
 					using f_t = GL::parallel::impl::function_traits<decltype(std::function(ToDo))>;
-					impl::dispatch_context ctx{ 0, nullptr, nullptr }; 
+					impl::dispatch_context ctx{ 0, nullptr, nullptr };
 					struct IterData {
 						const F& _to_do;
 						const iteratorType& _start;
 						const iteratorType& _end;
 						static void DoTask(impl::job_argument const& _args) {
 							const IterData& data = *static_cast<const IterData*>(_args.task_memory);
-							for (iteratorType i = data._start; i < data._end; ++i) 
-								if constexpr (std::tuple_size_v<f_t::arguments> == 0) 
-									(void)data._to_do();								
-								else 
+							for (iteratorType i = data._start; i < data._end; ++i)
+								if constexpr (std::tuple_size_v<f_t::arguments> == 0)
+									(void)data._to_do();
+								else
 									(void)data._to_do(i);
 						};
 					} data{ ToDo, start, end };
@@ -1414,8 +2097,8 @@ namespace GL {
 
 					static void DoTask(impl::job_argument const& _args) {
 						const IterData& data = *static_cast<const IterData*>(_args.task_memory);
-						do { 
-							data._to_do(); 
+						do {
+							data._to_do();
 						} while (data._until());
 					};
 				} data{ Do, UntilBoolean };
@@ -1492,7 +2175,7 @@ namespace GL {
 
 				public:
 					std::weak_ptr<job> self;
-					concurrency::concurrent_vector< std::weak_ptr<job_base> > children;
+					GL::atomic_vector< std::weak_ptr<job_base> > children;
 
 				protected:
 					std::atomic<bool> dispatch_once;
@@ -1503,7 +2186,7 @@ namespace GL {
 					// called once the dispatched job ends
 					static void Callback(void* _args) {
 						if (auto* data = reinterpret_cast<job*>(_args); data != nullptr)
-							for (auto& x : data->children)
+							for (auto& x : data->children) 
 								if (auto p = x.lock(); p != nullptr)
 									(void)p->dispatch();
 					};
@@ -1512,26 +2195,44 @@ namespace GL {
 					static decltype(auto) Argument(impl::job_argument const& _args) {
 						if constexpr (this_num_args > i) {
 							using arg = typename std::tuple_element_t<i, typename functionType::arguments>;
-							static constexpr bool arg_is_jobBase = std::is_same_v<std::remove_const_t <arg>, job_base&>;
-							static constexpr bool arg_is_any = std::is_same_v<std::decay_t<arg>, GL::any>;
-							static constexpr bool arg_is_atomic_any = std::is_same_v<std::decay_t <arg>, GL::atomic_any>;
+							static constexpr bool arg_is_jobBase = std::is_same_v<std::decay_t<arg>, job_base>;
+							static constexpr bool arg_is_any =
+								std::is_same_v<std::decay_t<arg>, GL::any> ||
+								std::is_same_v<std::decay_t <arg>, GL::atomic_any>;
 
 							job* data = reinterpret_cast<job*>(_args.task_memory);
-							if constexpr (arg_is_jobBase) {
-								return *dynamic_cast<job_base*>(data->parent.get());
-							}
-							else if constexpr (arg_is_any || arg_is_atomic_any) {
-								return data->parent->result;
-							}
-							else if constexpr (!this_is_job_start) {
-								return data->parent->result.cast<typename Parent::returnType>();
+							if constexpr (!this_is_job_start) {
+								static constexpr bool returnVal_is_any =
+									std::is_same_v<std::decay_t<typename Parent::returnType>, GL::any> ||
+									std::is_same_v<std::decay_t<typename Parent::returnType>, GL::atomic_any>;
+
+								if constexpr (arg_is_any) {
+									return data->parent->result;
+								}
+								else if constexpr (arg_is_jobBase) {
+									auto p = std::static_pointer_cast<job_base>(data->parent);
+									return *p;
+								}
+								else {
+									if constexpr (returnVal_is_any) {
+										if constexpr (std::is_convertible_v<typename Parent::returnType, arg>) {
+											return data->parent->result.cast<typename Parent::returnType>();
+										}
+										else {
+											return data->parent->result.cast<arg>();
+										}
+									}
+									else {
+										return data->parent->result.cast<typename Parent::returnType>();
+									}
+								}
 							}
 							else {
-								return;
+								static_assert(false, "Job starts cannot evaluate arguments using this path");
 							}
 						}
 						else {
-							return;
+							static_assert(false, "Wrong argument index in evaluation of argument in task");
 						}
 					};
 
@@ -1624,7 +2325,7 @@ namespace GL {
 
 				public:
 					std::weak_ptr<jobs> self;
-					concurrency::concurrent_vector< std::weak_ptr<job_base> > children;
+					GL::atomic_vector< std::weak_ptr<job_base> > children;
 
 				protected:
 					std::atomic<bool> dispatch_once;
@@ -1636,7 +2337,7 @@ namespace GL {
 
 					// called once the dispatched job ends
 					static void Callback(void* _args) {
-						if (auto* data = reinterpret_cast<jobs*>(_args); data != nullptr)
+						if (auto* data = reinterpret_cast<jobs*>(_args); data != nullptr)					
 							for (auto& x : data->children)
 								if (auto p = x.lock(); p != nullptr)
 									(void)p->dispatch();
@@ -1646,17 +2347,45 @@ namespace GL {
 					static decltype(auto) Argument(impl::job_argument const& _args) {
 						if constexpr (this_num_args > i) {
 							using arg = typename std::tuple_element_t<i, typename functionType::arguments>;
-							static constexpr bool arg_is_jobBase = std::is_same_v<std::remove_const_t <arg>, job_base&>;
-							static constexpr bool arg_is_any = std::is_same_v<std::decay_t<arg>, GL::any>;
-							static constexpr bool arg_is_atomic_any = std::is_same_v<std::decay_t <arg>, GL::atomic_any>;
+							static constexpr bool arg_is_jobBase = std::is_same_v<std::decay_t<arg>, job_base>;
+							static constexpr bool arg_is_any = 
+								std::is_same_v<std::decay_t<arg>, GL::any> || 
+								std::is_same_v<std::decay_t <arg>, GL::atomic_any>;
 
 							jobs* data = reinterpret_cast<jobs*>(_args.task_memory);
-							if constexpr (arg_is_jobBase) return *dynamic_cast<job_base*>(data->parent.get());
-							else if constexpr (arg_is_any || arg_is_atomic_any) return data->parent->result;
-							else if constexpr (!this_is_job_start) return data->parent->result.cast<typename Parent::returnType>();
-							else return;
+							if constexpr (!this_is_job_start) {
+								static constexpr bool returnVal_is_any = 
+									std::is_same_v<std::decay_t<typename Parent::returnType>, GL::any> || 
+									std::is_same_v<std::decay_t<typename Parent::returnType>, GL::atomic_any>;
+
+								if constexpr (arg_is_any) {
+									return data->parent->result;
+								}
+								else if constexpr (arg_is_jobBase) {
+									auto p = std::static_pointer_cast<job_base>(data->parent);
+									return *p;
+								}
+								else {
+									if constexpr (returnVal_is_any) {
+										if constexpr (std::is_convertible_v<typename Parent::returnType, arg>) {
+											return data->parent->result.cast<typename Parent::returnType>();
+										}
+										else {
+											return data->parent->result.cast<arg>();
+										}
+									}
+									else {
+										return data->parent->result.cast<typename Parent::returnType>();
+									}
+								}
+							}
+							else {
+								static_assert(false, "Job starts cannot evaluate arguments using this path");
+							}
 						}
-						else return;
+						else {
+							static_assert(false, "Wrong argument index in evaluation of argument in task");
+						}
 					};
 
 					static void DoTask(impl::job_argument const& _args) {
@@ -1692,8 +2421,11 @@ namespace GL {
 							else if constexpr (this_num_args == 3) {
 								if constexpr (this_returns_void) (void)static_cast<jobs*>(_args.task_memory)->todo(_args.job_index + static_cast<jobs*>(_args.task_memory)->start, Argument<1>(_args), Argument<2>(_args));
 								else {
-									if (_args.job_index == 0) static_cast<jobs*>(_args.task_memory)->result = GL::any::instance(static_cast<jobs*>(_args.task_memory)->todo(_args.job_index + static_cast<jobs*>(_args.task_memory)->start, Argument<1>(_args), Argument<2>(_args)));
-									else (void)static_cast<jobs*>(_args.task_memory)->todo(_args.job_index + static_cast<jobs*>(_args.task_memory)->start, Argument<1>(_args), Argument<2>(_args));
+									if (_args.job_index == 0) static_cast<jobs*>(_args.task_memory)->result = GL::any::instance(
+										static_cast<jobs*>(_args.task_memory)->todo(_args.job_index + static_cast<jobs*>(_args.task_memory)->start, Argument<1>(_args), Argument<2>(_args))
+									);
+									else (void)
+										static_cast<jobs*>(_args.task_memory)->todo(_args.job_index + static_cast<jobs*>(_args.task_memory)->start, Argument<1>(_args), Argument<2>(_args));
 								}
 							}
 							else {
@@ -1756,248 +2488,222 @@ namespace GL {
 				};
 			};
 
-			// start a task-chain with a argument-free function, e.g.:
-			// task([]() -> int { return 10; })
-			template<typename F, typename Parent = void> __forceinline decltype(auto) task(F&& ToDo, Parent* parent = nullptr) {
-				auto out = std::make_shared<impl::job<F, Parent>>(std::move(ToDo), std::move(parent));
-				out->self = out;
-				if constexpr (!std::is_same_v<void, Parent>) parent->children.push_back(out);
-				else out->dispatch();
-				return out;
-			};
-			// start a task-chain with a for-loop with an indexed function, e.g.:
-			// task(0, 1'000'000, [](size_t index) -> int { return index + 10; })
-			// returning values from a for-loop task will only return the value from the first call. Returns from future calls will be discarded.
-			template<typename F, typename Parent = void> __forceinline decltype(auto) task(size_t start, size_t end, F&& ToDo, Parent* parent = nullptr) {
-				auto out = std::make_shared<impl::jobs<F, Parent>>(start, end, std::move(ToDo), std::move(parent));
-				out->self = out;
-				if constexpr (!std::is_same_v<void, Parent>) parent->children.push_back(out);
-				else out->dispatch();
-				return out;
-			};
-			// task(...).and_then([](){ ... });
-			// task([]() -> int { return 0; }).and_then([](int prev_job_result){ ... });
-			// task(...).and_then([](job_base& prev_job){ ... });
-			// task([]() -> int { return 0; }).and_then([](int prev_job_result, job_base& prev_job){ ... });
-			template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) impl::job<F, Parent>::and_then(G&& ToDo) {
-				return task(std::move(ToDo), this);
-			};
-			// task(...).and_then(0, 100, [](size_t index){ ... });
-			// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result){ ... });
-			// task(...).and_then(0, 100, [](size_t index, job_base& prev_job){ ... });
-			// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result, job_base& prev_job){ ... });
-			template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) impl::job<F, Parent>::and_then(size_t start, size_t end, G&& ToDo) {
-				return task(start, end, std::move(ToDo), this);
-			};
-			// task(...).and_then([](){ ... });
-			// task([]() -> int { return 0; }).and_then([](int prev_job_result){ ... });
-			// task(...).and_then([](job_base& prev_job){ ... });
-			// task([]() -> int { return 0; }).and_then([](int prev_job_result, job_base& prev_job){ ... });
-			template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) impl::jobs<F, Parent>::and_then(G&& ToDo) {
-				return task(std::move(ToDo), this);
-			};
-			// task(...).and_then(0, 100, [](size_t index){ ... });
-			// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result){ ... });
-			// task(...).and_then(0, 100, [](size_t index, job_base& prev_job){ ... });
-			// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result, job_base& prev_job){ ... });
-			template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) impl::jobs<F, Parent>::and_then(size_t start, size_t end, G&& ToDo) {
-				return task(start, end, std::move(ToDo), this);
-			};
+			namespace impl {
+				// start a task-chain with a argument-free function, e.g.:
+                // task([]() -> int { return 10; })
+				template<typename F, typename Parent = void> __forceinline decltype(auto) task(F&& ToDo, Parent* parent = nullptr) {
+					auto out = std::make_shared<impl::job<F, Parent>>(std::move(ToDo), std::move(parent));
+					out->self = out;
+					if constexpr (!std::is_same_v<void, Parent>) parent->children.push_back(out);
+					else out->dispatch();
+					return out;
+				};
+				// start a task-chain with a for-loop with an indexed function, e.g.:
+				// task(0, 1'000'000, [](size_t index) -> int { return index + 10; })
+				// returning values from a for-loop task will only return the value from the first call. Returns from future calls will be discarded.
+				template<typename F, typename Parent = void> __forceinline decltype(auto) task(size_t start, size_t end, F&& ToDo, Parent* parent = nullptr) {
+					auto out = std::make_shared<impl::jobs<F, Parent>>(start, end, std::move(ToDo), std::move(parent));
+					out->self = out;
+					if constexpr (!std::is_same_v<void, Parent>) parent->children.push_back(out);
+					else out->dispatch();
+					return out;
+				};
+				// task(...).and_then([](){ ... });
+				// task([]() -> int { return 0; }).and_then([](int prev_job_result){ ... });
+				// task(...).and_then([](job_base& prev_job){ ... });
+				// task([]() -> int { return 0; }).and_then([](int prev_job_result, job_base& prev_job){ ... });
+				template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) impl::job<F, Parent>::and_then(G&& ToDo) {
+					return task(std::move(ToDo), this);
+				};
+				// task(...).and_then(0, 100, [](size_t index){ ... });
+				// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result){ ... });
+				// task(...).and_then(0, 100, [](size_t index, job_base& prev_job){ ... });
+				// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result, job_base& prev_job){ ... });
+				template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) impl::job<F, Parent>::and_then(size_t start, size_t end, G&& ToDo) {
+					return task(start, end, std::move(ToDo), this);
+				};
+				// task(...).and_then([](){ ... });
+				// task([]() -> int { return 0; }).and_then([](int prev_job_result){ ... });
+				// task(...).and_then([](job_base& prev_job){ ... });
+				// task([]() -> int { return 0; }).and_then([](int prev_job_result, job_base& prev_job){ ... });
+				template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) impl::jobs<F, Parent>::and_then(G&& ToDo) {
+					return task(std::move(ToDo), this);
+				};
+				// task(...).and_then(0, 100, [](size_t index){ ... });
+				// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result){ ... });
+				// task(...).and_then(0, 100, [](size_t index, job_base& prev_job){ ... });
+				// task([]() -> int { return 0; }).and_then(0, 100, [](size_t index, int prev_job_result, job_base& prev_job){ ... });
+				template<typename F, typename Parent> template<typename G> __forceinline decltype(auto) impl::jobs<F, Parent>::and_then(size_t start, size_t end, G&& ToDo) {
+					return task(start, end, std::move(ToDo), this);
+				};
 
-			/* Generic form of a future<T>, which can be used to wait on and get the results of any job. Can be safely shared if multiple places will need access to the result once available. */
-			class promise {
+				template <typename T>
+				class single_threaded_job_impl {
+				public:
+					T gpu_task;
+					using return_type = typename typename T::element_type::returnType;
+
+					single_threaded_job_impl() = delete;
+					single_threaded_job_impl(T const& job) : gpu_task(job) {
+						static_assert(std::is_base_of_v<GL::parallel::single_threaded::job_base, typename T::element_type>, "GPU job must use the single-threaded task system");
+					};
+					single_threaded_job_impl(T&& job) : gpu_task(std::forward<T>(job)) {
+						static_assert(std::is_base_of_v<GL::parallel::single_threaded::job_base, typename T::element_type>, "GPU job must use the single-threaded task system");
+					};
+					single_threaded_job_impl(single_threaded_job_impl const&) = default;
+					single_threaded_job_impl(single_threaded_job_impl&&) noexcept = default;
+					single_threaded_job_impl& operator=(single_threaded_job_impl const&) = default;
+					single_threaded_job_impl& operator=(single_threaded_job_impl&&) noexcept = default;
+					~single_threaded_job_impl() = default;
+
+
+					/* Get the anticipated return type, without needing to wait for the result. */
+					const auto& type() const {
+						return GL::type_of<return_type>();
+					};
+					/* get a copy of the result of the task, waiting if necessary. */
+					return_type get() const {
+						gpu_task->wait();
+						if constexpr (!std::is_void_v<return_type>) {
+							return gpu_task->result.cast<return_type>();
+						}
+					};
+					/* get a reference to the result of the task, waiting if necessary. Note: lifetime of return reference must not outlive the future<T> object. */
+					decltype(auto) get_ref() const {
+						gpu_task->wait();
+						if constexpr (!std::is_void_v<return_type>) {
+							return gpu_task->result.cast<return_type>();
+						}
+					};
+					/* get a shared_pointer of the result of the task, waiting if necessary. */
+					GL::shared_ptr<return_type> get_shared() const {
+						gpu_task->wait();
+						if constexpr (!std::is_void_v<return_type>) {
+							return gpu_task->result.cast<GL::shared_ptr<return_type>>();
+						}
+					};
+					/* Get the results */
+					GL::any get_any() const {
+						gpu_task->wait();
+						if constexpr (!std::is_void_v<return_type>) {
+							return gpu_task->result;
+						}
+					};
+					/* Ensure the job is completed */
+					void wait() const {
+						gpu_task->wait();
+					};
+
+					template<typename G> decltype(auto) and_then(G&& ToDo) const {
+						return single_threaded_job_impl<decltype(gpu_task->and_then(ToDo))>(gpu_task->and_then(ToDo));
+					};
+					template<typename G> decltype(auto) and_then(size_t start, size_t end, G&& ToDo) const {
+						return single_threaded_job_impl<decltype(gpu_task->and_then(start, end, ToDo))>(gpu_task->and_then(start, end, ToDo));
+					};
+				};
+			};
+			
+			/* Async task with known return type, which can be used to wait on and get the results of any job. Can be safely shared if multiple places will need access to the result once available. */
+			template <typename return_t> class future {
 			protected:
-				std::shared_ptr< job_base >
-					_state;
-				GL::type
-					_type;
-
-			public:
-				promise() :
-					_state(nullptr),
-					_type()
-				{};
-				promise(std::shared_ptr< job_base >&& job, type const& Type) :
-					_state(std::move(job)),
-					_type(Type)
-				{};
-				promise(promise const&) = default;
-				promise(promise&&) = default;
-				promise& operator=(promise const&) = default;
-				promise& operator=(promise&&) = default;
-				virtual ~promise() = default;
-
-				/* Returns true if this promise has been initialized correctly. Otherwise, false. */
-				bool valid() const noexcept { return (bool)_state; };
-				/* Wait until the requested job is completed. Repeated or simultaneous waiting is OK. */
-				void wait() { if (_state) _state->wait(); };
-				/* Get the result, waiting if necessary. */
-				GL::any get_any() const noexcept {
-					if (_state) {
-						_state->wait();
-						return _state->result;
+				template <typename G> friend class future;
+				static decltype(auto) function_return() {
+					if constexpr (std::is_void_v<return_t>) {
+						return;
 					}
-					return {};
+					else {
+						return GL::any();
+					}
 				};
-				/* Get the anticipated return type, without needing to wait for the result. */
-				GL::type Type() const { return _type; };
-			};
+				static decltype(auto) determine_type() {
+					if constexpr (std::is_void_v<return_t>) {
+						return;
+					}
+					else {
+						static return_t temp;
+						////if constexpr (std::is_pod_v< return_t>) {                
+						////    return temp;
+						////}
+						////else {
+						return std::ref(temp).get();
+						////}
+					}
+				};
 
-			/* Specialized form of a promise, which can be used to handle type-casting for lambdas automatically, while still being useful for waiting on and getting the results of any job. */
-			template <typename T> class future final : public promise {
 			public:
-				future() : promise() {};
-				future(std::shared_ptr< job_base >&& job) : promise(std::move(job), GL::type_of<T>()) {};
-				future(promise const& p_promise) : promise(p_promise) {};
+				using return_type = typename decltype(GL::detail::function_signature(&determine_type))::Return_Type;
+				
+			protected:
+				using wrap_type = typename decltype(GL::detail::function_signature(&function_return))::Return_Type;
+				std::function<wrap_type(void)>
+					gpu_task; // type-erasure for the task system. 
+
+			public:
+				future() = delete;
+				template<typename G> future(G&& job) : gpu_task([Job = impl::single_threaded_job_impl(std::forward<G>(job))]() -> decltype(auto) {
+					if constexpr (std::is_void_v<return_type>) { Job.wait(); }
+					else { return Job.get_any(); }
+				}) {};
 				future(future const&) = default;
-				future(future&&) = default;
+				future(future&&) noexcept = default;
 				future& operator=(future const&) = default;
-				future& operator=(future&&) = default;
-				virtual ~future() = default;
+				future& operator=(future&&) noexcept = default;
+				~future() = default;
 
-				/* Cast-down to a generic promise that erases the information on the return type. Useful for sharing tasks between libraries where type info itself cannot be shared. */
-				promise as_promise() const { return promise(reinterpret_cast<const promise&>(*this)); };
-
-				/* get a copy of the result of the task. */
-				decltype(auto) get() {
-					if constexpr (std::is_same<void, T>()) {
-						wait();
-						return;
-					}
-					else {
-						return static_cast<T>(get_any().cast<T>());
-					}
+				/* Get the anticipated return type, without needing to wait for the result. */
+				static const auto& type()  {
+					return GL::type_of<return_type>();
 				};
-				/* get a reference to the result of the task. Note: lifetime of return reference must not outlive the future<T> object. */
-				decltype(auto) get_ref() {
-					if constexpr (std::is_same<void, T>()) {
-						wait();
-						return;
-					}
-					else {
-						return get_any().cast<T>();
-					}
+				/* get a copy of the result of the task, waiting if necessary. */
+				return_t get() const {
+					if constexpr (std::is_void_v<return_type>) { gpu_task(); }
+					else { return gpu_task().cast<return_type>(); }
 				};
-				/* get a shared_pointer of the result of the task. must have already waited. */
-				decltype(auto) get_shared() {
-					if constexpr (std::is_same<void, T>()) {
-						wait();
-						return;
-					}
-					else {
-						return get_any().cast<GL::shared_ptr<T>>();
-					}
+				/* get a reference to the result of the task, waiting if necessary. Note: lifetime of return reference must not outlive the future<T> object. */
+				decltype(auto) get_ref() const {
+					if constexpr (std::is_void_v<return_type>) { gpu_task(); }
+					else { return gpu_task().cast<return_type>(); }
+				};
+				/* get a shared_pointer of the result of the task, waiting if necessary. */
+				GL::shared_ptr<return_type> get_shared() const {
+					if constexpr (std::is_void_v<return_type>) { gpu_task(); }
+					else { return gpu_task().cast<GL::shared_ptr<return_type>>(); }
+				};
+				/* Get the results */
+				GL::any get_any() const {
+					if constexpr (std::is_void_v<return_type>) { gpu_task(); }
+					else { return gpu_task(); }
+				};
+				/* return a new future who can take as input the return of this future */
+				template<typename G> decltype(auto) and_then(G&& ToDo) const {
+					auto out = impl::single_threaded_job_impl(GL::parallel::single_threaded::impl::task([task = gpu_task]() {
+						if constexpr (std::is_void_v<return_type>) { const_cast<std::function<wrap_type(void)>&>(task)(); }
+						else { return const_cast<std::function<wrap_type(void)>&>(task)(); }
+					})).and_then(ToDo);
+					return future<typename decltype(out)::return_type>(std::move(out));
+				};
+				/* return a new future who can take as input the return of this future */
+				template<typename G> decltype(auto) and_then(size_t start, size_t end, G&& ToDo) const {
+					auto out = impl::single_threaded_job_impl(GL::parallel::single_threaded::impl::task([task = gpu_task]() {
+						if constexpr (std::is_void_v<return_type>) { const_cast<std::function<wrap_type(void)>&>(task)(); }
+						else { return const_cast<std::function<wrap_type(void)>&>(task)(); }
+					})).and_then(start, end, ToDo);
+					return future<typename decltype(out)::return_type>(std::move(out));
 				};
 			};
 
-			/* returns a future<T> object for awaiting the results of the task, with optional inputs to the job, that are submitted at the time the job is performed. */
-			template < typename F, typename... Args >
-			static auto async(F&& function, Args... Fargs) {
-				static constexpr size_t num_args = sizeof...(Args);
-				using function_t = GL::parallel::impl::function_traits<decltype(std::function(function))>;
-				using tuple_t = std::tuple<Args...>;
+			/* performs the job on the single-threaded job queue, intended for use as part of the job system for the GPU tasks. */
+			template<typename G> decltype(auto) async(G const& func) {
+				impl::single_threaded_job_impl out(GL::parallel::single_threaded::impl::task(func));
+				return future<typename decltype(out)::return_type>(std::move(out));
+			};
 
-				if constexpr (num_args == 0) {
-					return future<typename function_t::result_type>(task(std::move(function)));
-				}
-				else {
-					return future<typename function_t::result_type>(task([ToDo = std::forward<F>(function), Arg = std::array<any, num_args>{ GL::any::instance(Fargs)... }]() {
-						if constexpr (num_args == 1) {
-							return ToDo(Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>());
-						}
-						else if constexpr (num_args == 2) {
-							return ToDo(
-								Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>()
-							);
-						}
-						else if constexpr (num_args == 3) {
-							return ToDo(
-								Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>()
-							);
-						}
-						else if constexpr (num_args == 4) {
-							return ToDo(
-								Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>()
-							);
-						}
-						else if constexpr (num_args == 5) {
-							return ToDo(
-								Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>()
-							);
-						}
-						else if constexpr (num_args == 6) {
-							return ToDo(
-								Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>()
-							);
-						}
-						else if constexpr (num_args == 7) {
-							return ToDo(
-								Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>(), Arg[6].cast<std::tuple_element_t<6, typename function_t::arguments>>()
-							);
-						}
-						else if constexpr (num_args == 8) {
-							return ToDo(
-								Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>(), Arg[6].cast<std::tuple_element_t<6, typename function_t::arguments>>(), Arg[7].cast<std::tuple_element_t<7, typename function_t::arguments>>()
-							);
-						}
-						else if constexpr (num_args == 9) {
-							return ToDo(
-								Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>(), Arg[6].cast<std::tuple_element_t<6, typename function_t::arguments>>(), Arg[7].cast<std::tuple_element_t<7, typename function_t::arguments>>(),
-								Arg[8].cast<std::tuple_element_t<8, typename function_t::arguments>>()
-							);
-						}
-						else if constexpr (num_args == 10) {
-							return ToDo(
-								Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>(), Arg[6].cast<std::tuple_element_t<6, typename function_t::arguments>>(), Arg[7].cast<std::tuple_element_t<7, typename function_t::arguments>>(),
-								Arg[8].cast<std::tuple_element_t<8, typename function_t::arguments>>(), Arg[9].cast<std::tuple_element_t<9, typename function_t::arguments>>()
-							);
-						}
-						else if constexpr (num_args == 11) {
-							return ToDo(
-								Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>(), Arg[6].cast<std::tuple_element_t<6, typename function_t::arguments>>(), Arg[7].cast<std::tuple_element_t<7, typename function_t::arguments>>(),
-								Arg[8].cast<std::tuple_element_t<8, typename function_t::arguments>>(), Arg[9].cast<std::tuple_element_t<9, typename function_t::arguments>>(), Arg[10].cast<std::tuple_element_t<10, typename function_t::arguments>>()
-							);
-						}
-						else if constexpr (num_args == 12) {
-							return ToDo(
-								Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>(), Arg[6].cast<std::tuple_element_t<6, typename function_t::arguments>>(), Arg[7].cast<std::tuple_element_t<7, typename function_t::arguments>>(),
-								Arg[8].cast<std::tuple_element_t<8, typename function_t::arguments>>(), Arg[9].cast<std::tuple_element_t<9, typename function_t::arguments>>(), Arg[10].cast<std::tuple_element_t<10, typename function_t::arguments>>(), Arg[11].cast<std::tuple_element_t<11, typename function_t::arguments>>()
-							);
-						}
-						else if constexpr (num_args == 13) {
-							return ToDo(
-								Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>(), Arg[6].cast<std::tuple_element_t<6, typename function_t::arguments>>(), Arg[7].cast<std::tuple_element_t<7, typename function_t::arguments>>(),
-								Arg[8].cast<std::tuple_element_t<8, typename function_t::arguments>>(), Arg[9].cast<std::tuple_element_t<9, typename function_t::arguments>>(), Arg[10].cast<std::tuple_element_t<10, typename function_t::arguments>>(), Arg[11].cast<std::tuple_element_t<11, typename function_t::arguments>>(), Arg[12].cast<std::tuple_element_t<12, typename function_t::arguments>>()
-							);
-						}
-						else if constexpr (num_args == 14) {
-							return ToDo(
-								Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>(), Arg[6].cast<std::tuple_element_t<6, typename function_t::arguments>>(), Arg[7].cast<std::tuple_element_t<7, typename function_t::arguments>>(),
-								Arg[8].cast<std::tuple_element_t<8, typename function_t::arguments>>(), Arg[9].cast<std::tuple_element_t<9, typename function_t::arguments>>(), Arg[10].cast<std::tuple_element_t<10, typename function_t::arguments>>(), Arg[11].cast<std::tuple_element_t<11, typename function_t::arguments>>(), Arg[12].cast<std::tuple_element_t<12, typename function_t::arguments>>(), Arg[13].cast<std::tuple_element_t<13, typename function_t::arguments>>()
-							);
-						}
-						else if constexpr (num_args == 15) {
-							return ToDo(
-								Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>(), Arg[6].cast<std::tuple_element_t<6, typename function_t::arguments>>(), Arg[7].cast<std::tuple_element_t<7, typename function_t::arguments>>(),
-								Arg[8].cast<std::tuple_element_t<8, typename function_t::arguments>>(), Arg[9].cast<std::tuple_element_t<9, typename function_t::arguments>>(), Arg[10].cast<std::tuple_element_t<10, typename function_t::arguments>>(), Arg[11].cast<std::tuple_element_t<11, typename function_t::arguments>>(), Arg[12].cast<std::tuple_element_t<12, typename function_t::arguments>>(), Arg[13].cast<std::tuple_element_t<13, typename function_t::arguments>>(), Arg[14].cast<std::tuple_element_t<14, typename function_t::arguments>>()
-							);
-						}
-						else if constexpr (num_args == 16) {
-							return ToDo(
-								Arg[0].cast<std::tuple_element_t<0, typename function_t::arguments>>(), Arg[1].cast<std::tuple_element_t<1, typename function_t::arguments>>(), Arg[2].cast<std::tuple_element_t<2, typename function_t::arguments>>(), Arg[3].cast<std::tuple_element_t<3, typename function_t::arguments>>(), Arg[4].cast<std::tuple_element_t<4, typename function_t::arguments>>(), Arg[5].cast<std::tuple_element_t<5, typename function_t::arguments>>(), Arg[6].cast<std::tuple_element_t<6, typename function_t::arguments>>(), Arg[7].cast<std::tuple_element_t<7, typename function_t::arguments>>(),
-								Arg[8].cast<std::tuple_element_t<8, typename function_t::arguments>>(), Arg[9].cast<std::tuple_element_t<9, typename function_t::arguments>>(), Arg[10].cast<std::tuple_element_t<10, typename function_t::arguments>>(), Arg[11].cast<std::tuple_element_t<11, typename function_t::arguments>>(), Arg[12].cast<std::tuple_element_t<12, typename function_t::arguments>>(), Arg[13].cast<std::tuple_element_t<13, typename function_t::arguments>>(), Arg[14].cast<std::tuple_element_t<14, typename function_t::arguments>>(), Arg[15].cast<std::tuple_element_t<15, typename function_t::arguments>>()
-							);
-						}
-						else {
-							static_assert("Not able to process more than 16 inputs to an async job without further specialization");
-						}
-					}));
-				}
+			/* performs the job on the single-threaded job queue, intended for use as part of the job system for the GPU tasks. */
+			template<typename G> decltype(auto) async(size_t start, size_t end, G const& func) {
+				impl::single_threaded_job_impl out(GL::parallel::single_threaded::impl::task(start, end, func));
+				return future<typename decltype(out)::return_type>(std::move(out));
 			};
 		};
-
-		
-
 
 	};
 };

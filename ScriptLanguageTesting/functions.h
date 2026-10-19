@@ -1181,6 +1181,7 @@ Call to function "%s" with explicit value return failed due to incorrect paramet
         };
     };
 
+#if 0
     namespace detail {
         template <typename T>
         struct is_static_member_function : std::false_type {};
@@ -1531,6 +1532,7 @@ Call to function "%s" with explicit value return failed due to incorrect paramet
         };
 
     } // namespace chaiscript::dispatch::detail
+#endif
 
     // Manager for wrapped functions, adding support for default parameters.
     class Function {
@@ -1940,7 +1942,7 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
     // function name, function qualifiers (e.g. static), return type, argument types, and (optionally) argument default values. 
     class function_signature {
     private:
-        size_t 
+        size_t
             hash_m;
 
     public:
@@ -1975,7 +1977,7 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
             returns_m;
         short
             numConversions;
-        int 
+        int
             numArguments;
 
     public:
@@ -1996,7 +1998,7 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
             eval_hash();
         };
         size_t get_base_hash() const {
-            if (hash_m == 0) const_cast<function_signature*>(this)->eval_hash();            
+            if (hash_m == 0) const_cast<function_signature*>(this)->eval_hash();
             return hash_m;
         };
         size_t get_hash() const {
@@ -2082,7 +2084,7 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
                     state_m |= function_state::Template;
                     return;
                 }
-            }     
+            }
             state_m &= ~function_state::Template; // unsets the template flag
         }
         template<typename iter_type> int degrees_of_error_with_free_cast(iter_type iter, iter_type const& end) const {
@@ -2530,13 +2532,13 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
                 out = out.add_to_delim(name_m, " ");
             }
             {
-                GL::string args; 
+                GL::string args;
                 for (int i = 0; i < numArguments; ++i) {
                     GL::string arg = argument_types_m[i].name();
                     arg = arg.add_to_delim(argument_names_m[i], " ");
                     if (!argument_defaults_m[i].empty()) {
                         arg = arg + " = {}";
-                    }                    
+                    }
                     args = args.add_to_delim(arg, ", ");
                 }
                 out = out + "(" + args + ")";
@@ -2570,12 +2572,12 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
         public:
             Proxy_Function_Base() = default;
             Proxy_Function_Base(Proxy_Function_Base const&) = default;
-            Proxy_Function_Base(Proxy_Function_Base &&) = default;
+            Proxy_Function_Base(Proxy_Function_Base&&) = default;
             Proxy_Function_Base& operator=(Proxy_Function_Base const&) = default;
             Proxy_Function_Base& operator=(Proxy_Function_Base&&) = default;
             virtual ~Proxy_Function_Base() = default;
 
-            function_signature 
+            function_signature
                 m_signature;
 
             // fast path
@@ -2601,13 +2603,13 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
                 else {
                     thread_local any::fast_any* inputs[16];
                     for (int pos = 0; pos < m_signature.numArguments; ++pos, ++begin) {
-                        if (end > begin) 
-                            inputs[pos] = const_cast<any::fast_any*>(begin);                        
-                        else 
-                            inputs[pos] = const_cast<any::fast_any*>(&m_signature.argument_defaults_m[pos]);                        
+                        if (end > begin)
+                            inputs[pos] = const_cast<any::fast_any*>(begin);
+                        else
+                            inputs[pos] = const_cast<any::fast_any*>(&m_signature.argument_defaults_m[pos]);
                     }
                     return do_call(&inputs[0], keep_return_value);
-                }                
+                }
             };
             // fastest path
             GL::any::fast_any operator()(bool keep_return_value = true) const {
@@ -2654,7 +2656,7 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
 
     typedef GL::shared_ptr<details::Proxy_Function_Base> Proxy_Function;
 
-    namespace details {    
+    namespace details {
         template <typename Callable, size_t index> decltype(auto) cast_any(any::fast_any* p) {
             return p->cast< std::tuple_element_t<index, typename parallel::impl::function_traits<decltype(std::function(std::declval<Callable>()))>::arguments> >();
         };
@@ -2702,7 +2704,7 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
 
         protected:
             static function_signature CreateSignature(std::vector<any>&& defaults = {}) {
-                std::vector<std::pair<GL::string, GL::type>> 
+                std::vector<std::pair<GL::string, GL::type>>
                     args;
 #define argT(NN) if constexpr (numArgs > NN) { args.push_back({ GL::printf("param%i", NN), GL::type_of<typename std::tuple_element_t<NN, argType>>() }); }
                 argT(0);
@@ -2805,7 +2807,7 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
             };
 
         protected:
-            __declspec(noinline) virtual GL::any::fast_any do_call(any::fast_any** begin, bool keep_return_value) const override {                               
+            __declspec(noinline) virtual GL::any::fast_any do_call(any::fast_any** begin, bool keep_return_value) const override {
                 if constexpr (std::is_same_v<T, void>) {
                     return nullptr;
                 }
@@ -2816,7 +2818,7 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
                     }
                     else {
                         return any::fast_any::instance(begin[0]->cast<Class*>()->*m_attr) + GL::type::Reference;
-                    }                    
+                    }
                 }
                 else if constexpr (std::is_pointer<T>::value) {
                     if (!keep_return_value) return nullptr;
@@ -2832,7 +2834,7 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
                 }
                 else {
                     if (!keep_return_value) return nullptr;
-                    GL::shared_ptr<Class> ptr = begin[0]->cast< GL::shared_ptr<Class> >();         
+                    GL::shared_ptr<Class> ptr = begin[0]->cast< GL::shared_ptr<Class> >();
                     auto out = GL::shared_ptr<actualT>(GL::shared_ptr<void>(ptr));
                     out.set_pointer_without_modifying_control_block(&(ptr.get()->*m_attr));
                     if (begin[0]->m_casted_type.is_const()) {
@@ -3585,7 +3587,7 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
                 else if constexpr (numArgs == 0) {
                     if constexpr (std::is_same_v<returnType, void>) (begin[0]->cast<const Class&>().*m_attr)();
                     else return (begin[0]->cast<const Class&>().*m_attr)();
-                }                
+                }
             };
             __declspec(noinline) decltype(auto) do_call_impl_(const any::fast_any* begin) const {
                 if constexpr (numArgs >= 15) {
@@ -3831,7 +3833,7 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
 
             R(Class::* m_attr)(T...) const;
         };
-     
+
         namespace detail {
             template <typename T>
             struct is_static_member_function : std::false_type {};
@@ -3989,7 +3991,7 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
                 ->Function_Signature<Ret, Class, Function_Params<volatile const Class&, Param...>, true, false, false>; // member function
 
             template<typename Ret, typename Class, typename... Param>
-            Function_Signature(Ret(Class::* f)(Param...)& noexcept)
+            Function_Signature(Ret(Class::* f)(Param...) & noexcept)
                 ->Function_Signature<Ret, Class, Function_Params<Class&, Param...>, true, false, false>; // member function
 
             template<typename Ret, typename Class, typename... Param>
@@ -4006,7 +4008,7 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
                 ->Function_Signature<Ret, Class, Function_Params<volatile const Class&&, Param...>, true, false, false>; // member function
 
             template<typename Ret, typename Class, typename... Param>
-            Function_Signature(Ret(Class::* f)(Param...)&& noexcept)
+            Function_Signature(Ret(Class::* f)(Param...) && noexcept)
                 ->Function_Signature<Ret, Class, Function_Params<Class&&, Param...>, true, false, false>; // member function
 
             template<typename Ret, typename Class, typename... Param>
@@ -4170,7 +4172,7 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
                         typename decltype(impl::Function_Signature_m1{ &std::decay_t<Func>::operator() })::Param_Types,
                         false,
                         false,
-                        true 
+                        true
                         // , std::is_empty_v<Func>
                     > {};
                 }
@@ -4193,7 +4195,7 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
             // out->m_signature.state_m |= function_signature::Async; // const member functions (e.g. std::string::length) are assumed to be async-friendly. 
             return out;
         };
-        
+
         template<typename Ret, typename Class, typename... Param>
         Proxy_Function Member_Function_Impl(Ret(Class::* f)(Param...), std::vector<any>&& defaults) {
             auto out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::make_shared_forwarded(Default_Member_Function_Impl(f, std::forward<std::vector<any>>(defaults))));
@@ -4217,11 +4219,11 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
             constexpr bool is_static_s = std::is_convertible_v<std::decay_t<decltype(func)>, typename function_header::Param_Types::template to_function_pointer<typename function_header::Return_Type>::type>;
 
             out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::make_shared< details::Explicit_Function_Impl<Func> >(std::move(func), std::move(defaults)));
-            if constexpr (is_static_s){
+            if constexpr (is_static_s) {
                 out->m_signature.state_m |= function_signature::Static;
                 out->m_signature.state_m |= function_signature::Constant;
                 // out->m_signature.state |= function_signature::Async; // static functions are assumed to be async-friendly. 
-            }            
+            }
         }
         else if constexpr (function_header::is_member_object) { // member objects, e.g. return object.member;    
             out = GL::static_pointer_cast<details::Proxy_Function_Base>(GL::make_shared_forwarded(details::Attribute_Access_Impl(std::move(func), std::move(defaults))));
@@ -4248,9 +4250,9 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
             if (out->m_signature.argument_types_m.size() <= 1) {
                 if (
                     (out->m_signature.returns_m.name() == out->m_signature.name_m)
-                    || 
+                    ||
                     (out->m_signature.returns_m.name() == out->m_signature.name_m + "&&")
-                ) {
+                    ) {
                     out->m_signature.returns_m |= GL::type::Temporary;
                     out->m_signature.state_m |= function_signature::Constructor;
                 }
@@ -4263,8 +4265,8 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
     // Convert nearly any function or function pointer to a callable, generic proxy function. 
     template<typename Func> __declspec(noinline) Proxy_Function make_callable(
         GL::string const& name,
-        Func&& func, 
-        size_t stateModifier, 
+        Func&& func,
+        size_t stateModifier,
         std::vector<any>&& defaults = {}
     ) {
         auto out = make_callable(name, std::move(func), std::move(defaults));
@@ -4285,9 +4287,9 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
             for (int i = 0; (i < arguments.size()) && (i < out->m_signature.argument_names_m.size()); ++i) {
                 out->m_signature.argument_names_m[i] = arguments[i].first;
                 //if (out->m_signature.argument_types_m[i].is_any()) {
-                    out->m_signature.argument_types_m[i] = arguments[i].second;
+                out->m_signature.argument_types_m[i] = arguments[i].second;
                 //}
-            }            
+            }
         }
         out->m_signature.evaluate_if_template_function();
         return out;
@@ -4328,10 +4330,10 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
         if (arguments.size() > 0) {
             for (int i = 0; (i < arguments.size()) && (i < out->m_signature.argument_names_m.size()); ++i) {
                 out->m_signature.argument_names_m[i] = arguments[i].first;
-               // if (out->m_signature.argument_types_m[i].is_any()) {
-                    out->m_signature.argument_types_m[i] = arguments[i].second;
-               // }
-            }            
+                // if (out->m_signature.argument_types_m[i].is_any()) {
+                out->m_signature.argument_types_m[i] = arguments[i].second;
+                // }
+            }
         }
         out->m_signature.evaluate_if_template_function();
         return out;
@@ -4387,8 +4389,8 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
                 std::is_same_v<T, unsigned long> ||
                 std::is_same_v<T, unsigned long long> ||
                 std::is_same_v<T, unsigned char> ||
-                std::is_same_v<T, unsigned int> 
-                || std::is_same_v<T, GL::value> 
+                std::is_same_v<T, unsigned int>
+                || std::is_same_v<T, GL::value>
                 || std::is_base_of<GL::value, T>::value
                 ;
         };
@@ -4418,12 +4420,12 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
             // memorize the connection, regardless of outcome
             static const bool Added{ GL::type_of<To>().add_base(GL::type_of<From>()) };
         }
-        
+
         Proxy_Function out;
         if constexpr (is_polymorphic && ((std::is_reference_v<To_Requested> || std::is_pointer_v<To_Requested> || std::is_same_v<GL::shared_ptr<To>, To_Requested> || std::is_same_v<std::shared_ptr<To>, To_Requested>) || (!is_convertable))) {
             out = GL::make_callable(GL::type_of<To>().name(), [](GL::shared_ptr<From> from) -> GL::shared_ptr<To> {
                 return GL::shared_ptr<To>(from);
-            }, {}, { { "From", GL::type_of<From>() | GL::type::Reference } }, GL::type_of<To>() | GL::type::Reference);
+                }, {}, { { "From", GL::type_of<From>() | GL::type::Reference } }, GL::type_of<To>() | GL::type::Reference);
             out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
             out->m_signature.state_m |= GL::function_signature::NoCost;
             out->m_signature.numConversions = 0;
@@ -4432,7 +4434,7 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
             if constexpr (is_convertable) {
                 out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
                     return static_cast<To>(from);
-                }, {}, { { "From", GL::type_of< From const&>() } }, GL::type_of<To>() | GL::type::Temporary);
+                    }, {}, { { "From", GL::type_of< From const&>() } }, GL::type_of<To>() | GL::type::Temporary);
                 out->m_signature.state_m |= (/*GL::function_signature::Async | */GL::function_signature::Static);
                 out->m_signature.state_m |= GL::function_signature::NoCost;
                 if constexpr ((std::is_pod<From>::value || details::is_numeric_type<From>()) && (std::is_pod<To>::value || details::is_numeric_type<To>())) {
@@ -4449,7 +4451,7 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
                 }
                 else {
                     out->m_signature.numConversions = 1;
-                }                
+                }
             }
             else {
                 if constexpr (details::is_numeric_type<From>() && details::is_numeric_type<To>()) {
@@ -4457,14 +4459,14 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
                         if constexpr (std::is_same_v<To, GL::value> || std::is_base_of<GL::value, To>::value) {
                             out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
                                 return To(from);
-                            }, {}, { { "From", GL::type_of< From>() | GL::type::Const | GL::type::Reference } }, GL::type_of<To>() | GL::type::Temporary);
+                                }, {}, { { "From", GL::type_of< From>() | GL::type::Const | GL::type::Reference } }, GL::type_of<To>() | GL::type::Temporary);
                             out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
                             out->m_signature.state_m |= GL::function_signature::NoCost;
                         }
                         else {
                             out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
                                 return static_cast<To>((float)from);
-                            }, {}, { { "From", GL::type_of< From>() | GL::type::Const | GL::type::Reference } }, GL::type_of<To>() | GL::type::Temporary);
+                                }, {}, { { "From", GL::type_of< From>() | GL::type::Const | GL::type::Reference } }, GL::type_of<To>() | GL::type::Temporary);
                             out->m_signature.state_m |= (GL::function_signature::Async | GL::function_signature::Static);
                             out->m_signature.state_m |= GL::function_signature::NoCost;
                         }
@@ -4472,14 +4474,14 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
                     else if constexpr (std::is_same_v<To, GL::value> || std::is_base_of<GL::value, To>::value) {
                         out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
                             return To((float)from);
-                        }, {}, { { "From", GL::type_of< From>() | GL::type::Const | GL::type::Reference } }, GL::type_of<To>() | GL::type::Temporary);
+                            }, {}, { { "From", GL::type_of< From>() | GL::type::Const | GL::type::Reference } }, GL::type_of<To>() | GL::type::Temporary);
                         out->m_signature.state_m |= (/*GL::function_signature::Async | */GL::function_signature::Static);
                         out->m_signature.state_m |= GL::function_signature::NoCost;
                     }
                     else {
                         out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
                             return static_cast<To>(from);
-                        }, {}, { { "From", GL::type_of<From const&>() }}, GL::type_of<To>() | GL::type::Temporary);
+                            }, {}, { { "From", GL::type_of<From const&>() } }, GL::type_of<To>() | GL::type::Temporary);
                         out->m_signature.state_m |= (/*GL::function_signature::Async | */GL::function_signature::Static);
                         out->m_signature.state_m |= GL::function_signature::NoCost;
                     }
@@ -4488,7 +4490,7 @@ Argument #%i "%.*s" of Function "%.*s" was not provided a default parameter, but
                 else {
                     out = GL::make_callable(GL::type_of<To>().name(), [](From const& from) -> To {
                         return To(from);
-                    }, {}, { { "From", GL::type_of< From>() | GL::type::Const | GL::type::Reference } }, GL::type_of<To>() | GL::type::Temporary);
+                        }, {}, { { "From", GL::type_of< From>() | GL::type::Const | GL::type::Reference } }, GL::type_of<To>() | GL::type::Temporary);
                     out->m_signature.state_m |= GL::function_signature::Static;
                     out->m_signature.state_m |= GL::function_signature::NoCost;
                     out->m_signature.numConversions = 1;
@@ -4543,7 +4545,7 @@ namespace GL {
             }
             else {
                 return nullptr;
-            }            
+            }
         };
         Proxy_Function find(GL::string const& name, size_t types_hash) {
             auto f = cache.load_fast();
@@ -4559,17 +4561,17 @@ namespace GL {
     class Functions {
     public:
         using cacheT = concurrency::concurrent_unordered_map<GL::string, concurrency::concurrent_unordered_map<size_t, std::pair< GL::function_signature, GL::Proxy_Function>> >;
-        FunctionCache 
-            cache;        
+        FunctionCache
+            cache;
         cacheT
             originals;
 
         void emplace(Proxy_Function const& value) {
             if (value) {
-                originals[value->m_signature.name_m].insert({ 
-                    value->m_signature.get_base_hash(), 
+                originals[value->m_signature.name_m].insert({
+                    value->m_signature.get_base_hash(),
                     { value->m_signature, value }
-                });
+                    });
             }
         };
         Proxy_Function find(GL::string const& name, size_t types_hash) {
