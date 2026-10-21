@@ -178,6 +178,7 @@
     <ClCompile Include="atomic_shared_ptr.cpp" />
     <ClCompile Include="datetime.cpp" />
     <ClCompile Include="Parallel.cpp" />
+    <ClCompile Include="ParallelTasks.cpp" />
     <ClCompile Include="scripting.cpp" />
     <ClCompile Include="ScriptLanguageTesting.cpp" />
     <ClCompile Include="shared_ptr.cpp" />
@@ -214,6 +215,7 @@
     <ClInclude Include="epoch_map.h" />
     <ClInclude Include="functions.h" />
     <ClInclude Include="Parallel.h" />
+    <ClInclude Include="ParallelTasks.h" />
     <ClInclude Include="scripting.h" />
     <ClInclude Include="ScriptLanguage_V2.h" />
     <ClInclude Include="shared_ptr.h" />

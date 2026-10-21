@@ -1326,15 +1326,8 @@ namespace GL {
 				AsyncJobBaseBase(AsyncJobBaseBase&&) noexcept = delete;
 				AsyncJobBaseBase& operator=(AsyncJobBaseBase const&) = delete;
 				AsyncJobBaseBase& operator=(AsyncJobBaseBase&&) noexcept = delete;
-				virtual ~AsyncJobBaseBase() {
-					this->wait();					
-				};
-				void wait() {
-					if (this->_parent) this->_parent->wait();
-					if (ctx.is_busy()) {
-						impl::Wait(this->ctx, true);
-					}
-				};
+				virtual ~AsyncJobBaseBase() = default;
+				virtual void wait() = 0;
 				bool is_busy() {
 					if (this->_parent && this->_parent->is_busy())
 						return true;
@@ -1363,10 +1356,8 @@ namespace GL {
 				AsyncJobBase(AsyncJobBase&&) noexcept = delete;
 				AsyncJobBase& operator=(AsyncJobBase const&) = delete;
 				AsyncJobBase& operator=(AsyncJobBase&&) noexcept = delete;
-				virtual ~AsyncJobBase() {
-					this->wait();
-				};
-				GL::atomic_any& get_any() {
+				virtual ~AsyncJobBase() = default;
+				auto& get_any() {
 					this->wait();
 					if constexpr (!this_returns_void) {
 						return _result;
@@ -1440,28 +1431,24 @@ namespace GL {
 						else {
 							using function_arg_t = std::tuple_element_t<num_arg - 1, typename function_t::arguments>;
 							static constexpr bool returned_any = std::is_same_v<GL::any, ParentReturnType> || std::is_same_v<GL::atomic_any, ParentReturnType>; // this means they are no help in determining the return type...
-							if constexpr (returned_any) {
-								if constexpr (std::is_same_v<std::decay_t<function_arg_t>, GL::any> || std::is_same_v<std::decay_t<function_arg_t>, GL::atomic_any>) {
-									return rhs;
-								}
-								else {
-									return rhs.cast<function_arg_t>();
-								}
+							if constexpr (std::is_same_v<std::decay_t<function_arg_t>, GL::any> || std::is_same_v<std::decay_t<function_arg_t>, GL::atomic_any>) {
+								return rhs;
+							}
+							else if constexpr (returned_any) {
+								return rhs.cast<function_arg_t>();								
+							}
+							else if constexpr (std::is_same_v<function_arg_t, std::shared_ptr<ParentReturnType>>) {
+								return rhs.cast<std::shared_ptr<ParentReturnType>>();
+							}
+							else if constexpr (std::is_same_v<function_arg_t, GL::shared_ptr<ParentReturnType>>) {
+								return rhs.cast<GL::shared_ptr<ParentReturnType>>();
+							}
+							else if constexpr (std::is_convertible_v<ParentReturnType&, function_arg_t>) {
+								return rhs.cast<ParentReturnType&>();
 							}
 							else {
-								if constexpr (std::is_same_v<function_arg_t, std::shared_ptr<ParentReturnType>>) {
-									return rhs.cast<std::shared_ptr<ParentReturnType>>();
-								}
-								else if constexpr (std::is_same_v<function_arg_t, GL::shared_ptr<ParentReturnType>>) {
-									return rhs.cast<GL::shared_ptr<ParentReturnType>>();
-								}
-								else if constexpr (std::is_convertible_v<ParentReturnType&, function_arg_t>) {
-									return rhs.cast<ParentReturnType&>();
-								}
-								else {
-									return rhs.cast<ParentReturnType>();
-								}
-							}
+								return rhs.cast<ParentReturnType>();
+							}							
 						}
 					};
 					static void DoTask(impl::job_argument const& _args) {
@@ -1539,6 +1526,12 @@ namespace GL {
 					};
 
 				public:
+					void wait() override {
+						if (this->_parent) this->_parent->wait();
+						this->dispatch();
+						impl::Wait(this->ctx, true);
+					};
+
 					AsyncJob(G const& func, std::shared_ptr<AsyncJobBaseBase>&& parent)
 						: AsyncJobBase<return_t>(&Callback, reinterpret_cast<void*>(this), std::forward<std::shared_ptr<AsyncJobBaseBase>>(parent))
 						, function{ func }

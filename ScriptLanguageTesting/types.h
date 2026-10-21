@@ -429,7 +429,7 @@ namespace GL {
             std::shared_ptr<void> get_std(GL::shared_ptr<any_data>&&) override {
                 return std::shared_ptr<void>(get(), [ptr = m_ptr](void* p) -> void {
                     if (p != ptr.get()) {
-                        std::cout << "ERROR1\n";
+                        throw std::runtime_error("Memory management error. Typically caused by attempting to wrap a shared_ptr into an Any when the shared_ptr already was casted from an Any, causing an ownership chain that is illegal.");
                     }
                 });
             };
@@ -527,8 +527,8 @@ namespace GL {
             };
             std::shared_ptr<void> get_std(GL::shared_ptr<any_data>&& parent_ptr) override {
                 return std::shared_ptr<void>(get(), [ptr = std::forward<GL::shared_ptr<any_data>>(parent_ptr)](void* p) -> void {
-                    if (p != ptr.get()) {
-                        std::cout << "ERROR2\n";
+                    if (p != ptr->get()) {
+                        throw std::runtime_error("Memory management error. Typically caused by attempting to wrap a shared_ptr into an Any when the shared_ptr already was casted from an Any, causing an ownership chain that is illegal.");
                     }
                 });
             };
@@ -696,23 +696,7 @@ namespace GL {
 
             template <template<class> class H, class S, typename = std::enable_if_t<std::is_same_v<H<S>, std::shared_ptr<S>> || std::is_same_v<H<S>, GL::shared_ptr<S>>>>
             static GL::shared_ptr<any_data> get(H<S> obj) {
-                if (obj) {
-                    if constexpr (std::is_same<GL::any, S>::value)
-                        return obj->get_underlying_ptr(); // return self                    
-                    else if constexpr (std::is_same<GL::atomic_any, S>::value)
-                        return obj->get_underlying_ptr(); // return self                    
-                    else {
-                        if constexpr (std::is_same<GL::shared_ptr<S>, H<S>>::value) 
-                            return GL::make_shared<shared_data<S>>(std::move(obj));
-                        else if constexpr (std::is_same<std::shared_ptr<S>, H<S>>::value) 
-                            return GL::static_pointer_cast<any_data>(GL::make_shared<std_shared_data<S>>(std::move(obj)));
-                        else 
-                            return nullptr;                        
-                    }
-                }
-                else {
-                    return nullptr; // return null if incoming is null
-                }
+                return get_v(std::move(obj));
             };
 
             template<typename T>
@@ -992,23 +976,23 @@ namespace GL {
     public:
         class DataCaster {
         public:
-            template<typename T> struct is_stdSharedPtr_class { typedef std::false_type type; };
-            template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>> { typedef std::true_type type; };
-            template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>&> { typedef std::true_type type; };
-            template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>*> { typedef std::true_type type; };
-            template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>> { typedef std::true_type type; };
-            template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>&> { typedef std::true_type type; };
-            template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>*> { typedef std::true_type type; };
-            template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>&&> { typedef std::true_type type; };
+            template<typename T> struct is_stdSharedPtr_class { typedef std::false_type type; static constexpr bool value{ type::value }; };
+            template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>> { typedef std::true_type type; static constexpr bool value{ type::value }; };
+            template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>&> { typedef std::true_type type; static constexpr bool value{ type::value }; };
+            template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>*> { typedef std::true_type type; static constexpr bool value{ type::value }; };
+            template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>> { typedef std::true_type type; static constexpr bool value{ type::value }; };
+            template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>&> { typedef std::true_type type; static constexpr bool value{ type::value }; };
+            template<typename T> struct is_stdSharedPtr_class<const std::shared_ptr<T>*> { typedef std::true_type type; static constexpr bool value{ type::value }; };
+            template<typename T> struct is_stdSharedPtr_class<std::shared_ptr<T>&&> { typedef std::true_type type; static constexpr bool value{ type::value }; };
 
-            template<typename T> struct is_SharedPtr_class { typedef std::false_type type; };
-            template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>> { typedef std::true_type type; };
-            template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>&> { typedef std::true_type type; };
-            template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>*> { typedef std::true_type type; };
-            template<typename T> struct is_SharedPtr_class<const GL::shared_ptr<T>> { typedef std::true_type type; };
-            template<typename T> struct is_SharedPtr_class<const GL::shared_ptr<T>&> { typedef std::true_type type; };
-            template<typename T> struct is_SharedPtr_class<const GL::shared_ptr<T>*> { typedef std::true_type type; };
-            template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>&&> { typedef std::true_type type; };
+            template<typename T> struct is_SharedPtr_class { typedef std::false_type type; static constexpr bool value{ type::value }; };
+            template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>> { typedef std::true_type type; static constexpr bool value{ type::value }; };
+            template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>&> { typedef std::true_type type; static constexpr bool value{ type::value }; };
+            template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>*> { typedef std::true_type type; static constexpr bool value{ type::value }; };
+            template<typename T> struct is_SharedPtr_class<const GL::shared_ptr<T>> { typedef std::true_type type; static constexpr bool value{ type::value }; };
+            template<typename T> struct is_SharedPtr_class<const GL::shared_ptr<T>&> { typedef std::true_type type; static constexpr bool value{ type::value }; };
+            template<typename T> struct is_SharedPtr_class<const GL::shared_ptr<T>*> { typedef std::true_type type; static constexpr bool value{ type::value }; };
+            template<typename T> struct is_SharedPtr_class<GL::shared_ptr<T>&&> { typedef std::true_type type; static constexpr bool value{ type::value }; };
 
         private:
             template <class VType> static decltype(auto) DoCast_Shared_fast(GL::shared_ptr<GL::type_erasure::any_data>& ptr) noexcept {
@@ -1041,6 +1025,7 @@ namespace GL {
                 static constexpr bool is_any{ std::is_same_v<any, std::decay_t<T>> };
 
                 if (!p) {
+                    // nullptr path
                     if constexpr (is_any) {
                         static any out;
                         return *&out;
@@ -1057,6 +1042,7 @@ namespace GL {
                                 return static_cast<typename std::remove_reference<typename std::remove_pointer<T>::type>::type*>(nullptr);
                             }
                             else {
+                                // runtime throw due to attempting to perform a cast with a nullptr
                                 auto err = "Cannot cast from `void` to `" + GL::type_of<typename std::remove_reference<typename std::remove_pointer<T>::type>::type>().name() + "`";
                                 throw std::runtime_error(err.to_string());
                             }
@@ -1067,16 +1053,16 @@ namespace GL {
                     if constexpr (is_any) return *p;
                     else {
                         if constexpr (is_shared_ptr) {
-                            if constexpr (is_ptr) throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
-                            else if constexpr (is_ref) throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
+                            if constexpr (is_ptr) static_assert(false, "Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
+                            else if constexpr (is_ref) static_assert(false, "Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
                             return DoCast_Shared_fast<typename GL::type_erasure::get_type<T>::type>(p->get_underlying_ptr());
                         }
                         else if constexpr (is_std_shared_ptr) {
                             if constexpr (is_ptr) {
-                                throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
+                                static_assert(false, "Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
                             }
                             else if constexpr (is_ref) {
-                                throw("Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
+                                static_assert(false, "Casting any to shared_ptr<T>* or shared_ptr<T>& is not recommended due to lifetime management concerns. Suggest changing cast to shared_ptr<T>.");
                             }
                             return DoCast_StdShared_fast<typename GL::type_erasure::get_type<T>::type>(p->get_underlying_ptr());
                         }

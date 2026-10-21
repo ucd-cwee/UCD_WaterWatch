@@ -281,7 +281,7 @@ namespace GL {
         };
         ~Static_Function_Traits() = default;
 
-    private:
+    public:
         inline static R(*m_attr)(T...) = nullptr;
 
     public:
@@ -397,6 +397,224 @@ namespace GL {
                 return (*m_attr)(
                     );
             }
+        };
+    };
+    template <typename R, typename... T> class Caching_Static_Function_Traits {
+    public:
+        using argType = std::tuple<T...>;
+        using returnType = R;
+        static constexpr auto numArgs{ std::tuple_size_v< argType > };
+        Caching_Static_Function_Traits(R(*f)(T...)) {
+            if (!m_attr) m_attr = f;
+        };
+        ~Caching_Static_Function_Traits() = default;
+
+    public:
+        inline static R(*m_attr)(T...) = nullptr;
+        
+        template <size_t I>
+        static decltype(auto) CacheType() {
+            if constexpr (I >= numArgs) return;
+            else {
+                //using type = std::tuple_element_t<I, argType>;
+                if constexpr (std::is_same_v<std::decay_t<std::tuple_element_t<I, argType>>, GL::any>) return GL::any();
+                else if constexpr (std::is_same_v<std::decay_t<std::tuple_element_t<I, argType>>, GL::atomic_any>) return GL::atomic_any();
+                else if constexpr (GL::any::DataCaster::is_SharedPtr_class<std::tuple_element_t<I, argType>>::value || GL::any::DataCaster::is_stdSharedPtr_class<std::tuple_element_t<I, argType>>::value) return std::tuple_element_t<I, argType>();
+                else if constexpr (std::is_pointer_v<std::tuple_element_t<I, argType>>) return static_cast<std::decay_t<std::tuple_element_t<I, argType>>>(0); 
+                else if constexpr (std::is_reference_v<std::tuple_element_t<I, argType>>) return static_cast<std::decay_t<std::tuple_element_t<I, argType>>*>(0);                
+                else return static_cast<std::decay_t<std::tuple_element_t<I, argType>>*>(0);
+            }
+        };
+
+        template <size_t I> 
+        using cache_type = typename GL::parallel::impl::function_traits<decltype(std::function(&CacheType<I>))>::result_type;
+
+        template <std::size_t... Is>
+        static constexpr std::size_t sum_indices_impl(std::index_sequence<Is...>) {
+            return (0 + ... + sizeof(typename GL::parallel::impl::function_traits<decltype(std::function(&CacheType<Is>))>::result_type)); // C++17 fold expression
+        };
+        template <std::size_t Is = numArgs>
+        static constexpr size_t CacheSize() {
+            return sum_indices_impl(std::make_index_sequence<Is>{});
+        }
+        static constexpr auto cache_size_total = CacheSize();
+        
+        static void perform_caching(const any* begin, char* ptr) {
+            if constexpr (numArgs > 0) {
+                char(&buffer)[cache_size_total] = *reinterpret_cast<char(*)[cache_size_total]>(ptr);
+                if constexpr (numArgs >= 16) new (static_cast<void*>(&buffer[CacheSize<15>()])) cache_type<15>(begin[15].cast<cache_type<15>>());
+                if constexpr (numArgs >= 15) new (static_cast<void*>(&buffer[CacheSize<14>()])) cache_type<14>(begin[14].cast<cache_type<14>>());
+                if constexpr (numArgs >= 14) new (static_cast<void*>(&buffer[CacheSize<13>()])) cache_type<13>(begin[13].cast<cache_type<13>>());
+                if constexpr (numArgs >= 13) new (static_cast<void*>(&buffer[CacheSize<12>()])) cache_type<12>(begin[12].cast<cache_type<12>>());
+                if constexpr (numArgs >= 12) new (static_cast<void*>(&buffer[CacheSize<11>()])) cache_type<11>(begin[11].cast<cache_type<11>>());
+                if constexpr (numArgs >= 11) new (static_cast<void*>(&buffer[CacheSize<10>()])) cache_type<10>(begin[10].cast<cache_type<10>>());
+                if constexpr (numArgs >= 10) new (static_cast<void*>(&buffer[CacheSize<9>()])) cache_type<9>(begin[9].cast<cache_type<9>>());
+                if constexpr (numArgs >= 9) new (static_cast<void*>(&buffer[CacheSize<8>()])) cache_type<8>(begin[8].cast<cache_type<8>>());
+                if constexpr (numArgs >= 8) new (static_cast<void*>(&buffer[CacheSize<7>()])) cache_type<7>(begin[7].cast<cache_type<7>>());
+                if constexpr (numArgs >= 7) new (static_cast<void*>(&buffer[CacheSize<6>()])) cache_type<6>(begin[6].cast<cache_type<6>>());
+                if constexpr (numArgs >= 6) new (static_cast<void*>(&buffer[CacheSize<5>()])) cache_type<5>(begin[5].cast<cache_type<5>>());
+                if constexpr (numArgs >= 5) new (static_cast<void*>(&buffer[CacheSize<4>()])) cache_type<4>(begin[4].cast<cache_type<4>>());
+                if constexpr (numArgs >= 4) new (static_cast<void*>(&buffer[CacheSize<3>()])) cache_type<3>(begin[3].cast<cache_type<3>>());
+                if constexpr (numArgs >= 3) new (static_cast<void*>(&buffer[CacheSize<2>()])) cache_type<2>(begin[2].cast<cache_type<2>>());
+                if constexpr (numArgs >= 2) new (static_cast<void*>(&buffer[CacheSize<1>()])) cache_type<1>(begin[1].cast<cache_type<1>>());
+                if constexpr (numArgs >= 1) new (static_cast<void*>(&buffer[CacheSize<0>()])) cache_type<0>(begin[0].cast<cache_type<0>>());
+            }
+        };
+        static void undo_caching(char* ptr) {
+            if constexpr (numArgs > 0) {
+                char(&buffer)[cache_size_total] = *reinterpret_cast<char(*)[cache_size_total]>(ptr);
+                if constexpr (numArgs >= 16) if constexpr (!std::is_pod_v<cache_type<15>>) static_cast<cache_type<15>*>(static_cast<void*>(&buffer[CacheSize<15>()]))->~cache_type<15>();
+                if constexpr (numArgs >= 15) if constexpr (!std::is_pod_v<cache_type<14>>) static_cast<cache_type<14>*>(static_cast<void*>(&buffer[CacheSize<14>()]))->~cache_type<14>();
+                if constexpr (numArgs >= 14) if constexpr (!std::is_pod_v<cache_type<13>>) static_cast<cache_type<13>*>(static_cast<void*>(&buffer[CacheSize<13>()]))->~cache_type<13>();
+                if constexpr (numArgs >= 13) if constexpr (!std::is_pod_v<cache_type<12>>) static_cast<cache_type<12>*>(static_cast<void*>(&buffer[CacheSize<12>()]))->~cache_type<12>();
+                if constexpr (numArgs >= 12) if constexpr (!std::is_pod_v<cache_type<11>>) static_cast<cache_type<11>*>(static_cast<void*>(&buffer[CacheSize<11>()]))->~cache_type<11>();
+                if constexpr (numArgs >= 11) if constexpr (!std::is_pod_v<cache_type<10>>) static_cast<cache_type<10>*>(static_cast<void*>(&buffer[CacheSize<10>()]))->~cache_type<10>();
+                if constexpr (numArgs >= 10) if constexpr (!std::is_pod_v<cache_type<9>>) static_cast<cache_type<9>*>(static_cast<void*>(&buffer[CacheSize<9>()]))->~cache_type<9>();
+                if constexpr (numArgs >= 9) if constexpr (!std::is_pod_v<cache_type<8>>) static_cast<cache_type<8>*>(static_cast<void*>(&buffer[CacheSize<8>()]))->~cache_type<8>();
+                if constexpr (numArgs >= 8) if constexpr (!std::is_pod_v<cache_type<7>>) static_cast<cache_type<7>*>(static_cast<void*>(&buffer[CacheSize<7>()]))->~cache_type<7>();
+                if constexpr (numArgs >= 7) if constexpr (!std::is_pod_v<cache_type<6>>) static_cast<cache_type<6>*>(static_cast<void*>(&buffer[CacheSize<6>()]))->~cache_type<6>();
+                if constexpr (numArgs >= 6) if constexpr (!std::is_pod_v<cache_type<5>>) static_cast<cache_type<5>*>(static_cast<void*>(&buffer[CacheSize<5>()]))->~cache_type<5>();
+                if constexpr (numArgs >= 5) if constexpr (!std::is_pod_v<cache_type<4>>) static_cast<cache_type<4>*>(static_cast<void*>(&buffer[CacheSize<4>()]))->~cache_type<4>();
+                if constexpr (numArgs >= 4) if constexpr (!std::is_pod_v<cache_type<3>>) static_cast<cache_type<3>*>(static_cast<void*>(&buffer[CacheSize<3>()]))->~cache_type<3>();
+                if constexpr (numArgs >= 3) if constexpr (!std::is_pod_v<cache_type<2>>) static_cast<cache_type<2>*>(static_cast<void*>(&buffer[CacheSize<2>()]))->~cache_type<2>();
+                if constexpr (numArgs >= 2) if constexpr (!std::is_pod_v<cache_type<1>>) static_cast<cache_type<1>*>(static_cast<void*>(&buffer[CacheSize<1>()]))->~cache_type<1>();
+                if constexpr (numArgs >= 1) if constexpr (!std::is_pod_v<cache_type<0>>) static_cast<cache_type<0>*>(static_cast<void*>(&buffer[CacheSize<0>()]))->~cache_type<0>();
+            }
+        };
+        template <size_t I> static decltype(auto) get_cache(char* ptr) {            
+            if constexpr (I >= numArgs) return;
+            else {
+                char(&buffer)[cache_size_total] = *reinterpret_cast<char(*)[cache_size_total]>(ptr);
+                cache_type<I>& val = *static_cast<cache_type<I>*>(static_cast<void*>(&buffer[CacheSize<I>()]));
+                if constexpr (std::is_same_v<std::decay_t<std::tuple_element_t<I, argType>>, GL::any>) return val;
+                else if constexpr (std::is_same_v<std::decay_t<std::tuple_element_t<I, argType>>, GL::atomic_any>) return val;
+                else if constexpr (GL::any::DataCaster::is_SharedPtr_class<std::tuple_element_t<I, argType>>::value || GL::any::DataCaster::is_stdSharedPtr_class<std::tuple_element_t<I, argType>>::value) return val;
+                else if constexpr (std::is_pointer_v<std::tuple_element_t<I, argType>>) return val;
+                else if constexpr (std::is_reference_v<std::tuple_element_t<I, argType>>) return *val;
+                else return *val;
+            }
+        };
+    private:
+        template <std::size_t... Is>
+        static R cached_call_impl(char* ptr, std::index_sequence<Is...>) {
+            return (*m_attr)(get_cache<Is>(ptr)...);
+        }
+    public:
+        static R call(const any* begin) {
+            if constexpr (numArgs >= 16) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13 - 1].cast<std::tuple_element_t<12, argType>>(), begin[14 - 1].cast<std::tuple_element_t<13, argType>>(), begin[15 - 1].cast<std::tuple_element_t<14, argType>>(), begin[16 - 1].cast<std::tuple_element_t<15, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 15) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13 - 1].cast<std::tuple_element_t<12, argType>>(), begin[14 - 1].cast<std::tuple_element_t<13, argType>>(), begin[15 - 1].cast<std::tuple_element_t<14, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 14) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13 - 1].cast<std::tuple_element_t<12, argType>>(), begin[14 - 1].cast<std::tuple_element_t<13, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 13) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13 - 1].cast<std::tuple_element_t<12, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 12) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>()
+                    );
+            }
+
+            else if constexpr (numArgs == 11) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 10) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 9) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 8) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>()
+                    );
+            }
+
+            else if constexpr (numArgs == 7) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 6) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 5) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 4) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>()
+                    );
+            }
+
+            else if constexpr (numArgs == 3) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 2) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 1) {
+                return (*m_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 0) {
+                return (*m_attr)(
+                    );
+            }
+        };        
+        static R cached_call(char* ptr) {
+            return cached_call_impl(ptr, std::make_index_sequence<numArgs>{});            
         };
     };
     template <typename LambdaFunction> class Lambda_Function_Traits {
@@ -933,6 +1151,128 @@ Call to function "%s" with explicit value return failed due to incorrect paramet
                 (void)Static_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
             };
             virtual ~Static_Function_Caller() = default;
+
+            static typename traits::returnType call(const any* begin) {
+                return traits::call(begin);
+            };
+            void call(const any* const begin, any* const out) const override {
+                if constexpr (std::is_same_v<void, typename traits::returnType>) {
+                    call(begin);
+                }
+                else {
+                    if (out) {
+#if 1
+                        if ((out->uuid() & uuid::TEMPORARY) == 0) {
+                            if ((out->uuid() & uuid::INV_FLAGS) > 0) {
+                                auto& ref = uuid::get_uuid(out->uuid());
+                                if (GL::interlocked::decrement(ref.count) == 0) {
+                                    ref.count = 1;
+                                    ref.data = GL::type_erasure::wrap(call(begin));
+                                    const_cast<void*&>(out->ptr()) = ref.data->get();
+                                    const_cast<GL::type&>(out->type()) = GL::type_of<typename traits::returnType>();
+                                }
+                                else {
+                                    const_cast<unsigned long&>(out->uuid()) = 0;
+                                    *out = any::instance(call(begin));
+                                }
+                            }
+                            else {
+                                *out = any::instance(call(begin));
+                            }
+                        }
+                        else {
+                            *out = any::instance(call(begin));
+                        }
+#else
+                        * out = any::instance(call(begin));
+#endif
+
+                    }
+                    else {
+                        call(begin);
+                    }
+                }
+            };
+            void call(const any* const begin, void* out_destination, size_t out_size) const override {
+                if constexpr (std::is_same_v<void, typename traits::returnType>) {
+                    call(begin);
+                }
+                else {
+                    if (out_destination && (out_size >= sizeof(std::decay_t<typename traits::returnType>)))
+                        if constexpr (std::is_pod_v<std::decay_t<typename traits::returnType>>) {
+                            decltype(auto) recieved = call(begin);
+                            std::memcpy(out_destination, &recieved, sizeof(std::decay_t<typename traits::returnType>));
+                        }
+                        else {
+                            new (out_destination) std::decay_t<typename traits::returnType>(call(begin));
+                        }
+                    else
+                        if (GL::string err_str = GL::prints(GL::string(R"(
+Call to function "%s" with explicit value return failed due to incorrect parameter sizing (%zu, expected %zu for return type of "%s").
+                )").remove_leading_and_trailing_whitespace(),
+                            typeid(Function).name(),
+                            out_size,
+                            sizeof(std::decay_t<typename traits::returnType>),
+                            typeid(std::decay_t<typename traits::returnType>).name()
+                        ); err_str.length() > 0)
+                            throw std::runtime_error(err_str.to_string());
+                }
+            };
+            bool return_type_explicit_match(std::type_info const& match) const override {
+                return typeid(typename traits::returnType) == match;
+            };
+            size_t num_arguments() const override {
+                return traits::numArgs;
+            };
+            GL::type const& argument(size_t index) const override {
+                switch (index) {
+                case 0: if constexpr (traits::numArgs > 0) return GL::type_of<std::tuple_element_t<0, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 1: if constexpr (traits::numArgs > 1) return GL::type_of<std::tuple_element_t<1, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 2: if constexpr (traits::numArgs > 2) return GL::type_of<std::tuple_element_t<2, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 3: if constexpr (traits::numArgs > 3) return GL::type_of<std::tuple_element_t<3, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 4: if constexpr (traits::numArgs > 4) return GL::type_of<std::tuple_element_t<4, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 5: if constexpr (traits::numArgs > 5) return GL::type_of<std::tuple_element_t<5, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 6: if constexpr (traits::numArgs > 6) return GL::type_of<std::tuple_element_t<6, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 7: if constexpr (traits::numArgs > 7) return GL::type_of<std::tuple_element_t<7, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 8: if constexpr (traits::numArgs > 8) return GL::type_of<std::tuple_element_t<8, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 9: if constexpr (traits::numArgs > 9) return GL::type_of<std::tuple_element_t<9, typename traits::argType>>();
+                      else return GL::type_of<GL::undefined>();
+                case 10: if constexpr (traits::numArgs > 10) return GL::type_of<std::tuple_element_t<10, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 11: if constexpr (traits::numArgs > 11) return GL::type_of<std::tuple_element_t<11, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 12: if constexpr (traits::numArgs > 12) return GL::type_of<std::tuple_element_t<12, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 13: if constexpr (traits::numArgs > 13) return GL::type_of<std::tuple_element_t<13, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 14: if constexpr (traits::numArgs > 14) return GL::type_of<std::tuple_element_t<14, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                case 15: if constexpr (traits::numArgs > 15) return GL::type_of<std::tuple_element_t<15, typename traits::argType>>();
+                       else return GL::type_of<GL::undefined>();
+                default:
+                    return GL::type_of<GL::undefined>();
+                }
+            };
+            GL::type const& returns() const override {
+                return GL::type_of<typename traits::returnType>();
+            };
+        };
+        template <typename Function> class Caching_Static_Function_Caller final : public Function_Caller {
+        public:
+            using traits = decltype(Caching_Static_Function_Traits(std::declval<Function>()));
+            Caching_Static_Function_Caller(Function&& Func) {
+                (void)Caching_Static_Function_Traits(std::forward<Function>(Func)); // instantiate the static function pointer
+            };
+            virtual ~Caching_Static_Function_Caller() = default;
 
             static typename traits::returnType call(const any* begin) {
                 return traits::call(begin);
