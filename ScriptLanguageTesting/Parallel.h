@@ -406,7 +406,7 @@ namespace GL {
 			};
 
 			/* job arguments used to perform work as part of a loop over a Task */
-			struct job_argument {
+			struct alignas(64) job_argument {
 				size_t
 					job_index;		// job index relative to dispatch (like SV_DispatchThreadID in HLSL)
 				long long
@@ -422,7 +422,7 @@ namespace GL {
 			// to be looped over by a single thread, and used to create individual job_arguments for execution. 
 			struct thread_task {
 				dispatch_context* ctx;
-				void (*task)(job_argument const&);
+				void (*task)(job_argument&);
 				size_t group_id;
 				size_t group_job_offset;
 				size_t group_job_end;
@@ -435,7 +435,7 @@ namespace GL {
 			void Dispatch(
 				dispatch_context& ctx,
 				size_t jobCount,
-				void (*Task)(job_argument const&),
+				void (*Task)(job_argument&),
 				void* task_memory,
 				size_t sharedmemory_size,
 				void (*group_start_job)(void* const&), // callback func with memory for type T
@@ -444,12 +444,12 @@ namespace GL {
 			void Dispatch(
 				dispatch_context& ctx,
 				size_t jobCount,
-				void (*Task)(job_argument const&),
+				void (*Task)(job_argument&),
 				void* task_memory
 			) noexcept;
 			void DispatchOnce(
 				dispatch_context& ctx,
-				void (*Task)(job_argument const&),
+				void (*Task)(job_argument&),
 				void* task_memory
 			) noexcept;
 			void Wait(dispatch_context& ctx, bool rethrow = true);
@@ -647,7 +647,7 @@ namespace GL {
 						const F& _to_do;
 						const iteratorType& _start;
 
-						static void DoTask(impl::job_argument const& _args) {
+						static void DoTask(impl::job_argument& _args) {
 							const IterData& data = *static_cast<const IterData*>(_args.task_memory);
 							if constexpr (std::tuple_size_v<f_t::arguments> == 0) {
 								(void)data._to_do();
@@ -668,7 +668,7 @@ namespace GL {
 						const F& _to_do;
 						const iteratorType& _start;
 
-						static void DoTask(impl::job_argument const& _args) {
+						static void DoTask(impl::job_argument& _args) {
 							const IterData& data = *static_cast<const IterData*>(_args.task_memory);
 							if constexpr (std::tuple_size_v<f_t::arguments> == 0) {
 								(void)data._to_do();
@@ -703,7 +703,7 @@ namespace GL {
 				iteratorType _start;
 				iteratorType _step;
 
-				static void DoTask(impl::job_argument const& _args) {
+				static void DoTask(impl::job_argument& _args) {
 					IterData* data = reinterpret_cast<IterData*>(_args.task_memory);
 					iteratorType t{ (static_cast<iteratorType>(_args.job_index) * data->_step) + data->_start };
 					(*data->_to_do)(t);
@@ -730,7 +730,7 @@ namespace GL {
 				const F* _to_do;
 				iterType _begin;
 
-				static void DoTask(impl::job_argument const& _args) {
+				static void DoTask(impl::job_argument& _args) {
 					IterData* data = reinterpret_cast<IterData*>(_args.task_memory);
 					iterType& iter = *static_cast<iterType*>(_args.group_memory);
 					if (_args.group_index == 0) {
@@ -782,7 +782,7 @@ namespace GL {
 				const F* _to_do;
 				iterType _begin;
 
-				static void DoTask(impl::job_argument const& _args) {
+				static void DoTask(impl::job_argument& _args) {
 					IterData* data = reinterpret_cast<IterData*>(_args.task_memory);
 					iterType& iter = *static_cast<iterType*>(_args.group_memory);
 					if (_args.group_index == 0) {
@@ -871,7 +871,7 @@ namespace GL {
 				const G* _to_do;
 				F* _obj;
 
-				static void DoTask(impl::job_argument const& _args) {
+				static void DoTask(impl::job_argument& _args) {
 					IterData* data = reinterpret_cast<IterData*>(_args.task_memory);
 					(*data->_to_do)(_args.job_index, *data->_obj);
 				};
@@ -900,7 +900,7 @@ namespace GL {
 				const G* _to_do;
 				F* _obj;
 
-				static void DoTask(impl::job_argument const& _args) {
+				static void DoTask(impl::job_argument& _args) {
 					IterData* data = reinterpret_cast<IterData*>(_args.task_memory);
 					(*data->_to_do)(_args.job_index, *data->_obj);
 				};
@@ -978,7 +978,7 @@ namespace GL {
 				};
 
 				template <size_t i>
-				static decltype(auto) Argument(impl::job_argument const& _args) {
+				static decltype(auto) Argument(impl::job_argument& _args) {
 					if constexpr (this_num_args > i) {
 						using arg = typename std::tuple_element_t<i, typename functionType::arguments>;
 						static constexpr bool arg_is_jobBase = std::is_same_v<std::decay_t<arg>, job_base>;
@@ -1036,7 +1036,7 @@ namespace GL {
 					}
 				};
 
-				static void DoTask(impl::job_argument const& _args) {
+				static void DoTask(impl::job_argument& _args) {
 					job* data = reinterpret_cast<job*>(_args.task_memory);
 
 					if constexpr (this_is_job_start || (this_num_args == 0)) {
@@ -1144,7 +1144,7 @@ namespace GL {
 				};
 
 				template <size_t i>
-				static decltype(auto) Argument(impl::job_argument const& _args) {
+				static decltype(auto) Argument(impl::job_argument& _args) {
 					if constexpr (this_num_args > i) {
 						using arg = typename std::tuple_element_t<i, typename functionType::arguments>;
 						static constexpr bool arg_is_jobBase = std::is_same_v<std::decay_t<arg>, job_base>;
@@ -1202,7 +1202,7 @@ namespace GL {
 					}
 				};
 
-				static void DoTask(impl::job_argument const& _args) {
+				static void DoTask(impl::job_argument& _args) {
 					if constexpr (this_num_args == 0) {
 						if constexpr (this_returns_void) (void)static_cast<jobs*>(_args.task_memory)->todo();
 						else {
@@ -1451,7 +1451,7 @@ namespace GL {
 							}							
 						}
 					};
-					static void DoTask(impl::job_argument const& _args) {
+					static void DoTask(impl::job_argument& _args) {
 						using function_t = impl::function_traits<decltype(std::function(reinterpret_cast<AsyncJob*>(_args.task_memory)->function))>;
 						static constexpr size_t num_arg = std::tuple_size_v<typename function_t::arguments>;
 
@@ -1665,7 +1665,7 @@ namespace GL {
 					if (impl::dispatch_context* data = reinterpret_cast<impl::dispatch_context*>(_args); data != nullptr)
 						delete data;
 				};
-				static void DoTask(impl::job_argument const& _args) {
+				static void DoTask(impl::job_argument& _args) {
 					reinterpret_cast<void(*)(void)>(_args.task_memory)();
 				};
 			};
@@ -1833,40 +1833,6 @@ namespace GL {
 			};
 
 			namespace impl {
-				// each dispatch call will be "observed" by this context wrapper.
-				struct dispatch_context {
-					std::atomic<size_t> counter; // how many Tasks* are awaited
-					std::exception_ptr* e; // shared error PTR for re-throwing at the end of the Tasks.
-					void (*callback)(void*);
-					void* callback_data;
-
-					bool is_busy() const {
-						return counter > 0;
-					};
-
-					void try_rethrow_exception() {
-						if (e == nullptr) return;
-						if (std::exception_ptr* eptr = reinterpret_cast<std::exception_ptr*>(::InterlockedExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&e), nullptr))) {
-							std::exception_ptr copy{ *eptr };
-							delete eptr;
-							std::rethrow_exception(std::move(copy));
-						}
-					};
-					void clear_exception() {
-						if (e == nullptr) return;
-						if (std::exception_ptr* eptr = reinterpret_cast<std::exception_ptr*>(::InterlockedExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&e), nullptr))) {
-							delete eptr;
-						}
-					};
-					void catch_exception() {
-						if (!e) {
-							if (std::exception_ptr* eptr = reinterpret_cast<std::exception_ptr*>(::InterlockedExchangePointerNoFence(reinterpret_cast<volatile PVOID*>(&e), new std::exception_ptr(std::current_exception())))) {
-								delete eptr;
-							}
-						}
-					};
-				};
-
 				/* job arguments used to perform work as part of a loop over a Task */
 				struct job_argument {
 					size_t
@@ -1883,8 +1849,8 @@ namespace GL {
 
 				// to be looped over by a single thread, and used to create individual job_arguments for execution. 
 				struct thread_task {
-					dispatch_context* ctx;
-					void (*task)(job_argument const&);
+					parallel::impl::dispatch_context* ctx;
+					void (*task)(job_argument&);
 					size_t group_id;
 					size_t group_job_offset;
 					size_t group_job_end;
@@ -1895,38 +1861,38 @@ namespace GL {
 				};
 
 				void Dispatch(
-					dispatch_context& ctx,
+					parallel::impl::dispatch_context& ctx,
 					size_t jobCount,
-					void (*Task)(job_argument const&),
+					void (*Task)(job_argument&),
 					void* task_memory,
 					size_t sharedmemory_size,
 					void (*group_start_job)(void* const&), // callback func with memory for type T
 					void (*group_end_job)(void* const&) // callback func with memory for type T
 				) noexcept;
 				void Dispatch(
-					dispatch_context& ctx,
+					parallel::impl::dispatch_context& ctx,
 					size_t jobCount,
-					void (*Task)(job_argument const&),
+					void (*Task)(job_argument&),
 					void* task_memory
 				) noexcept;
 				void DispatchOnce(
-					dispatch_context& ctx,
-					void (*Task)(job_argument const&),
+					parallel::impl::dispatch_context& ctx,
+					void (*Task)(job_argument&),
 					void* task_memory
 				) noexcept;
-				void Wait(dispatch_context& ctx, bool rethrow = true);
+				void Wait(parallel::impl::dispatch_context& ctx, bool rethrow = true);
 			};
 
 			/* parallel_for (auto i = start; i < end; i++){ todo(i); } */
 			template<typename iteratorType, class F> void For(iteratorType start, iteratorType end, F const& ToDo) {
 				if (end >= start) {
 					using f_t = GL::parallel::impl::function_traits<decltype(std::function(ToDo))>;
-					impl::dispatch_context ctx{ 0, nullptr, nullptr };
+					parallel::impl::dispatch_context ctx{ 0, nullptr, nullptr };
 					struct IterData {
 						const F& _to_do;
 						const iteratorType& _start;
 						const iteratorType& _end;
-						static void DoTask(impl::job_argument const& _args) {
+						static void DoTask(impl::job_argument& _args) {
 							const IterData& data = *static_cast<const IterData*>(_args.task_memory);
 							for (iteratorType i = data._start; i < data._end; ++i)
 								if constexpr (std::tuple_size_v<f_t::arguments> == 0)
@@ -1947,14 +1913,14 @@ namespace GL {
 			If the todo(i) returns anything, it will be collected into a vector at the end. */
 			template<typename iteratorType, class F> void For(iteratorType start, iteratorType end, iteratorType step, F const& ToDo) {
 				using f_t = GL::parallel::impl::function_traits<decltype(std::function(ToDo))>;
-				impl::dispatch_context ctx{ 0, nullptr, nullptr };
+				parallel::impl::dispatch_context ctx{ 0, nullptr, nullptr };
 				struct IterData {
 					const F& _to_do;
 					const iteratorType& _start;
 					const iteratorType& _end;
 					const iteratorType& _step;
 
-					static void DoTask(impl::job_argument const& _args) {
+					static void DoTask(impl::job_argument& _args) {
 						const IterData& data = *static_cast<const IterData*>(_args.task_memory);
 						for (iteratorType i = data._start; i < data._end; i += data._step)
 							if constexpr (std::tuple_size_v<f_t::arguments> == 0)
@@ -1978,7 +1944,7 @@ namespace GL {
 					const F* _to_do;
 					iterType _begin;
 
-					static void DoTask(impl::job_argument const& _args) {
+					static void DoTask(impl::job_argument& _args) {
 						IterData* data = reinterpret_cast<IterData*>(_args.task_memory);
 						iterType& iter = *static_cast<iterType*>(_args.group_memory);
 						if (_args.group_index == 0) {
@@ -2002,7 +1968,7 @@ namespace GL {
 					};
 				} data{ &ToDo, begin };
 
-				impl::dispatch_context ctx{ 0, nullptr, nullptr };
+				parallel::impl::dispatch_context ctx{ 0, nullptr, nullptr };
 				impl::Dispatch(
 					ctx,
 					std::distance(begin, end),
@@ -2026,7 +1992,7 @@ namespace GL {
 					const F* _to_do;
 					iterType _begin;
 
-					static void DoTask(impl::job_argument const& _args) {
+					static void DoTask(impl::job_argument& _args) {
 						IterData* data = reinterpret_cast<IterData*>(_args.task_memory);
 						iterType& iter = *static_cast<iterType*>(_args.group_memory);
 						if (_args.group_index == 0) {
@@ -2050,7 +2016,7 @@ namespace GL {
 					};
 				} data{ &ToDo, begin };
 
-				impl::dispatch_context ctx{ 0, nullptr, nullptr };
+				parallel::impl::dispatch_context ctx{ 0, nullptr, nullptr };
 				impl::Dispatch(
 					ctx,
 					std::distance(begin, end),
@@ -2065,12 +2031,12 @@ namespace GL {
 
 			/* while (WhileBoolean()) { Do(); } */
 			template<typename F, typename G> decltype(auto) While(F const& WhileBoolean, G const& Do) {
-				impl::dispatch_context ctx{ 0, nullptr, nullptr };
+				parallel::impl::dispatch_context ctx{ 0, nullptr, nullptr };
 				struct IterData {
 					const F& _while;
 					const G& _to_do;
 
-					static void DoTask(impl::job_argument const& _args) {
+					static void DoTask(impl::job_argument& _args) {
 						const IterData& data = *static_cast<const IterData*>(_args.task_memory);
 						while (data._while()) {
 							data._to_do();
@@ -2083,12 +2049,12 @@ namespace GL {
 
 			/* while (true){ Do(); if (Until()){ return; } } */
 			template<typename F, typename G> decltype(auto) Until(F const& Do, G const& UntilBoolean) {
-				impl::dispatch_context ctx{ 0, nullptr, nullptr };
+				parallel::impl::dispatch_context ctx{ 0, nullptr, nullptr };
 				struct IterData {
 					const F& _to_do;
 					const G& _until;
 
-					static void DoTask(impl::job_argument const& _args) {
+					static void DoTask(impl::job_argument& _args) {
 						const IterData& data = *static_cast<const IterData*>(_args.task_memory);
 						do {
 							data._to_do();
@@ -2107,13 +2073,13 @@ namespace GL {
 					F& _obj;
 					size_t numToDispatch;
 
-					static void DoTask(impl::job_argument const& _args) {
+					static void DoTask(impl::job_argument& _args) {
 						const IterData& data = *static_cast<const IterData*>(_args.task_memory);
 						for (size_t i = 0; i < data.numToDispatch; ++i)
 							data._to_do(i, data._obj);
 					};
 				} data{ ToDo, out, numToDispatch };
-				impl::dispatch_context ctx{ 0, nullptr, nullptr };
+				parallel::impl::dispatch_context ctx{ 0, nullptr, nullptr };
 				impl::Dispatch(
 					ctx,
 					1,
@@ -2131,13 +2097,13 @@ namespace GL {
 					F& _obj;
 					size_t numToDispatch;
 
-					static void DoTask(impl::job_argument const& _args) {
+					static void DoTask(impl::job_argument& _args) {
 						const IterData& data = *static_cast<const IterData*>(_args.task_memory);
 						for (size_t i = 0; i < data.numToDispatch; ++i)
 							data._to_do(i, data._obj);
 					};
 				} data{ ToDo, SharedObject, numToDispatch };
-				impl::dispatch_context ctx{ 0, nullptr, nullptr };
+				parallel::impl::dispatch_context ctx{ 0, nullptr, nullptr };
 				impl::Dispatch(
 					ctx,
 					1,
@@ -2172,7 +2138,7 @@ namespace GL {
 
 				protected:
 					std::atomic<bool> dispatch_once;
-					impl::dispatch_context ctx;
+					parallel::impl::dispatch_context ctx;
 					std::shared_ptr<Parent> parent;
 					F todo;
 
@@ -2185,7 +2151,7 @@ namespace GL {
 					};
 
 					template <size_t i>
-					static decltype(auto) Argument(impl::job_argument const& _args) {
+					static decltype(auto) Argument(impl::job_argument& _args) {
 						if constexpr (this_num_args > i) {
 							using arg = typename std::tuple_element_t<i, typename functionType::arguments>;
 							static constexpr bool arg_is_jobBase = std::is_same_v<std::decay_t<arg>, job_base>;
@@ -2229,7 +2195,7 @@ namespace GL {
 						}
 					};
 
-					static void DoTask(impl::job_argument const& _args) {
+					static void DoTask(impl::job_argument& _args) {
 						job* data = reinterpret_cast<job*>(_args.task_memory);
 
 						if constexpr (this_is_job_start || (this_num_args == 0)) {
@@ -2322,7 +2288,7 @@ namespace GL {
 
 				protected:
 					std::atomic<bool> dispatch_once;
-					impl::dispatch_context ctx;
+					parallel::impl::dispatch_context ctx;
 					std::shared_ptr<Parent> parent;
 					size_t start;
 					size_t end;
@@ -2337,7 +2303,7 @@ namespace GL {
 					};
 
 					template <size_t i>
-					static decltype(auto) Argument(impl::job_argument const& _args) {
+					static decltype(auto) Argument(impl::job_argument& _args) {
 						if constexpr (this_num_args > i) {
 							using arg = typename std::tuple_element_t<i, typename functionType::arguments>;
 							static constexpr bool arg_is_jobBase = std::is_same_v<std::decay_t<arg>, job_base>;
@@ -2381,7 +2347,7 @@ namespace GL {
 						}
 					};
 
-					static void DoTask(impl::job_argument const& _args) {
+					static void DoTask(impl::job_argument& _args) {
 						if constexpr (this_num_args == 0) {
 							if constexpr (this_returns_void) (void)static_cast<jobs*>(_args.task_memory)->todo();
 							else {

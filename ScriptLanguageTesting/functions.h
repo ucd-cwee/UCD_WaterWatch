@@ -437,27 +437,60 @@ namespace GL {
         static constexpr size_t CacheSize() {
             return sum_indices_impl(std::make_index_sequence<Is>{});
         }
+        static constexpr bool requires_undo_caching_impl() {
+            if constexpr (numArgs > 0) {
+                if constexpr ((numArgs >= 16) && !std::is_pod_v<cache_type<15>>) return true;
+                else if constexpr ((numArgs >= 15) && !std::is_pod_v<cache_type<14>>) return true;
+                else if constexpr ((numArgs >= 14) && !std::is_pod_v<cache_type<13>>) return true;
+                else if constexpr ((numArgs >= 13) && !std::is_pod_v<cache_type<12>>) return true;
+                else if constexpr ((numArgs >= 12) && !std::is_pod_v<cache_type<11>>) return true;
+                else if constexpr ((numArgs >= 11) && !std::is_pod_v<cache_type<10>>) return true;
+                else if constexpr ((numArgs >= 10) && !std::is_pod_v<cache_type<9>>) return true;
+                else if constexpr ((numArgs >= 9) && !std::is_pod_v<cache_type<8>>) return true;
+                else if constexpr ((numArgs >= 8) && !std::is_pod_v<cache_type<7>>) return true;
+                else if constexpr ((numArgs >= 7) && !std::is_pod_v<cache_type<6>>) return true;
+                else if constexpr ((numArgs >= 6) && !std::is_pod_v<cache_type<5>>) return true;
+                else if constexpr ((numArgs >= 5) && !std::is_pod_v<cache_type<4>>) return true;
+                else if constexpr ((numArgs >= 4) && !std::is_pod_v<cache_type<3>>) return true;
+                else if constexpr ((numArgs >= 3) && !std::is_pod_v<cache_type<2>>) return true;
+                else if constexpr ((numArgs >= 2) && !std::is_pod_v<cache_type<1>>) return true;
+                else if constexpr ((numArgs >= 1) && !std::is_pod_v<cache_type<0>>) return true;
+                else return false;
+            }   else return false;
+        };
+
+        static constexpr bool requires_undo_caching = requires_undo_caching_impl();
         static constexpr auto cache_size_total = CacheSize();
-        
-        static void perform_caching(const any* begin, char* ptr) {
+        template<size_t skipFirstN = 0> static void perform_caching(const any* begin, char* ptr) {
             if constexpr (numArgs > 0) {
                 char(&buffer)[cache_size_total] = *reinterpret_cast<char(*)[cache_size_total]>(ptr);
-                if constexpr (numArgs >= 16) new (static_cast<void*>(&buffer[CacheSize<15>()])) cache_type<15>(begin[15].cast<cache_type<15>>());
-                if constexpr (numArgs >= 15) new (static_cast<void*>(&buffer[CacheSize<14>()])) cache_type<14>(begin[14].cast<cache_type<14>>());
-                if constexpr (numArgs >= 14) new (static_cast<void*>(&buffer[CacheSize<13>()])) cache_type<13>(begin[13].cast<cache_type<13>>());
-                if constexpr (numArgs >= 13) new (static_cast<void*>(&buffer[CacheSize<12>()])) cache_type<12>(begin[12].cast<cache_type<12>>());
-                if constexpr (numArgs >= 12) new (static_cast<void*>(&buffer[CacheSize<11>()])) cache_type<11>(begin[11].cast<cache_type<11>>());
-                if constexpr (numArgs >= 11) new (static_cast<void*>(&buffer[CacheSize<10>()])) cache_type<10>(begin[10].cast<cache_type<10>>());
-                if constexpr (numArgs >= 10) new (static_cast<void*>(&buffer[CacheSize<9>()])) cache_type<9>(begin[9].cast<cache_type<9>>());
-                if constexpr (numArgs >= 9) new (static_cast<void*>(&buffer[CacheSize<8>()])) cache_type<8>(begin[8].cast<cache_type<8>>());
-                if constexpr (numArgs >= 8) new (static_cast<void*>(&buffer[CacheSize<7>()])) cache_type<7>(begin[7].cast<cache_type<7>>());
-                if constexpr (numArgs >= 7) new (static_cast<void*>(&buffer[CacheSize<6>()])) cache_type<6>(begin[6].cast<cache_type<6>>());
-                if constexpr (numArgs >= 6) new (static_cast<void*>(&buffer[CacheSize<5>()])) cache_type<5>(begin[5].cast<cache_type<5>>());
-                if constexpr (numArgs >= 5) new (static_cast<void*>(&buffer[CacheSize<4>()])) cache_type<4>(begin[4].cast<cache_type<4>>());
-                if constexpr (numArgs >= 4) new (static_cast<void*>(&buffer[CacheSize<3>()])) cache_type<3>(begin[3].cast<cache_type<3>>());
-                if constexpr (numArgs >= 3) new (static_cast<void*>(&buffer[CacheSize<2>()])) cache_type<2>(begin[2].cast<cache_type<2>>());
-                if constexpr (numArgs >= 2) new (static_cast<void*>(&buffer[CacheSize<1>()])) cache_type<1>(begin[1].cast<cache_type<1>>());
-                if constexpr (numArgs >= 1) new (static_cast<void*>(&buffer[CacheSize<0>()])) cache_type<0>(begin[0].cast<cache_type<0>>());
+                if constexpr (numArgs >= 16 && skipFirstN < 16) new (static_cast<void*>(&buffer[CacheSize<15>()])) cache_type<15>(begin[15].cast<cache_type<15>>());
+                if constexpr (numArgs >= 15 && skipFirstN < 15) new (static_cast<void*>(&buffer[CacheSize<14>()])) cache_type<14>(begin[14].cast<cache_type<14>>());
+                if constexpr (numArgs >= 14 && skipFirstN < 14) new (static_cast<void*>(&buffer[CacheSize<13>()])) cache_type<13>(begin[13].cast<cache_type<13>>());
+                if constexpr (numArgs >= 13 && skipFirstN < 13) new (static_cast<void*>(&buffer[CacheSize<12>()])) cache_type<12>(begin[12].cast<cache_type<12>>());
+                if constexpr (numArgs >= 12 && skipFirstN < 12) new (static_cast<void*>(&buffer[CacheSize<11>()])) cache_type<11>(begin[11].cast<cache_type<11>>());
+                if constexpr (numArgs >= 11 && skipFirstN < 11) new (static_cast<void*>(&buffer[CacheSize<10>()])) cache_type<10>(begin[10].cast<cache_type<10>>());
+                if constexpr (numArgs >= 10 && skipFirstN < 10) new (static_cast<void*>(&buffer[CacheSize<9>()])) cache_type<9>(begin[9].cast<cache_type<9>>());
+                if constexpr (numArgs >= 9 && skipFirstN < 9) new (static_cast<void*>(&buffer[CacheSize<8>()])) cache_type<8>(begin[8].cast<cache_type<8>>());
+                if constexpr (numArgs >= 8 && skipFirstN < 8) new (static_cast<void*>(&buffer[CacheSize<7>()])) cache_type<7>(begin[7].cast<cache_type<7>>());
+                if constexpr (numArgs >= 7 && skipFirstN < 7) new (static_cast<void*>(&buffer[CacheSize<6>()])) cache_type<6>(begin[6].cast<cache_type<6>>());
+                if constexpr (numArgs >= 6 && skipFirstN < 6) new (static_cast<void*>(&buffer[CacheSize<5>()])) cache_type<5>(begin[5].cast<cache_type<5>>());
+                if constexpr (numArgs >= 5 && skipFirstN < 5) new (static_cast<void*>(&buffer[CacheSize<4>()])) cache_type<4>(begin[4].cast<cache_type<4>>());
+                if constexpr (numArgs >= 4 && skipFirstN < 4) new (static_cast<void*>(&buffer[CacheSize<3>()])) cache_type<3>(begin[3].cast<cache_type<3>>());
+                if constexpr (numArgs >= 3 && skipFirstN < 3) new (static_cast<void*>(&buffer[CacheSize<2>()])) cache_type<2>(begin[2].cast<cache_type<2>>());
+                if constexpr (numArgs >= 2 && skipFirstN < 2) new (static_cast<void*>(&buffer[CacheSize<1>()])) cache_type<1>(begin[1].cast<cache_type<1>>());
+                if constexpr (numArgs >= 1 && skipFirstN < 1) new (static_cast<void*>(&buffer[CacheSize<0>()])) cache_type<0>(begin[0].cast<cache_type<0>>());
+            }
+        };
+        template<size_t which = 0> static void supplement_caching(GL::any const& item, char* ptr) {
+            if constexpr (numArgs > 0) {
+                char(&buffer)[cache_size_total] = *reinterpret_cast<char(*)[cache_size_total]>(ptr);
+                if constexpr (std::is_same_v<cache_type<which>, GL::any>)                  
+                    new (static_cast<void*>(&buffer[CacheSize<which>()])) cache_type<which>(item.cast<cache_type<which>>(), true);                
+                else if constexpr (std::is_same_v<cache_type<which>, GL::atomic_any>)
+                    new (static_cast<void*>(&buffer[CacheSize<which>()])) cache_type<which>(item.cast<cache_type<which>>(), true);
+                else 
+                    new (static_cast<void*>(&buffer[CacheSize<which>()])) cache_type<which>(item.cast<cache_type<which>>());                
             }
         };
         static void undo_caching(char* ptr) {

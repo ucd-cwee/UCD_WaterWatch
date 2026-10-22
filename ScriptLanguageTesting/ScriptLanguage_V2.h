@@ -19084,7 +19084,7 @@ namespace GL {
 												const decltype(ToDo)* _to_do;
 												iterType _begin;
 
-												static void DoTask(GL::parallel::impl::job_argument const& _args) {
+												static void DoTask(GL::parallel::impl::job_argument& _args) {
 													IterData* data = reinterpret_cast<IterData*>(_args.task_memory);
 													iterType& iter = *static_cast<iterType*>(_args.group_memory);
 													if (_args.group_index == 0) {
@@ -19170,7 +19170,7 @@ namespace GL {
 												const decltype(ToDo)* _to_do;
 												iterType _begin;
 
-												static void DoTask(GL::parallel::impl::job_argument const& _args) {
+												static void DoTask(GL::parallel::impl::job_argument& _args) {
 													IterData* data = reinterpret_cast<IterData*>(_args.task_memory);
 													iterType& iter = *static_cast<iterType*>(_args.group_memory);
 													if (_args.group_index == 0) {

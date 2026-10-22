@@ -323,24 +323,19 @@ namespace GL {
 						}
 
 						// ... and do this group's jobs ...
-						size_t local_job_index = task.group_job_offset;
-						size_t local_group_index = 0;
-						size_t end_index = task.group_job_end;
-
-						for (; local_job_index < end_index; ++local_job_index, ++local_group_index) {
-							// You may still need to pass these if task.task requires them updated inside
-							args.job_index = local_job_index;
-							args.group_index = local_group_index;
-							try {
+						size_t total_jobs = task.group_job_end - task.group_job_offset;
+						size_t base_offset = task.group_job_offset;
+						try {
+							for (args.group_index = 0; args.group_index < total_jobs; ++args.group_index) {
+								args.job_index = base_offset + args.group_index;
 								task.task(args);
 							}
-							catch (...) {
-								task.ctx->catch_exception();
-								break;
-							}
 						}
-						args.job_index = local_job_index;
-						args.group_index = local_group_index;
+						catch (...) {
+							task.ctx->catch_exception();
+						}
+						args.job_index = base_offset + total_jobs;
+						args.group_index = total_jobs;
 
 						// ... and finally deallocate the shared group memory
 						if (args.group_memory && task.group_end_job) task.group_end_job(args.group_memory);
@@ -366,7 +361,7 @@ namespace GL {
 			struct waiting_error {};
 
 			// potentially (not always) called by the main thread
-			void work(const dispatch_context* parentCtx = nullptr) {
+			void work(const parallel::impl::dispatch_context* parentCtx = nullptr) {
 				size_t threadID{ util::get_thread_id() }, sizeOfData{ 0 };
 				void* data{ nullptr };
 				thread_task task; std::memset(&task, 0, sizeof(thread_task));
@@ -403,92 +398,6 @@ namespace GL {
 			};
 
 			void DoDispatch(thread_task job, size_t groupSize, size_t jobCount) {
-#if 0
-				if (jobCount > (32 * internal_state.numThreads)) { 	
-					// if there are enough jobs, then it is worth spending a few extra moments distributing jobs based on the "effectiveness" of the hyperthreads. Not all threads are built equal, 
-					// and some have 1/2 or worse of the performance of others. This strategy attempted to measure the performance at start-up, and then uses that to divy-up jobs. 
-#if 1
-#if 1
-					job.group_job_offset = 0;
-					long long job_remaining = jobCount;
-					size_t groupID = 0;
-					for (size_t thread_index = 0; (thread_index < internal_state.numThreads) && (job_remaining > 0); ++thread_index) {
-						long long num_jobs = std::min<long long>(job_remaining, (long long)(unsigned long long)std::round(static_cast<double>(jobCount) * internal_state.threads[thread_index].relative_speed));
-
-						// submit groups evenly into the thread pool:
-						for (; ; ) { // groupID < groupCount
-							job.group_id = groupID++;							
-							job.group_job_end = std::min(job.group_job_offset + groupSize, jobCount);
-							if (job.group_job_offset >= job.group_job_end) {								
-								break;
-							}
-							else { // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.	
-								internal_state.jobQueue.push(internal_state.threads[thread_index].thread_index, job);
-								num_jobs -= groupSize;
-								job_remaining -= groupSize;								
-								job.group_job_offset += groupSize;
-							}
-							if (num_jobs <= 0) break;
-						}
-					}
-					while (job_remaining > 0) {
-						job.group_id = groupID++;
-						job.group_job_end = std::min(job.group_job_offset + groupSize, jobCount);
-						if (job.group_job_offset >= job.group_job_end) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.				
-						internal_state.jobQueue.push(job);
-						job.group_job_offset += groupSize;
-					}
-#else
-					size_t 
-						max_job_num = 0, 
-						thread_id;
-					job.group_id = 0;
-
-					for (size_t thread_index = 0; thread_index < internal_state.numThreads; ++thread_index) {
-						thread_id = internal_state.threads[thread_index].thread_index; //  thread_index% internal_state.numThreads;
-						max_job_num = std::min<long long>(jobCount, max_job_num + std::round(static_cast<double>(jobCount) * internal_state.threads[thread_index].relative_speed));
-
-						// submit groups evenly into the thread pool:
-						for (; ; ++job.group_id) { // groupID < groupCount
-							// For each group, generate one real job:
-							job.group_job_offset = job.group_id * groupSize;
-							job.group_job_end = std::min(job.group_job_offset + groupSize, max_job_num);
-							if (job.group_job_offset >= job.group_job_end) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.
-							internal_state.jobQueue.push(thread_id, job);
-						}
-					}
-					for (; ; ++job.group_id) { // groupID < groupCount
-	                    // For each group, generate one real job:
-						job.group_job_offset = job.group_id * groupSize;
-						job.group_job_end = std::min(job.group_job_offset + groupSize, jobCount);
-						if (job.group_job_offset >= job.group_job_end) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.
-						internal_state.jobQueue.push(job);
-					}
-#endif
-#else
-					size_t
-						thread_counter{ GL::util::get_thread_id() % internal_state.numThreads };
-					size_t
-						submission_thread{ internal_state.threads[thread_counter].thread_index }
-					    , max_job_num{ static_cast<size_t>(static_cast<double>(jobCount) * internal_state.threads[thread_counter].relative_speed) };
-
-					for (job.group_id = 0, job.group_job_offset = 0; ; ++job.group_id) {
-						// For each group, generate one real job:					
-						job.group_job_end = std::min(job.group_job_offset + groupSize, jobCount);
-						if (job.group_job_offset >= job.group_job_end) break; // this is how we know we've produced enough job groups to cover the number of jobs requested, and no more.
-						internal_state.jobQueue.push(submission_thread, job);
-						job.group_job_offset += groupSize;
-
-
-						if (job.group_job_end > max_job_num) {
-							thread_counter = (thread_counter + 1) % internal_state.numThreads;
-							submission_thread = internal_state.threads[thread_counter].thread_index;
-							max_job_num += static_cast<size_t>(static_cast<double>(jobCount) * internal_state.threads[thread_counter].relative_speed);													
-						}
-					}
-#endif
-				} else 
-#endif
 				{
 					for (job.group_id = 0, job.group_job_offset = 0; ; ++job.group_id) {
 						// For each group, generate one real job:						
@@ -646,9 +555,9 @@ namespace GL {
 			};
 
 			void Dispatch(
-				dispatch_context& ctx,
+				parallel::impl::dispatch_context& ctx,
 				size_t jobCount,
-				void (*Task)(job_argument const&),
+				void (*Task)(job_argument&),
 				void* task_memory,
 				size_t sharedmemory_size,
 				void (*group_start_job)(void* const&), // callback func with memory for type T
@@ -727,9 +636,9 @@ namespace GL {
 			};
 
 			void Dispatch(
-				dispatch_context& ctx,
+				parallel::impl::dispatch_context& ctx,
 				size_t jobCount,
-				void (*Task)(job_argument const&),
+				void (*Task)(job_argument&),
 				void* task_memory
 			) noexcept {
 				if (jobCount == 0) { return; }
@@ -805,8 +714,8 @@ namespace GL {
 			};
 
 			void DispatchOnce(
-				dispatch_context& ctx,
-				void (*Task)(job_argument const&),
+				parallel::impl::dispatch_context& ctx,
+				void (*Task)(job_argument&),
 				void* task_memory
 			) noexcept {
 				initialize_if_necessary();
@@ -871,7 +780,7 @@ namespace GL {
 				}
 			};
 
-			void Wait(dispatch_context& ctx, bool rethrow) {				
+			void Wait(parallel::impl::dispatch_context& ctx, bool rethrow) {
 				while (ctx.is_busy()) { // Do work					
 					++wait_depth; // allows detection of when job dispatch may be from within an existing job				
 					internal_state.wakeCondition.notify_all(); // Wake any threads that might be sleeping:
@@ -1017,7 +926,7 @@ namespace GL {
 				struct waiting_error {};
 
 				// potentially (not always) called by the main thread
-				void work(const dispatch_context* parentCtx = nullptr) {
+				void work(const parallel::impl::dispatch_context* parentCtx = nullptr) {
 					size_t threadID{ util::get_thread_id() }, sizeOfData{ 0 };
 					void* data{ nullptr };
 					thread_task task; std::memset(&task, 0, sizeof(thread_task));
@@ -1209,9 +1118,9 @@ namespace GL {
 				};
 
 				void Dispatch(
-					dispatch_context& ctx,
+					parallel::impl::dispatch_context& ctx,
 					size_t jobCount,
-					void (*Task)(job_argument const&),
+					void (*Task)(job_argument&),
 					void* task_memory,
 					size_t sharedmemory_size,
 					void (*group_start_job)(void* const&), // callback func with memory for type T
@@ -1221,7 +1130,7 @@ namespace GL {
 					initialize_if_necessary();
 
 					// if a job dispatch is within an existing job, groupCount needs to narrow down to prevent overflow.
-					size_t groupCount = std::min(internal_state.numThreads * 32, static_cast<size_t>(jobCount));
+					size_t groupCount = 1;// std::min(internal_state.numThreads * 32, static_cast<size_t>(jobCount));
 					switch (wait_depth) {
 					case 0: break; // internal_state.numThreads << 3; break;
 						//case 1: groupCount = internal_state.numThreads << 0; break;
@@ -1290,16 +1199,16 @@ namespace GL {
 				};
 
 				void Dispatch(
-					dispatch_context& ctx,
+					parallel::impl::dispatch_context& ctx,
 					size_t jobCount,
-					void (*Task)(job_argument const&),
+					void (*Task)(job_argument&),
 					void* task_memory
 				) noexcept {
 					if (jobCount == 0) { return; }
 					initialize_if_necessary();
 
 					// if a job dispatch is within an existing job, groupCount needs to narrow down to prevent overflow.
-					size_t groupCount = std::min(internal_state.numThreads * 32, static_cast<size_t>(jobCount));
+					size_t groupCount = 1;// std::min(internal_state.numThreads * 32, static_cast<size_t>(jobCount));
 					switch (wait_depth) {
 					case 0: break; // internal_state.numThreads << 3; break;
 						//case 1: groupCount = internal_state.numThreads << 0; break;
@@ -1368,8 +1277,8 @@ namespace GL {
 				};
 
 				void DispatchOnce(
-					dispatch_context& ctx,
-					void (*Task)(job_argument const&),
+					parallel::impl::dispatch_context& ctx,
+					void (*Task)(job_argument&),
 					void* task_memory
 				) noexcept {
 					initialize_if_necessary();
@@ -1434,14 +1343,14 @@ namespace GL {
 					}
 				};
 
-				void Wait(dispatch_context& ctx, bool rethrow) {
+				void Wait(parallel::impl::dispatch_context& ctx, bool rethrow) {
 					internal_state.wakeCondition.notify_all(); // Wake any threads that might be sleeping. 
 					if (internal_state.threads[0].thread_index == GL::util::get_thread_id()) {
 						// the single_threaded thread is awaiting for the single_threaded job thread to complete. This is impossible and requires us trying to work on another job. 
 						while (ctx.is_busy()) { // Do work					
 							++wait_depth; // allows detection of when job dispatch may be from within an existing job				
 							internal_state.wakeCondition.notify_all(); // Wake any threads that might be sleeping:
-							work(&ctx);
+							single_threaded::impl::work(&ctx);
 							--wait_depth; // allows detection of when job dispatch may be from within an existing job
 						}
 						if (rethrow) ctx.try_rethrow_exception();
