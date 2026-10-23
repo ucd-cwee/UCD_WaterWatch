@@ -44,5 +44,6 @@
     <ClInclude Include="array_allocator.h" />
     <ClInclude Include="atomic_uint_stack.h" />
     <ClInclude Include="ParallelTasks.h" />
+    <ClInclude Include="FunctionWrapper.h" />
   </ItemGroup>
 </Project>

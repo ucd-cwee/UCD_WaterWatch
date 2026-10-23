@@ -29,6 +29,7 @@
 #include "scripting.h"
 #include "datetime.h"
 #include "array_allocator.h"
+#include "FunctionWrapper.h"
 
 
 namespace GL {
@@ -257,55 +258,53 @@ namespace GL {
 
 int main() {
     // pre-warm the thread
-    if (1) {
-        GL::GPU::matrix<float> LHS = GL::GPU::matrix<float>::constant(5, 100, 100);
-        GL::GPU::matrix<float> RHS = GL::GPU::matrix<float>::constant(6, 100, 100);
-        auto task = GL::parallel::single_threaded::async([&LHS, &RHS]() -> GL::GPU::matrix<float> {
+    if (0) {
+        auto LHS = GL::any::instance(GL::GPU::matrix<float>::constant(5, 100, 100));
+        auto RHS = GL::any::instance(GL::GPU::matrix<float>::constant(6, 100, 100));
+        auto task = GL::parallel::single_threaded::tasks::async([](GL::GPU::matrix<float> const& LHS, GL::GPU::matrix<float> const& RHS) -> GL::GPU::matrix<float> {
             return LHS * RHS;
-        });
+        }, LHS, RHS);
         task.get_ref();
     }
     while (true) {
-        if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED gpu_job 0.25"); false) {
-            size_t len_bytes = 100;
-            auto job1 = GL::parallel::single_threaded::async([&len_bytes]() {
-                return len_bytes;
-            });
-            auto job2 = GL::parallel::single_threaded::async([job1]() {
-                return GL::parallel::single_threaded::async([job1]() {
-                    return (float)job1.get_ref();
-                }).get();
-            });
-            auto job3 = GL::parallel::single_threaded::async([job2]() {
-                std::cout << job2.get_ref() << std::endl;
+        if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED"); true) {
+            GL::parallel::single_threaded::tasks::async([](GL::any const& rhs) -> GL::any {
+                return rhs;
+            }, GL::any::instance(GL::make_shared<GL::stopwatch>())).and_then([](GL::any const& rhs) -> GL::any {
+                return GL::parallel::single_threaded::tasks::async([](GL::any const& rhs) -> GL::any {
+                    return rhs;
+                }, (GL::any)rhs).get_any();
+            }).and_then([](GL::stopwatch& rhs) {
+                long double s = rhs.stop();
+                std::cout << GL::printf("_ST_: %f s\n", (float)s);
             });
         }
-        if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED gpu_job 0.5"); false) {
-            size_t len_bytes = 100;
-            GL::parallel::single_threaded::async([&len_bytes]() {
-                return len_bytes;
-            }).and_then([](size_t& rhs) {
-                return GL::parallel::single_threaded::async([rhs]() {
-                    return (float)rhs;
-                }).get();
-            }).and_then([](float& rhs) {
-                std::cout << rhs << std::endl;
+        if (auto sw = GL::stopwatch::debug_timer("MULTI_THREADED"); true) {
+            GL::parallel::tasks::async([](GL::any const& rhs) -> GL::any {
+                return rhs;
+            }, GL::any::instance(GL::make_shared<GL::stopwatch>())).and_then([](GL::any const& rhs) -> GL::any {
+                return GL::parallel::tasks::async([](GL::any const& rhs) -> GL::any {
+                    return rhs;
+                }, (GL::any)rhs).get_any();
+            }).and_then([](GL::stopwatch& rhs) {
+                long double s = rhs.stop();
+                std::cout << GL::printf("_MT_: %f s\n", (float)s);
             });
         }
-        if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED gpu_job 3"); false) {
-            auto job_a = GL::parallel::single_threaded::async([]() {
+        if (auto sw = GL::stopwatch::debug_timer("SINGLE_THREADED gpu_job"); true) {
+            auto job_a = GL::parallel::single_threaded::tasks::async([]() {
                 return GL::GPU::matrix<float>::constant(5, 10, 10);
             });
-            auto job_b = GL::parallel::single_threaded::async([]() {
+            auto job_b = GL::parallel::single_threaded::tasks::async([]() {
                 return GL::GPU::matrix<float>::constant(6, 10, 10);
             });
-            GL::parallel::single_threaded::async([job_a, job_b]() {
-                return job_a.get_ref() * job_b.get_ref();
-            }).and_then([](GL::GPU::matrix<float>& job_mult) {
+            GL::parallel::single_threaded::tasks::async([](GL::GPU::matrix<float> const& lhs, GL::GPU::matrix<float> const& rhs) {
+                return lhs * rhs;
+            }, job_a.get_any(), job_b.get_any()).and_then([](GL::GPU::matrix<float>& job_mult) {
                 if (auto read = job_mult.read()) {
                     std::cout << read[0] << std::endl;
                 }
-            });
+            }).wait();
         };
 
         //GL::value progress{ 0 };
@@ -386,17 +385,17 @@ int main() {
 
         std::cout << GL::parallel::tasks::async([]() -> GL::millisecond {
             return GL::millisecond(1'000);
-        })->get() << std::endl;
+        }).get() << std::endl;
         std::cout << GL::parallel::tasks::async(0ull, 10'000ull, []() -> GL::millisecond {
             return GL::millisecond(1'000);
-        })->get() << std::endl;
+        }).get() << std::endl;
 
         while (1) {
             if (1){
-                auto task1 = GL::parallel::tasks::do_task([]() -> GL::any {
+                auto task1 = GL::parallel::tasks::async([]() -> GL::any {
                     return GL::any::instance(GL::foot(100.0f));// GL::GPU::matrix<float>::constant(0, 1000, 1000));
                 });
-                auto task2 = GL::parallel::single_threaded::tasks::do_task([]() -> GL::any {
+                auto task2 = GL::parallel::single_threaded::tasks::async([]() -> GL::any {
                     return GL::any::instance(GL::foot(100.0f));// GL::GPU::matrix<float>::constant(0, 1000, 1000));
                 });
                 task1.wait();
@@ -404,7 +403,7 @@ int main() {
 
                 while (1) {
                     GL::stopwatch sw;
-                    while (sw.check() < 1.0l){
+                    while (sw.check() < 0.01l){
                         task1 = task1.and_then([](GL::any const& from) -> GL::any {
                             from.cast<GL::foot>() += 1;// *= 1.000001;
                             //from.cast<GL::GPU::matrix<float>&>() = from.cast<GL::GPU::matrix<float>&>().sin();
@@ -414,7 +413,7 @@ int main() {
                     std::cout << "MT: " << task1.get_any().cast<GL::foot>() << std::endl;
 
                     sw.reset();
-                    while (sw.check() < 1.0l){
+                    while (sw.check() < 0.01l){
                         task2 = task2.and_then([](GL::any const& from) -> GL::any {
                             from.cast<GL::foot>() += 1;//*= 1.000001;
                             //from.cast<GL::GPU::matrix<float>&>() = from.cast<GL::GPU::matrix<float>&>().sin();
@@ -434,20 +433,20 @@ int main() {
                     //std::array<GL::parallel::tasks::iTask, 1000> tasks;
                     for (int i = 0; i < 1'000; ++i) {
                         // handles the type conversions automatically before type erasure
-                        /*tasks[i] = */GL::parallel::tasks::do_task([](double i) {
+                        /*tasks[i] = */GL::parallel::tasks::async([](double i) {
                             return i;
                         }, i);
                     }
-                    /*auto task = */GL::parallel::tasks::do_tasks(0, 40'000, +[](size_t const& i, GL::string const& str)/* -> size_t*/ {
+                    /*auto task = */GL::parallel::tasks::async(0, 40'000, +[](size_t const& i, GL::string const& str)/* -> size_t*/ {
                         // std::cout << i << std::endl;
                         return i;
                         }, std::string_view("TEST"));// .wait();
                     //std::cout << task.get() << std::endl;
 
-                    GL::parallel::tasks::do_tasks(0, 40'000, [](size_t const& i) -> long {
+                    GL::parallel::tasks::async(0, 40'000, [](size_t const& i) -> long {
                         //std::cout << "FIRST\n";
                         return 1;
-                    }).and_thens(0, 40'000, [](size_t const& i, long const& r) -> float {
+                    }).and_then(0, 40'000, [](size_t const& i, long const& r) -> float {
                         if (r != 1) std::cout << "SECOND\n";
                         return 10.0f;
                     }).and_then([](GL::any const& r) -> GL::any {
@@ -585,19 +584,19 @@ int main() {
 
                     for (int i = 0; i < 1'000; ++i) {
                         // handles the type conversions automatically before type erasure
-                        /*tasks[i] = */GL::parallel::single_threaded::tasks::do_task([](double i) {
+                        /*tasks[i] = */GL::parallel::single_threaded::tasks::async([](double i) {
                             return i;
                         }, i);
                     }
-                    /*auto task = */GL::parallel::single_threaded::tasks::do_tasks(0, 40'000, +[](size_t const& i, GL::string const& str)/* -> size_t*/ {
+                    /*auto task = */GL::parallel::single_threaded::tasks::async(0, 40'000, +[](size_t const& i, GL::string const& str)/* -> size_t*/ {
                         // std::cout << i << std::endl;
                         return i;
                     }, std::string_view("TEST"));//.wait();
 
-                    GL::parallel::single_threaded::tasks::do_tasks(0, 40'000, [](size_t const& i) -> long {
+                    GL::parallel::single_threaded::tasks::async(0, 40'000, [](size_t const& i) -> long {
                         //std::cout << "FIRST\n";
                         return 1;
-                    }).and_thens(0, 40'000, [](size_t const& i, long const& r) -> float {
+                    }).and_then(0, 40'000, [](size_t const& i, long const& r) -> float {
                         if (r != 1) std::cout << "SECOND\n";
                         return 10.0f;
                     }).and_then([](GL::any const& r) -> GL::any {
@@ -614,7 +613,7 @@ int main() {
 
 
         // casting is automatic for all of these
-        auto job123 = GL::parallel::async([]() -> GL::millisecond {
+        auto job123 = GL::parallel::tasks::async([]() -> GL::millisecond {
             std::cout << "First...\n";
             return GL::millisecond(1'000);
         });
@@ -624,9 +623,9 @@ int main() {
             std::cout << "Second...\n";
             return t0;
         });
-        auto job345 = job234.and_then(0, 9'000, [](size_t i, GL::millisecond& t0, GL::parallel::job_base& parent) -> GL::any {
-            t0 += 1;
-            return parent.result;
+        auto job345 = job234.and_then(0, 9'000, [](size_t const& i, GL::any const& t0) -> GL::any {
+            t0.cast<GL::millisecond>() += 1;
+            return t0;
         });
         auto job456 = job345.and_then([](GL::any const& t0) {
             using namespace GL::literals;
@@ -3249,28 +3248,28 @@ unix_s_2Default.argument_error()
         []() -> bool { return true; },
         []() {
             // casting is automatic for all of these
-            auto task_sequence = GL::parallel::async([]() -> GL::millisecond {
-                std::cout << "First...\n";
-                return GL::millisecond(0);
-            }).and_then([](GL::second t0) -> GL::millisecond {
-                std::cout << "Second...\n";
-                return t0;
-            }).and_then(0, 10'000, [](size_t i, GL::millisecond& t0, GL::parallel::job_base& parent) -> GL::any {
-                t0 += 1;
-                return parent.result;
-            }).and_then([](GL::any const& t0) {
-                if (t0.cast<GL::millisecond>() != 10'000_ms) throw "SHOULD HAVE MATCHED";
-                std::cout << "Third and done.\n";
-            });
+            //auto task_sequence = GL::parallel::tasks::async([]() -> GL::millisecond {
+            //    std::cout << "First...\n";
+            //    return GL::millisecond(0);
+            //}).and_then([](GL::second t0) -> GL::millisecond {
+            //    std::cout << "Second...\n";
+            //    return t0;
+            //}).and_then(0, 10'000, [](size_t i, GL::millisecond& t0, GL::parallel::job_base& parent) -> GL::any {
+            //    t0 += 1;
+            //    return parent.result;
+            //}).and_then([](GL::any const& t0) {
+            //    if (t0.cast<GL::millisecond>() != 10'000_ms) throw "SHOULD HAVE MATCHED";
+            //    std::cout << "Third and done.\n";
+            //});
 
             GL::value progress = 0;
-            auto task_1 = GL::parallel::async(0, 10'000, [&progress]() {
-                if ((++progress).mod(1000) == 0) {
-                    std::cout << GL::printf("%i percent\n", (int)(100.0f * ((float)progress / 10'000.0f)));
-                }
-                GL::stopwatch sw; sw.reset();
-                while (sw.check() < 0.001) {}
-            });
+            //auto task_1 = GL::parallel::tasks::async(0, 10'000, [&progress]() {
+            //    if ((++progress).mod(1000) == 0) {
+            //        std::cout << GL::printf("%i percent\n", (int)(100.0f * ((float)progress / 10'000.0f)));
+            //    }
+            //    GL::stopwatch sw; sw.reset();
+            //    while (sw.check() < 0.001) {}
+            //});
 
             // casting is automatic for this
             GL::parallel::For(0, 1'000'000, [](size_t i) {});

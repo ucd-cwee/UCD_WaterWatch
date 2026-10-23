@@ -214,6 +214,7 @@
     <ClInclude Include="array_allocator.h" />
     <ClInclude Include="epoch_map.h" />
     <ClInclude Include="functions.h" />
+    <ClInclude Include="FunctionWrapper.h" />
     <ClInclude Include="Parallel.h" />
     <ClInclude Include="ParallelTasks.h" />
     <ClInclude Include="scripting.h" />

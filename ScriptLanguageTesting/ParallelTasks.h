@@ -45,6 +45,10 @@ namespace GL {
 					m_uuid;
 
 			public:
+				const unsigned long& id() const {
+					return m_uuid;
+				};
+
 				TaskBase& get_task() const noexcept {
 					if ((m_uuid & id::INV_FLAGS) > 0)
 						return id::get_id(m_uuid).data;
@@ -129,16 +133,28 @@ namespace GL {
 				Task(unsigned long uuid) : iTask(uuid) {};
 				Task() : iTask() {};
 				Task(std::nullptr_t) : iTask(nullptr) {};
-				Task(Task const& r) : iTask(r) {};
-				Task(Task&& r) noexcept : iTask(std::forward<iTask>(r)) {
-					r.m_uuid = 0;
+				Task(Task const& rhs) : iTask(rhs.id()) {
+					if (m_uuid > 0) GL::interlocked::increment(id::get_id(m_uuid).count);
 				};
-				Task& operator=(Task const& r) {
-					dynamic_cast<iTask*>(this)->operator=(r);
+				Task(Task const& rhs, bool) : iTask(rhs.id() | id::TEMPORARY) {};
+				Task(Task&& rhs) noexcept : iTask(GL::interlocked::exchange(const_cast<unsigned long&>(rhs.id()), 0ul)) {};
+				Task const& operator=(Task const& rhs) {
+					if ((this->m_uuid & id::TEMPORARY) == 0)
+						if ((this->m_uuid & id::INV_FLAGS) > 0)
+							if (GL::interlocked::decrement(id::get_id(this->m_uuid).count) == 0)
+								id::free_id(this->m_uuid);
+
+					this->m_uuid = rhs.m_uuid & id::INV_FLAGS;
+					if (this->m_uuid > 0) GL::interlocked::increment(id::get_id(this->m_uuid).count);
 					return *this;
 				};
-				Task& operator=(Task&& r) noexcept {
-					dynamic_cast<iTask*>(this)->operator=(std::forward<iTask>(r));
+				Task const& operator=(Task&& rhs) noexcept {
+					if ((this->m_uuid & id::TEMPORARY) == 0)
+						if ((this->m_uuid & id::INV_FLAGS) > 0)
+							if (GL::interlocked::decrement(id::get_id(this->m_uuid).count) == 0)
+								id::free_id(this->m_uuid);
+
+					m_uuid = GL::interlocked::exchange(const_cast<unsigned long&>(rhs.id()), 0ul);
 					return *this;
 				};
 				virtual ~Task() = default;
@@ -236,15 +252,15 @@ namespace GL {
 							// perform the call using the cached arguments
 							if (_args.job_index == 0) {
 								if constexpr (std::is_void_v<typename FunctionTraits::returnType>) 
-									(void)FunctionTraits::cached_call(static_cast<char*>(_args.group_memory));								
+									(void)FunctionTraits::cached_call(static_cast<char*>(_args.group_memory), (decltype(FunctionTraits::m_attr))static_cast<TaskBase*>(_args.task_memory)->_function_pointer);
 								else {
 									if constexpr (std::is_same_v<std::decay_t<typename FunctionTraits::returnType>, GL::any>
 										|| std::is_same_v<std::decay_t<typename FunctionTraits::returnType>, GL::atomic_any>
-									) static_cast<TaskBase*>(_args.task_memory)->_result = FunctionTraits::cached_call(static_cast<char*>(_args.group_memory));									
-									else static_cast<TaskBase*>(_args.task_memory)->_result = GL::any::instance(FunctionTraits::cached_call(static_cast<char*>(_args.group_memory)));									
+									) static_cast<TaskBase*>(_args.task_memory)->_result = FunctionTraits::cached_call(static_cast<char*>(_args.group_memory), (decltype(FunctionTraits::m_attr))static_cast<TaskBase*>(_args.task_memory)->_function_pointer);
+									else static_cast<TaskBase*>(_args.task_memory)->_result = GL::any::instance(FunctionTraits::cached_call(static_cast<char*>(_args.group_memory), (decltype(FunctionTraits::m_attr))static_cast<TaskBase*>(_args.task_memory)->_function_pointer));
 								}
 							}
-							else (void)FunctionTraits::cached_call(static_cast<char*>(_args.group_memory));							
+							else (void)FunctionTraits::cached_call(static_cast<char*>(_args.group_memory), (decltype(FunctionTraits::m_attr))static_cast<TaskBase*>(_args.task_memory)->_function_pointer);
 						}
 						else {
 							if constexpr (numProvidedArgs > 16) {}
@@ -253,7 +269,7 @@ namespace GL {
 								static_cast<TaskBase*>(_args.task_memory)->_arguments[0].cast<std::decay_t<std::tuple_element_t<0, typename FunctionTraits::argType>>>() = _args.job_index;							
 							else if constexpr (DispatchMultiple) // has a parent and potentially uses an index at the 0th index, and the parent's results at the 1st index.									
 								static_cast<TaskBase*>(_args.task_memory)->_arguments[0].cast<std::decay_t<std::tuple_element_t<0, typename FunctionTraits::argType>>>() = _args.job_index;							
-							(void)FunctionTraits::cached_call(static_cast<char*>(_args.group_memory));
+							(void)FunctionTraits::cached_call(static_cast<char*>(_args.group_memory), (decltype(FunctionTraits::m_attr))static_cast<TaskBase*>(_args.task_memory)->_function_pointer);
 						}
 					};
 					void Dispatch(TaskBase& Base) {
@@ -277,18 +293,21 @@ namespace GL {
 						Base._parent_uuid = parent.m_uuid;
 						if (auto parent_uuid = Base._parent_uuid; ((parent_uuid & id::TEMPORARY) == 0) && ((parent_uuid & id::INV_FLAGS) > 0)) GL::interlocked::increment(id::get_id(parent_uuid).count);
 						Base._function_pointer = static_cast<void*>(todo);
-						FunctionTraits traits(reinterpret_cast<decltype(FunctionTraits::m_attr)>(Base._function_pointer));
+						//FunctionTraits traits(reinterpret_cast<decltype(FunctionTraits::m_attr)>(Base._function_pointer));
 						Base._count = end - start;
 						Base._offset = start;
 						Base._ctx.callback = &Callback;
 						Base._ctx.callback_data = reinterpret_cast<void*>(static_cast<uintptr_t>(dynamic_cast<iTask*>(this)->m_uuid));
 						// if (!busy()) Dispatch(Base);
 					};
+					TaskImpl(TaskImpl const&) = delete;
+					TaskImpl(TaskImpl&&) noexcept = delete;
+					TaskImpl& operator=(TaskImpl const&) = delete;
+					TaskImpl& operator=(TaskImpl&&) noexcept = delete;
+					virtual ~TaskImpl() = default;
 
 					Task AsTask() {
-						Task out(dynamic_cast<Task*>(this)->m_uuid); // does not increment
-						dynamic_cast<Task*>(this)->m_uuid = 0; // does not decrement
-						return out;
+						return Task(GL::interlocked::exchange(const_cast<unsigned long&>(this->id()), 0ul)); // does not increment or decrement
 					};
 
 					template <size_t offset>
@@ -331,11 +350,11 @@ namespace GL {
 						};
 					};
 				};
-				template<typename Func, typename... Args> friend decltype(auto) do_task(Func const& func, Args&&...  args);
-				template<typename Func, typename... Args> friend decltype(auto) do_tasks(size_t start, size_t end, Func const& func, Args&&...  args);
+				template<typename Func, typename, typename... Args> friend decltype(auto) async(Func const& func, Args&&...  args);
+				template<typename Func, typename... Args> friend decltype(auto) async(size_t start, size_t end, Func const& func, Args&&...  args);
 
 			public:
-				template<typename Func, typename... Args> decltype(auto) and_thens(size_t start, size_t end, Func const& func, Args&&... args) {
+				template<typename Func, typename... Args> decltype(auto) and_then(size_t start, size_t end, Func const& func, Args&&... args) {
 					typedef decltype(GL::detail::function_signature(func)) function_header;
 					static_assert((function_header::is_object && std::is_empty_v< Func >) || function_header::is_static_member_function, "task must be a static function or non-capturing lambda");
 
@@ -405,7 +424,7 @@ namespace GL {
 					out.Dispatch(Base);
 					return out.AsTask();
 				};
-				template<typename Func, typename... Args> decltype(auto) and_then(Func const& func, Args&&...  args) {
+				template<typename Func, typename = std::enable_if_t<std::is_empty_v<Func>>, typename... Args> decltype(auto) and_then(Func const& func, Args&&...  args) {
 					typedef decltype(GL::detail::function_signature(func)) function_header;
 					static_assert((function_header::is_object && std::is_empty_v< Func >) || function_header::is_static_member_function, "task must be a static function or non-capturing lambda");
 
@@ -478,7 +497,7 @@ namespace GL {
 
 			};
 			// instance of an async task that can be waited on.
-			template<typename Func, typename... Args> decltype(auto) do_task(Func const& func, Args&&...  args) {
+			template<typename Func, typename = std::enable_if_t<std::is_empty_v<Func>>, typename... Args> decltype(auto) async(Func const& func, Args&&...  args) {
 				typedef decltype(GL::detail::function_signature(func)) function_header;
 				if constexpr ((function_header::is_object && std::is_empty_v< Func >) || function_header::is_static_member_function) { // function objects, e.g. auto x = [](){};
 					using traits = typename decltype(Caching_Static_Function_Caller(+func))::traits;
@@ -503,7 +522,7 @@ namespace GL {
 				}
 			};
 			// instance of an async task that can be waited on.
-			template<typename Func, typename... Args> decltype(auto) do_tasks(size_t start, size_t end, Func const& func, Args&&... args) {
+			template<typename Func, typename... Args> decltype(auto) async(size_t start, size_t end, Func const& func, Args&&... args) {
 				typedef decltype(GL::detail::function_signature(func)) function_header;
 				if constexpr ((function_header::is_object && std::is_empty_v< Func >) || function_header::is_static_member_function) { // function objects, e.g. auto x = [](){};
 					using traits = typename decltype(Caching_Static_Function_Caller(+func))::traits;
@@ -542,6 +561,10 @@ namespace GL {
 						m_uuid;
 
 				public:
+					const unsigned long& id() const {
+						return m_uuid;
+					};
+
 					TaskBase& get_task() const noexcept {
 						if ((m_uuid & id::INV_FLAGS) > 0)
 							return id::get_id(m_uuid).data;
@@ -626,16 +649,28 @@ namespace GL {
 					Task(unsigned long uuid) : iTask(uuid) {};
 					Task() : iTask() {};
 					Task(std::nullptr_t) : iTask(nullptr) {};
-					Task(Task const& r) : iTask(r) {};
-					Task(Task&& r) noexcept : iTask(std::forward<iTask>(r)) {
-						r.m_uuid = 0;
+					Task(Task const& rhs) : iTask(rhs.id()) {
+						if (m_uuid > 0) GL::interlocked::increment(id::get_id(m_uuid).count);
 					};
-					Task& operator=(Task const& r) {
-						dynamic_cast<iTask*>(this)->operator=(r);
+					Task(Task const& rhs, bool) : iTask(rhs.id() | id::TEMPORARY) {};
+					Task(Task&& rhs) noexcept : iTask(GL::interlocked::exchange(const_cast<unsigned long&>(rhs.id()), 0ul)) {};
+					Task const& operator=(Task const& rhs) {
+						if ((this->m_uuid & id::TEMPORARY) == 0)
+							if ((this->m_uuid & id::INV_FLAGS) > 0)
+								if (GL::interlocked::decrement(id::get_id(this->m_uuid).count) == 0)
+									id::free_id(this->m_uuid);
+
+						this->m_uuid = rhs.m_uuid & id::INV_FLAGS;
+						if (this->m_uuid > 0) GL::interlocked::increment(id::get_id(this->m_uuid).count);
 						return *this;
 					};
-					Task& operator=(Task&& r) noexcept {
-						dynamic_cast<iTask*>(this)->operator=(std::forward<iTask>(r));
+					Task const& operator=(Task&& rhs) noexcept {
+						if ((this->m_uuid & id::TEMPORARY) == 0)
+							if ((this->m_uuid & id::INV_FLAGS) > 0)
+								if (GL::interlocked::decrement(id::get_id(this->m_uuid).count) == 0)
+									id::free_id(this->m_uuid);
+
+						m_uuid = GL::interlocked::exchange(const_cast<unsigned long&>(rhs.id()), 0ul);
 						return *this;
 					};
 					virtual ~Task() = default;
@@ -733,15 +768,15 @@ namespace GL {
 								// perform the call using the cached arguments
 								if (_args.job_index == 0) {
 									if constexpr (std::is_void_v<typename FunctionTraits::returnType>)
-										(void)FunctionTraits::cached_call(static_cast<char*>(_args.group_memory));
+										(void)FunctionTraits::cached_call(static_cast<char*>(_args.group_memory), (decltype(FunctionTraits::m_attr))static_cast<TaskBase*>(_args.task_memory)->_function_pointer);
 									else {
 										if constexpr (std::is_same_v<std::decay_t<typename FunctionTraits::returnType>, GL::any>
 											|| std::is_same_v<std::decay_t<typename FunctionTraits::returnType>, GL::atomic_any>
-											) static_cast<TaskBase*>(_args.task_memory)->_result = FunctionTraits::cached_call(static_cast<char*>(_args.group_memory));
-										else static_cast<TaskBase*>(_args.task_memory)->_result = GL::any::instance(FunctionTraits::cached_call(static_cast<char*>(_args.group_memory)));
+											) static_cast<TaskBase*>(_args.task_memory)->_result = FunctionTraits::cached_call(static_cast<char*>(_args.group_memory), (decltype(FunctionTraits::m_attr))static_cast<TaskBase*>(_args.task_memory)->_function_pointer);
+										else static_cast<TaskBase*>(_args.task_memory)->_result = GL::any::instance(FunctionTraits::cached_call(static_cast<char*>(_args.group_memory), (decltype(FunctionTraits::m_attr))static_cast<TaskBase*>(_args.task_memory)->_function_pointer));
 									}
 								}
-								else (void)FunctionTraits::cached_call(static_cast<char*>(_args.group_memory));
+								else (void)FunctionTraits::cached_call(static_cast<char*>(_args.group_memory), (decltype(FunctionTraits::m_attr))static_cast<TaskBase*>(_args.task_memory)->_function_pointer);
 							}
 							else {
 								if constexpr (numProvidedArgs > 16) {}
@@ -750,7 +785,7 @@ namespace GL {
 									static_cast<TaskBase*>(_args.task_memory)->_arguments[0].cast<std::decay_t<std::tuple_element_t<0, typename FunctionTraits::argType>>>() = _args.job_index;
 								else if constexpr (DispatchMultiple) // has a parent and potentially uses an index at the 0th index, and the parent's results at the 1st index.									
 									static_cast<TaskBase*>(_args.task_memory)->_arguments[0].cast<std::decay_t<std::tuple_element_t<0, typename FunctionTraits::argType>>>() = _args.job_index;
-								(void)FunctionTraits::cached_call(static_cast<char*>(_args.group_memory));
+								(void)FunctionTraits::cached_call(static_cast<char*>(_args.group_memory), (decltype(FunctionTraits::m_attr))static_cast<TaskBase*>(_args.task_memory)->_function_pointer);
 							}
 						};
 						void Dispatch(TaskBase& Base) {
@@ -774,18 +809,21 @@ namespace GL {
 							Base._parent_uuid = parent.m_uuid;
 							if (auto parent_uuid = Base._parent_uuid; ((parent_uuid & id::TEMPORARY) == 0) && ((parent_uuid & id::INV_FLAGS) > 0)) GL::interlocked::increment(id::get_id(parent_uuid).count);
 							Base._function_pointer = static_cast<void*>(todo);
-							FunctionTraits traits(reinterpret_cast<decltype(FunctionTraits::m_attr)>(Base._function_pointer));
+							// FunctionTraits traits(reinterpret_cast<decltype(FunctionTraits::m_attr)>(Base._function_pointer));
 							Base._count = end - start;
 							Base._offset = start;
 							Base._ctx.callback = &Callback;
 							Base._ctx.callback_data = reinterpret_cast<void*>(static_cast<uintptr_t>(dynamic_cast<iTask*>(this)->m_uuid));
 							// if (!busy()) Dispatch(Base);
 						};
+						TaskImpl(TaskImpl const&) = delete;
+						TaskImpl(TaskImpl&&) noexcept = delete;
+						TaskImpl& operator=(TaskImpl const&) = delete;
+						TaskImpl& operator=(TaskImpl&&) noexcept = delete;
+						virtual ~TaskImpl() = default;
 
 						Task AsTask() {
-							Task out(dynamic_cast<Task*>(this)->m_uuid); // does not increment
-							dynamic_cast<Task*>(this)->m_uuid = 0; // does not decrement
-							return out;
+							return Task(GL::interlocked::exchange(const_cast<unsigned long&>(this->id()), 0ul)); // does not increment or decrement
 						};
 
 						template <size_t offset>
@@ -798,7 +836,7 @@ namespace GL {
 
 									if constexpr (std::is_same_v<std::decay_t<from_t>, GL::any> || std::is_same_v<std::decay_t<from_t>, GL::atomic_any>) {
 										// provided an "any", and therefore the type information is already lost.
-										Base._arguments[decltype(I)::value + offset] = std::forward<std::decay_t<decltype(item)>>(item);
+										Base._arguments[decltype(I)::value + offset] = std::forward<std::decay_t<from_t>>(item);
 									}
 									else if constexpr (std::is_same_v<typename GL::type_erasure::get_type< from_t >::type, typename GL::type_erasure::get_type< to_t >::type>) {
 										// the "any" casting should be able to handle this conversion automatically, since the underlying types match. 
@@ -828,16 +866,16 @@ namespace GL {
 							};
 						};
 					};
-					template<typename Func, typename... Args> friend decltype(auto) do_task(Func const& func, Args&&...  args);
-					template<typename Func, typename... Args> friend decltype(auto) do_tasks(size_t start, size_t end, Func const& func, Args&&...  args);
+					template<typename Func, typename, typename... Args> friend decltype(auto) async(Func const& func, Args&&...  args);
+					template<typename Func, typename... Args> friend decltype(auto) async(size_t start, size_t end, Func const& func, Args&&...  args);
 
 				public:
-					template<typename Func, typename... Args> decltype(auto) and_thens(size_t start, size_t end, Func const& func, Args&&... args) {
+					template<typename Func, typename... Args> decltype(auto) and_then(size_t start, size_t end, Func const& func, Args&&... args) {
 						typedef decltype(GL::detail::function_signature(func)) function_header;
 						static_assert((function_header::is_object && std::is_empty_v< Func >) || function_header::is_static_member_function, "task must be a static function or non-capturing lambda");
 
 						using traits = typename decltype(Caching_Static_Function_Caller(+func))::traits;
-						auto out = Task<typename traits::returnType>::template TaskImpl<true, ReturnType, traits, sizeof...(Args)>(start, end, +func, *this);
+						auto out{ Task<typename traits::returnType>::template TaskImpl<true, ReturnType, traits, sizeof...(Args)>(start, end, +func, *this) };
 
 						auto& Base = out.get_task();
 						if constexpr (sizeof...(Args) > 16) {
@@ -902,12 +940,12 @@ namespace GL {
 						out.Dispatch(Base);
 						return out.AsTask();
 					};
-					template<typename Func, typename... Args> decltype(auto) and_then(Func const& func, Args&&...  args) {
+					template<typename Func, typename = std::enable_if_t<std::is_empty_v<Func>>, typename... Args> decltype(auto) and_then(Func const& func, Args&&...  args) {
 						typedef decltype(GL::detail::function_signature(func)) function_header;
 						static_assert((function_header::is_object && std::is_empty_v< Func >) || function_header::is_static_member_function, "task must be a static function or non-capturing lambda");
 
 						using traits = typename decltype(Caching_Static_Function_Caller(+func))::traits;
-						auto out = Task<typename traits::returnType>::template TaskImpl<false, ReturnType, traits, sizeof...(Args)>(0, 1, +func, *this);
+						auto out{ Task<typename traits::returnType>::template TaskImpl<false, ReturnType, traits, sizeof...(Args)>(0, 1, +func, *this) };
 
 						auto& Base = out.get_task();
 						if constexpr (sizeof...(Args) > 16) {
@@ -975,7 +1013,7 @@ namespace GL {
 
 				};
 				// instance of an async task that can be waited on.
-				template<typename Func, typename... Args> decltype(auto) do_task(Func const& func, Args&&...  args) {
+				template<typename Func, typename = std::enable_if_t<std::is_empty_v<Func>>, typename... Args> decltype(auto) async(Func const& func, Args&&...  args) {
 					typedef decltype(GL::detail::function_signature(func)) function_header;
 					if constexpr ((function_header::is_object && std::is_empty_v< Func >) || function_header::is_static_member_function) { // function objects, e.g. auto x = [](){};
 						using traits = typename decltype(Caching_Static_Function_Caller(+func))::traits;
@@ -992,6 +1030,7 @@ namespace GL {
 							// no parent and no index.
 							static_assert(false, "The incorrect number of function arguments were passed to the async task");
 						}
+
 						out.Dispatch(Base);
 						return out.AsTask();
 					}
@@ -1000,7 +1039,7 @@ namespace GL {
 					}
 				};
 				// instance of an async task that can be waited on.
-				template<typename Func, typename... Args> decltype(auto) do_tasks(size_t start, size_t end, Func const& func, Args&&... args) {
+				template<typename Func, typename... Args> decltype(auto) async(size_t start, size_t end, Func const& func, Args&&... args) {
 					typedef decltype(GL::detail::function_signature(func)) function_header;
 					if constexpr ((function_header::is_object && std::is_empty_v< Func >) || function_header::is_static_member_function) { // function objects, e.g. auto x = [](){};
 						using traits = typename decltype(Caching_Static_Function_Caller(+func))::traits;
@@ -1021,6 +1060,7 @@ namespace GL {
 							Base._arguments[0] = GL::any::instance(std::decay_t<std::tuple_element_t<0, typename traits::argType>>{});
 							decltype(out)::template wrapper<1>::processPackWithIndices(Base, std::make_index_sequence<sizeof...(Args)>{}, std::forward<Args>(args)...);
 						}
+
 						out.Dispatch(Base);
 						return out.AsTask();
 					}

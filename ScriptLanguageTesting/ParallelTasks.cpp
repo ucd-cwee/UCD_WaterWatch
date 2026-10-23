@@ -15,13 +15,13 @@ namespace GL {
 				ref.data._ctx.e = nullptr;
 				ref.data._ctx.callback = nullptr;
 				ref.data._ctx.callback_data = nullptr;
-				//ref.data._result = nullptr;
+				ref.data._result = nullptr;
 				ref.data._parent_uuid = 0;
 				ref.data._function_pointer = nullptr;
-				//ref.data._arguments = {};
+				ref.data._arguments = {};
 				ref.data._count = 0;
 				ref.data._offset = 0;
-				//ref.data._job_completed = false;
+				ref.data._job_completed = false;
 				return uuid;
 			};
 			void free_id(unsigned long uuid) noexcept {
