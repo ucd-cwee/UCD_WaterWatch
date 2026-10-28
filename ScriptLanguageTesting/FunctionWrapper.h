@@ -272,7 +272,7 @@ Arity error at call of Function "%.*s" at Argument #%i "%.*s". Number of provide
                         throw std::runtime_error(err_str.to_string());
 
             // copies the buffer directly, and copies the shared_ptr with its normal protections for the underlying function
-            auto out = GL::parallel::tasks::async([](wrapper const& Buf, GL::shared_ptr<Function_Caller> Ptr) {
+            auto out = GL::parallel::async([](wrapper const& Buf, GL::shared_ptr<Function_Caller> Ptr) {
                 auto& buf = Buf.buf;
                 defer(int position = 0; ([&] { // unwrap the parameter pack and unload the non-reference data
                     if constexpr (std::is_same_v<decltype(args), any const&>)  // this constexpr if statement forces the unroll to happen without impacting performance 
@@ -298,7 +298,7 @@ Arity error at call of Function "%.*s" at Argument #%i "%.*s". Number of provide
                         return to_return;
                     }
                 }
-                }, wrapper(buf), this->ptr);
+            }, wrapper(buf), this->ptr);
             if constexpr (std::is_same_v<void, T>) {
                 return out;// .as_promise();
             }

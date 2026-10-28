@@ -6,7 +6,7 @@ namespace GL {
 		namespace id {
 			static GL::ticket_dispensor<false> tickets;
 			static GL::atomic_vector< id_ticket > slots;
-			unsigned long new_id() /*noexcept*/ {
+			unsigned long new_id() noexcept {
 				unsigned long uuid = (unsigned long)tickets.get_ticket();
 				auto& ref = slots.get_or_make(uuid);
 				// std::memset(&ref, 0, sizeof(id_ticket));
@@ -22,15 +22,10 @@ namespace GL {
 				ref.data._count = 0;
 				ref.data._offset = 0;
 				ref.data._job_completed = false;
-				unsigned int child_uuid; 
-				while (ref.data._children.try_pop(child_uuid)) {
-					//std::exit(-1);
-					throw std::runtime_error("Children was not empty!");
-				} 
 				ref.data._deferred_dispatch = nullptr;
 				return uuid;
 			};
-			void free_id(unsigned long uuid) /*noexcept*/ {
+			void free_id(unsigned long uuid) noexcept {
 				uuid &= INV_FLAGS;
 				while (uuid > 0) {
 					auto& ref = slots[uuid];
@@ -47,11 +42,6 @@ namespace GL {
 					ref.data._offset = 0;
 					ref.data._job_completed = false;
 					ref.data._deferred_dispatch = nullptr;
-					unsigned int child_uuid;
-					while (ref.data._children.try_pop(child_uuid)) {
-						//std::exit(-1); 
-						throw std::runtime_error("Children was not empty!");
-					}
 					tickets.return_ticket(uuid);
 					uuid = 0;
 					if ((parent_uuid_copy & id::INV_FLAGS) > 0)
