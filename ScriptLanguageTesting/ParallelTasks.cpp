@@ -6,7 +6,7 @@ namespace GL {
 		namespace id {
 			static GL::ticket_dispensor<false> tickets;
 			static GL::atomic_vector< id_ticket > slots;
-			unsigned long new_id() noexcept {
+			unsigned long new_id() /*noexcept*/ {
 				unsigned long uuid = (unsigned long)tickets.get_ticket();
 				auto& ref = slots.get_or_make(uuid);
 				// std::memset(&ref, 0, sizeof(id_ticket));
@@ -22,20 +22,19 @@ namespace GL {
 				ref.data._count = 0;
 				ref.data._offset = 0;
 				ref.data._job_completed = false;
+				unsigned int child_uuid; 
+				while (ref.data._children.try_pop(child_uuid)) {
+					//std::exit(-1);
+					throw std::runtime_error("Children was not empty!");
+				} 
+				ref.data._deferred_dispatch = nullptr;
 				return uuid;
 			};
-			void free_id(unsigned long uuid) noexcept {
+			void free_id(unsigned long uuid) /*noexcept*/ {
 				uuid &= INV_FLAGS;
-				if (uuid > 0) {
+				while (uuid > 0) {
 					auto& ref = slots[uuid];
-					if ((ref.data._parent_uuid & id::INV_FLAGS) > 0) {
-						if ((ref.data._parent_uuid & id::TEMPORARY) == 0)
-							if ((ref.data._parent_uuid & id::INV_FLAGS) > 0) {
-								if (GL::interlocked::decrement(id::get_id(ref.data._parent_uuid).count) == 0)
-									free_id(ref.data._parent_uuid);
-								ref.data._parent_uuid = 0;
-							}
-					}
+					unsigned long parent_uuid_copy = ref.data._parent_uuid;
 					ref.data._ctx.counter = 0;
 					ref.data._ctx.e = nullptr;
 					ref.data._ctx.callback = nullptr;
@@ -47,8 +46,17 @@ namespace GL {
 					ref.data._count = 0;
 					ref.data._offset = 0;
 					ref.data._job_completed = false;
-
+					ref.data._deferred_dispatch = nullptr;
+					unsigned int child_uuid;
+					while (ref.data._children.try_pop(child_uuid)) {
+						//std::exit(-1); 
+						throw std::runtime_error("Children was not empty!");
+					}
 					tickets.return_ticket(uuid);
+					uuid = 0;
+					if ((parent_uuid_copy & id::INV_FLAGS) > 0)
+						if (GL::interlocked::decrement(id::get_id(parent_uuid_copy & id::INV_FLAGS).count) == 0)
+							uuid = parent_uuid_copy & INV_FLAGS;
 				}
 			};
 			id_ticket& get_id(unsigned long uuid) noexcept {

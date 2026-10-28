@@ -21,6 +21,10 @@ namespace GL {
 				_parent_uuid;
 			bool
 				_job_completed;
+			GL::atomic_uint_stack
+				_children;
+			void(*_deferred_dispatch)(unsigned int, TaskBase&);
+				
 		};
 		// Declaration
 		namespace id {
@@ -29,11 +33,11 @@ namespace GL {
 			static constexpr unsigned long INV_FLAGS = ~FLAGS;
 
 			struct id_ticket {
-				size_t count;// { 0 };
-				TaskBase data;// { { 0, nullptr, nullptr, nullptr }, nullptr, 0, nullptr, {}, 0, 0 };
+				size_t count;
+				TaskBase data;
 			};
-			unsigned long new_id() noexcept;
-			void free_id(unsigned long uuid) noexcept;
+			unsigned long new_id() /*noexcept*/;
+			void free_id(unsigned long uuid) /*noexcept*/;
 			id_ticket& get_id(unsigned long uuid) noexcept;
 		};
 
@@ -93,26 +97,60 @@ namespace GL {
 				};
 
 				void wait() const {
-					if ((m_uuid & id::INV_FLAGS) > 0) {
-						auto& Base = id::get_id(m_uuid).data;
-						if (!Base._job_completed) {
-							if ((Base._parent_uuid & id::INV_FLAGS) > 0) {
-								iTask parentTask(Base._parent_uuid | id::TEMPORARY); // temporary does not invoke the shared counter
-								parentTask.wait();
+					thread_local GL::atomic_uint_stack stack;
+					unsigned int curr_uuid = m_uuid;
+					bool downward = true;
+					while ((curr_uuid & id::INV_FLAGS) > 0) {
+						if (downward) {
+							auto& Base = id::get_id(curr_uuid).data;
+							if (!Base._job_completed && Base._function_pointer) {
+								stack.push(curr_uuid);
+								if ((Base._parent_uuid & id::INV_FLAGS) > 0) {
+									curr_uuid = Base._parent_uuid | id::TEMPORARY;
+									continue;
+								}
+								else {
+									do {
+										impl::Wait(Base._ctx, true);
+									} while (Base._function_pointer && !Base._job_completed);
+								}
 							}
-							impl::Wait(Base._ctx, true);
+							downward = false;
 						}
+						else {
+							auto& Base = id::get_id(curr_uuid).data;
+							if (!Base._job_completed && Base._function_pointer) {
+								do {
+									impl::Wait(Base._ctx, true);
+								} while (Base._function_pointer && !Base._job_completed);
+							}
+						}
+						if (!stack.try_pop(curr_uuid)) curr_uuid = 0;
 					}
+
+					//if ((m_uuid & id::INV_FLAGS) > 0) {
+					//	auto& Base = id::get_id(m_uuid).data;
+					//	if (!Base._job_completed) {
+					//		if ((Base._parent_uuid & id::INV_FLAGS) > 0) {
+					//			iTask parentTask(Base._parent_uuid | id::TEMPORARY); // temporary does not invoke the shared counter
+					//			parentTask.wait();
+					//		}	
+					//		do {
+					//			impl::Wait(Base._ctx, true);
+					//		} while (Base._function_pointer && !Base._job_completed);
+					//	}
+					//}
 				};
 				bool busy() const {
 					if ((m_uuid & id::INV_FLAGS) > 0) {
 						auto& Base = id::get_id(m_uuid).data;
 						if (!Base._job_completed) {
-							if ((Base._parent_uuid & id::INV_FLAGS) > 0) {
-								iTask parentTask(Base._parent_uuid | id::TEMPORARY); // temporary does not invoke the shared counter
-								if (parentTask.busy()) return true;
-							}
-							if (Base._ctx.is_busy()) return true;
+							//if ((Base._parent_uuid & id::INV_FLAGS) > 0) {
+							//	iTask parentTask(Base._parent_uuid | id::TEMPORARY); // temporary does not invoke the shared counter
+							//	if (parentTask.busy()) return true;
+							//}
+							//if (Base._ctx.is_busy()) 
+								return true;
 						}
 					}
 					return false;
@@ -163,12 +201,10 @@ namespace GL {
 					if constexpr (!std::is_void_v<ReturnType>) {
 						auto& i = get_task();
 						if (!i._job_completed) wait();
-						if constexpr (std::is_copy_constructible_v< ReturnType>) {
-							return (ReturnType)i._result.cast<ReturnType>();
-						}
-						else {
-							return i._result.cast<ReturnType>();
-						}
+						if constexpr (std::is_copy_constructible_v< ReturnType>) 
+							return (ReturnType)i._result.cast<ReturnType>();						
+						else 
+							return i._result.cast<ReturnType>();						
 					}
 				};
 				decltype(auto) get_ref() const {
@@ -213,6 +249,14 @@ namespace GL {
 									id::free_id(Base._parent_uuid);
 								Base._parent_uuid = 0;
 							}
+
+						unsigned int child_uuid;
+						while (Base._children.try_pop(child_uuid)) {
+							iTask temp((unsigned long)child_uuid);
+							auto& child_base = id::get_id(child_uuid).data;
+							if (child_base._deferred_dispatch)
+								child_base._deferred_dispatch(child_uuid, child_base);
+						}
 					};
 					static void DoTask(impl::job_argument& _args) {
 						if (_args.group_index == 0) {
@@ -224,12 +268,12 @@ namespace GL {
 							if constexpr (numProvidedArgs >= FunctionTraits::numArgs) 
 								FunctionTraits::perform_caching<0>(&static_cast<TaskBase*>(_args.task_memory)->_arguments[0], static_cast<char*>(_args.group_memory));							
 							else if constexpr (std::is_void_v<ParentReturnType>) { // no parent...								
-								if constexpr (DispatchMultiple) // ...but potentially uses an index at the 0th index									
+								if constexpr (dispatch_multiple) // ...but potentially uses an index at the 0th index									
 									FunctionTraits::perform_caching<0>(&static_cast<TaskBase*>(_args.task_memory)->_arguments[0], static_cast<char*>(_args.group_memory));								
 							}
 							else {
 								// has a parent...
-								if constexpr (DispatchMultiple) {
+								if constexpr (dispatch_multiple) {
 									// ...and potentially uses an index at the 0th index, and the parent's results at the 1st index.
 									FunctionTraits::perform_caching<2>(&static_cast<TaskBase*>(_args.task_memory)->_arguments[0], static_cast<char*>(_args.group_memory));
 									FunctionTraits::supplement_caching<0>(static_cast<TaskBase*>(_args.task_memory)->_arguments[0], static_cast<char*>(_args.group_memory));
@@ -242,8 +286,8 @@ namespace GL {
 								}
 							}
 
-							// update the index, if this is a DispatchMultiple job
-							if constexpr (DispatchMultiple) {
+							// update the index, if this is a dispatch_multiple job
+							if constexpr (dispatch_multiple) {
 								if constexpr (numProvidedArgs > 16) {}
 								else if constexpr (numProvidedArgs >= FunctionTraits::numArgs) {}
 								else static_cast<TaskBase*>(_args.task_memory)->_arguments[0].cast<std::decay_t<std::tuple_element_t<0, typename FunctionTraits::argType>>>() = _args.job_index;								
@@ -267,14 +311,14 @@ namespace GL {
 							else if constexpr (numProvidedArgs >= FunctionTraits::numArgs) {}
 							else if constexpr (std::is_void_v<ParentReturnType>) // no parent, but potentially uses an index at the 0th index
 								static_cast<TaskBase*>(_args.task_memory)->_arguments[0].cast<std::decay_t<std::tuple_element_t<0, typename FunctionTraits::argType>>>() = _args.job_index;							
-							else if constexpr (DispatchMultiple) // has a parent and potentially uses an index at the 0th index, and the parent's results at the 1st index.									
+							else if constexpr (dispatch_multiple) // has a parent and potentially uses an index at the 0th index, and the parent's results at the 1st index.									
 								static_cast<TaskBase*>(_args.task_memory)->_arguments[0].cast<std::decay_t<std::tuple_element_t<0, typename FunctionTraits::argType>>>() = _args.job_index;							
 							(void)FunctionTraits::cached_call(static_cast<char*>(_args.group_memory), (decltype(FunctionTraits::m_attr))static_cast<TaskBase*>(_args.task_memory)->_function_pointer);
 						}
 					};
 					void Dispatch(TaskBase& Base) {
 						if (auto Count = GL::interlocked::exchange(Base._count, (decltype(Base._count))0); Count > 0) {
-							auto& ticket = id::get_id(dynamic_cast<iTask*>(this)->m_uuid);
+							auto& ticket = id::get_id(dynamic_cast<iTask*>(this)->m_uuid);		
 							GL::interlocked::increment(ticket.count);
 							impl::Dispatch(Base._ctx, Count, &DoTask, reinterpret_cast<void*>(&ticket.data), FunctionTraits::cache_size_total,
 								nullptr,
@@ -285,6 +329,10 @@ namespace GL {
 							);
 						}
 					}
+					static void DeferredDispatch(unsigned int uuid, TaskBase& Base) {
+						iTask temp(uuid | id::TEMPORARY);
+						reinterpret_cast<TaskImpl*>(&temp)->Dispatch(Base);
+					};
 
 					TaskImpl(size_t start, size_t end, decltype(FunctionTraits::m_attr) todo, Task<ParentReturnType> parent)
 						: Task(id::new_id())
@@ -361,7 +409,10 @@ namespace GL {
 					using traits = typename decltype(Caching_Static_Function_Caller(+func))::traits;
 					auto out = Task<typename traits::returnType>::template TaskImpl<true, ReturnType, traits, sizeof...(Args)>(start, end, +func, *this);
 
-					auto& Base = out.get_task();
+					auto out_id = out.id();
+					auto& out_ticket = id::get_id(out_id);
+					auto& Base = out_ticket.data;
+
 					if constexpr (sizeof...(Args) > 16) {
 						static_assert(false, "The async system cannot process a function with too many arguments");
 					}
@@ -421,7 +472,20 @@ namespace GL {
 						}
 					}
 
-					out.Dispatch(Base);
+					Base._deferred_dispatch = &decltype(out)::DeferredDispatch;					
+					GL::interlocked::increment(out_ticket.count); // its own lifespan, which may be decremented when the task goes out-of-scope
+					//GL::interlocked::increment(out_ticket.count); // child lifespan
+					auto& thisTask = this->get_task();
+					thisTask._children.push(out_id);
+					if (thisTask._job_completed) {
+						unsigned int child_uuid;
+						while (thisTask._children.try_pop(child_uuid)) {
+							iTask temp((unsigned long)child_uuid);
+							if (auto& child_base = id::get_id(child_uuid).data; child_base._deferred_dispatch)
+								child_base._deferred_dispatch(child_uuid, child_base);
+						}
+					}
+					//out.Dispatch(Base);
 					return out.AsTask();
 				};
 				template<typename Func, typename = std::enable_if_t<std::is_empty_v<Func>>, typename... Args> decltype(auto) and_then(Func const& func, Args&&...  args) {
@@ -431,7 +495,10 @@ namespace GL {
 					using traits = typename decltype(Caching_Static_Function_Caller(+func))::traits;
 					auto out = Task<typename traits::returnType>::template TaskImpl<false, ReturnType, traits, sizeof...(Args)>(0, 1, +func, *this);
 
-					auto& Base = out.get_task();
+					auto out_id = out.id();
+					auto& out_ticket = id::get_id(out_id);
+					auto& Base = out_ticket.data;
+
 					if constexpr (sizeof...(Args) > 16) {
 						static_assert(false, "The async system cannot process a function with too many arguments");
 					}
@@ -491,7 +558,21 @@ namespace GL {
 						}
 					}
 
-					out.Dispatch(Base);
+					Base._deferred_dispatch = &decltype(out)::DeferredDispatch;
+					GL::interlocked::increment(out_ticket.count); // its own lifespan, which may be decremented when the task goes out-of-scope
+					GL::interlocked::increment(out_ticket.count); // child lifespan
+					this->get_task()._children.push(out_id);
+					auto& thisTask = this->get_task();
+					thisTask._children.push(out_id);
+					if (thisTask._job_completed) {
+						unsigned int child_uuid;
+						while (thisTask._children.try_pop(child_uuid)) {
+							iTask temp((unsigned long)child_uuid);
+							if (auto& child_base = id::get_id(child_uuid).data; child_base._deferred_dispatch)
+								child_base._deferred_dispatch(child_uuid, child_base);
+						}
+					}
+					//out.Dispatch(Base);
 					return out.AsTask();
 				};
 
@@ -502,7 +583,9 @@ namespace GL {
 				if constexpr ((function_header::is_object && std::is_empty_v< Func >) || function_header::is_static_member_function) { // function objects, e.g. auto x = [](){};
 					using traits = typename decltype(Caching_Static_Function_Caller(+func))::traits;
 					auto out = Task<typename traits::returnType>::template TaskImpl<false, void, traits, sizeof...(Args)>(0ull, 1ull, +func, nullptr);
-					auto& Base = out.get_task();
+					auto out_id = out.id();
+					auto& out_ticket = id::get_id(out_id);
+					auto& Base = out_ticket.data;
 					if constexpr (sizeof...(Args) > 16) {
 						static_assert(false, "The async system cannot process a function with too many arguments");
 					}
@@ -514,6 +597,7 @@ namespace GL {
 						// no parent and no index.
 						static_assert(false, "The incorrect number of function arguments were passed to the async task");
 					}
+					//GL::interlocked::increment(out_ticket.count);
 					out.Dispatch(Base);
 					return out.AsTask();
 				}
@@ -527,7 +611,9 @@ namespace GL {
 				if constexpr ((function_header::is_object && std::is_empty_v< Func >) || function_header::is_static_member_function) { // function objects, e.g. auto x = [](){};
 					using traits = typename decltype(Caching_Static_Function_Caller(+func))::traits;
 					auto out = Task<typename traits::returnType>::template TaskImpl<true, void, traits, sizeof...(Args)>(start, end, +func, nullptr);
-					auto& Base = out.get_task();
+					auto out_id = out.id();
+					auto& out_ticket = id::get_id(out_id);
+					auto& Base = out_ticket.data;
 					if constexpr (sizeof...(Args) > 16) {
 						static_assert(false, "The async system cannot process a function with too many arguments");
 					}
@@ -543,6 +629,7 @@ namespace GL {
 						Base._arguments[0] = GL::any::instance(std::decay_t<std::tuple_element_t<0, typename traits::argType>>{});
 						decltype(out)::template wrapper<1>::processPackWithIndices(Base, std::make_index_sequence<sizeof...(Args)>{}, std::forward<Args>(args)...);
 					}
+					//GL::interlocked::increment(out_ticket.count);
 					out.Dispatch(Base);
 					return out.AsTask();
 				}
@@ -607,28 +694,61 @@ namespace GL {
 								if (GL::interlocked::decrement(id::get_id(m_uuid).count) == 0)
 									id::free_id(m_uuid);
 					};
-
 					void wait() const {
-						if ((m_uuid & id::INV_FLAGS) > 0) {
-							auto& Base = id::get_id(m_uuid).data;
-							if (!Base._job_completed) {
-								if ((Base._parent_uuid & id::INV_FLAGS) > 0) {
-									iTask parentTask(Base._parent_uuid | id::TEMPORARY); // temporary does not invoke the shared counter
-									parentTask.wait();
+						thread_local GL::atomic_uint_stack stack;
+						unsigned int curr_uuid = m_uuid;
+						bool downward = true;
+						while ((curr_uuid & id::INV_FLAGS) > 0) {
+							if (downward) {
+								auto& Base = id::get_id(curr_uuid).data;
+								if (!Base._job_completed && Base._function_pointer) {
+									stack.push(curr_uuid);
+									if ((Base._parent_uuid & id::INV_FLAGS) > 0) {
+										curr_uuid = Base._parent_uuid | id::TEMPORARY;
+										continue;
+									}
+									else {
+										do {
+											impl::Wait(Base._ctx, true);
+										} while (Base._function_pointer && !Base._job_completed);
+									}
 								}
-								impl::Wait(Base._ctx, true);
+								downward = false;
 							}
+							else {
+								auto& Base = id::get_id(curr_uuid).data;
+								if (!Base._job_completed && Base._function_pointer) {
+									do {
+										impl::Wait(Base._ctx, true);
+									} while (Base._function_pointer && !Base._job_completed);
+								}
+							}
+							if (!stack.try_pop(curr_uuid)) curr_uuid = 0;
 						}
+
+						//if ((m_uuid & id::INV_FLAGS) > 0) {
+						//	auto& Base = id::get_id(m_uuid).data;
+						//	if (!Base._job_completed) {
+						//		if ((Base._parent_uuid & id::INV_FLAGS) > 0) {
+						//			iTask parentTask(Base._parent_uuid | id::TEMPORARY); // temporary does not invoke the shared counter
+						//			parentTask.wait();
+						//		}
+						//		do {
+						//			impl::Wait(Base._ctx, true);
+						//		} while (Base._function_pointer && !Base._job_completed);
+						//	}
+						//}
 					};
 					bool busy() const {
 						if ((m_uuid & id::INV_FLAGS) > 0) {
 							auto& Base = id::get_id(m_uuid).data;
 							if (!Base._job_completed) {
-								if ((Base._parent_uuid & id::INV_FLAGS) > 0) {
-									iTask parentTask(Base._parent_uuid | id::TEMPORARY); // temporary does not invoke the shared counter
-									if (parentTask.busy()) return true;
-								}
-								if (Base._ctx.is_busy()) return true;
+								//if ((Base._parent_uuid & id::INV_FLAGS) > 0) {
+								//	iTask parentTask(Base._parent_uuid | id::TEMPORARY); // temporary does not invoke the shared counter
+								//	if (parentTask.busy()) return true;
+								//}
+								//if (Base._ctx.is_busy()) 
+								return true;
 							}
 						}
 						return false;
@@ -679,12 +799,10 @@ namespace GL {
 						if constexpr (!std::is_void_v<ReturnType>) {
 							auto& i = get_task();
 							if (!i._job_completed) wait();
-							if constexpr (std::is_copy_constructible_v< ReturnType>) {
-								return (ReturnType)i._result.cast<ReturnType>();
-							}
-							else {
-								return i._result.cast<ReturnType>();
-							}
+							if constexpr (std::is_copy_constructible_v< ReturnType>) 
+								return (ReturnType)i._result.cast<ReturnType>();							
+							else 
+								return i._result.cast<ReturnType>();							
 						}
 					};
 					decltype(auto) get_ref() const {
@@ -721,7 +839,7 @@ namespace GL {
 							iTask this_task(static_cast<unsigned long>(reinterpret_cast<uintptr_t>(_args))); // will decrement the count, and may even delete the shared job memory
 							auto& Base = this_task.get_task();
 							Base._job_completed = true;
-							
+
 							// free reference to parent
 							if ((Base._parent_uuid & id::TEMPORARY) == 0)
 								if ((Base._parent_uuid & id::INV_FLAGS) > 0) {
@@ -729,6 +847,13 @@ namespace GL {
 										id::free_id(Base._parent_uuid);
 									Base._parent_uuid = 0;
 								}
+
+							unsigned int child_uuid;
+							while (Base._children.try_pop(child_uuid)) {
+								iTask temp((unsigned long)child_uuid);
+								if (auto& child_base = id::get_id(child_uuid).data; child_base._deferred_dispatch)
+									child_base._deferred_dispatch(child_uuid, child_base);
+							}
 						};
 						static void DoTask(impl::job_argument& _args) {
 							if (_args.group_index == 0) {
@@ -790,7 +915,7 @@ namespace GL {
 						};
 						void Dispatch(TaskBase& Base) {
 							if (auto Count = GL::interlocked::exchange(Base._count, (decltype(Base._count))0); Count > 0) {
-								auto& ticket = id::get_id(dynamic_cast<iTask*>(this)->m_uuid);
+								auto& ticket = id::get_id(dynamic_cast<iTask*>(this)->m_uuid);			
 								GL::interlocked::increment(ticket.count);
 								impl::Dispatch(Base._ctx, Count, &DoTask, reinterpret_cast<void*>(&ticket.data), FunctionTraits::cache_size_total,
 									nullptr,
@@ -801,6 +926,10 @@ namespace GL {
 								);
 							}
 						}
+						static void DeferredDispatch(unsigned int uuid, TaskBase& Base) {
+							iTask temp(uuid | id::TEMPORARY);
+							reinterpret_cast<TaskImpl*>(&temp)->Dispatch(Base);
+						};
 
 						TaskImpl(size_t start, size_t end, decltype(FunctionTraits::m_attr) todo, Task<ParentReturnType> parent)
 							: Task(id::new_id())
@@ -809,12 +938,10 @@ namespace GL {
 							Base._parent_uuid = parent.m_uuid;
 							if (auto parent_uuid = Base._parent_uuid; ((parent_uuid & id::TEMPORARY) == 0) && ((parent_uuid & id::INV_FLAGS) > 0)) GL::interlocked::increment(id::get_id(parent_uuid).count);
 							Base._function_pointer = static_cast<void*>(todo);
-							// FunctionTraits traits(reinterpret_cast<decltype(FunctionTraits::m_attr)>(Base._function_pointer));
 							Base._count = end - start;
 							Base._offset = start;
 							Base._ctx.callback = &Callback;
 							Base._ctx.callback_data = reinterpret_cast<void*>(static_cast<uintptr_t>(dynamic_cast<iTask*>(this)->m_uuid));
-							// if (!busy()) Dispatch(Base);
 						};
 						TaskImpl(TaskImpl const&) = delete;
 						TaskImpl(TaskImpl&&) noexcept = delete;
@@ -877,7 +1004,10 @@ namespace GL {
 						using traits = typename decltype(Caching_Static_Function_Caller(+func))::traits;
 						auto out{ Task<typename traits::returnType>::template TaskImpl<true, ReturnType, traits, sizeof...(Args)>(start, end, +func, *this) };
 
-						auto& Base = out.get_task();
+						auto out_id = out.id();
+						auto& out_ticket = id::get_id(out_id);
+						auto& Base = out_ticket.data;
+
 						if constexpr (sizeof...(Args) > 16) {
 							static_assert(false, "The async system cannot process a function with too many arguments");
 						}
@@ -937,7 +1067,20 @@ namespace GL {
 							}
 						}
 
-						out.Dispatch(Base);
+						Base._deferred_dispatch = &decltype(out)::DeferredDispatch;
+						//GL::interlocked::increment(out_ticket.count); // its own lifespan, which may be decremented when the task goes out-of-scope
+						GL::interlocked::increment(out_ticket.count); // child lifespan
+						auto& thisTask = this->get_task();
+						thisTask._children.push(out_id);
+						if (thisTask._job_completed) {
+							unsigned int child_uuid;
+							while (thisTask._children.try_pop(child_uuid)) {
+								iTask temp((unsigned long)child_uuid);
+								if (auto& child_base = id::get_id(child_uuid).data; child_base._deferred_dispatch)
+									child_base._deferred_dispatch(child_uuid, child_base);
+							}
+						}
+						// out.Dispatch(Base);
 						return out.AsTask();
 					};
 					template<typename Func, typename = std::enable_if_t<std::is_empty_v<Func>>, typename... Args> decltype(auto) and_then(Func const& func, Args&&...  args) {
@@ -947,7 +1090,10 @@ namespace GL {
 						using traits = typename decltype(Caching_Static_Function_Caller(+func))::traits;
 						auto out{ Task<typename traits::returnType>::template TaskImpl<false, ReturnType, traits, sizeof...(Args)>(0, 1, +func, *this) };
 
-						auto& Base = out.get_task();
+						auto out_id = out.id();
+						auto& out_ticket = id::get_id(out_id);
+						auto& Base = out_ticket.data;
+
 						if constexpr (sizeof...(Args) > 16) {
 							static_assert(false, "The async system cannot process a function with too many arguments");
 						}
@@ -1007,7 +1153,20 @@ namespace GL {
 							}
 						}
 
-						out.Dispatch(Base);
+						Base._deferred_dispatch = &decltype(out)::DeferredDispatch;
+						//GL::interlocked::increment(out_ticket.count); // its own lifespan, which may be decremented when the task goes out-of-scope
+						GL::interlocked::increment(out_ticket.count); // child lifespan
+						auto& thisTask = this->get_task();
+						thisTask._children.push(out_id);
+						if (thisTask._job_completed) {
+							unsigned int child_uuid;
+							while (thisTask._children.try_pop(child_uuid)) {
+								iTask temp((unsigned long)child_uuid);
+								if (auto& child_base = id::get_id(child_uuid).data; child_base._deferred_dispatch)
+									child_base._deferred_dispatch(child_uuid, child_base);
+							}
+						}
+						// out.Dispatch(Base);
 						return out.AsTask();
 					};
 
@@ -1018,7 +1177,9 @@ namespace GL {
 					if constexpr ((function_header::is_object && std::is_empty_v< Func >) || function_header::is_static_member_function) { // function objects, e.g. auto x = [](){};
 						using traits = typename decltype(Caching_Static_Function_Caller(+func))::traits;
 						auto out = Task<typename traits::returnType>::template TaskImpl<false, void, traits, sizeof...(Args)>(0ull, 1ull, +func, nullptr);
-						auto& Base = out.get_task();
+						auto out_id = out.id();
+						auto& out_ticket = id::get_id(out_id);
+						auto& Base = out_ticket.data;
 						if constexpr (sizeof...(Args) > 16) {
 							static_assert(false, "The async system cannot process a function with too many arguments");
 						}
@@ -1030,7 +1191,7 @@ namespace GL {
 							// no parent and no index.
 							static_assert(false, "The incorrect number of function arguments were passed to the async task");
 						}
-
+						//GL::interlocked::increment(out_ticket.count);
 						out.Dispatch(Base);
 						return out.AsTask();
 					}
@@ -1044,7 +1205,9 @@ namespace GL {
 					if constexpr ((function_header::is_object && std::is_empty_v< Func >) || function_header::is_static_member_function) { // function objects, e.g. auto x = [](){};
 						using traits = typename decltype(Caching_Static_Function_Caller(+func))::traits;
 						auto out = Task<typename traits::returnType>::template TaskImpl<true, void, traits, sizeof...(Args)>(start, end, +func, nullptr);
-						auto& Base = out.get_task();
+						auto out_id = out.id();
+						auto& out_ticket = id::get_id(out_id);
+						auto& Base = out_ticket.data;
 						if constexpr (sizeof...(Args) > 16) {
 							static_assert(false, "The async system cannot process a function with too many arguments");
 						}
@@ -1060,7 +1223,7 @@ namespace GL {
 							Base._arguments[0] = GL::any::instance(std::decay_t<std::tuple_element_t<0, typename traits::argType>>{});
 							decltype(out)::template wrapper<1>::processPackWithIndices(Base, std::make_index_sequence<sizeof...(Args)>{}, std::forward<Args>(args)...);
 						}
-
+						//GL::interlocked::increment(out_ticket.count);
 						out.Dispatch(Base);
 						return out.AsTask();
 					}

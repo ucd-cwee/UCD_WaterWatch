@@ -726,7 +726,7 @@ namespace GL {
 				// context state is updated to its maximum:
 				ctx.counter.fetch_add(groupCount, std::memory_order_relaxed);
 
-				if (wait_depth > 0) {
+				if ((wait_depth > 0)/* || (groupCount <= 1)*/) {
 					// do the work directly:
 					void* data{ nullptr };
 					size_t threadID{ util::get_thread_id() }, sizeOfData{ 0 };
@@ -1144,7 +1144,7 @@ namespace GL {
 					// context state is updated to its maximum:
 					ctx.counter.fetch_add(groupCount, std::memory_order_relaxed);
 
-					if ((wait_depth > 0) /*|| (internal_state.threads[0].thread_index == GL::util::get_thread_id())*/) {
+					if ((wait_depth > 0) || (internal_state.threads[0].thread_index == GL::util::get_thread_id())) {
 						// do the work immediately
 						void* data{ nullptr };
 						size_t threadID{ util::get_thread_id() }, sizeOfData{ 0 };
@@ -1222,7 +1222,7 @@ namespace GL {
 					// context state is updated to its maximum:
 					ctx.counter.fetch_add(groupCount, std::memory_order_relaxed);
 
-					if ((wait_depth > 0) /*|| (internal_state.threads[0].thread_index == GL::util::get_thread_id())*/) {
+					if ((wait_depth > 0) || (internal_state.threads[0].thread_index == GL::util::get_thread_id())) {
 						// do the work directly:
 						void* data{ nullptr };
 						size_t threadID{ util::get_thread_id() }, sizeOfData{ 0 };
@@ -1289,7 +1289,7 @@ namespace GL {
 					// context state is updated to its maximum:
 					ctx.counter.fetch_add(groupCount, std::memory_order_relaxed);
 
-					if ((wait_depth > 0) /*|| (internal_state.threads[0].thread_index == GL::util::get_thread_id())*/) {
+					if ((wait_depth > 0) || (internal_state.threads[0].thread_index == GL::util::get_thread_id())) {
 						// do the work directly:
 						void* data{ nullptr };
 						size_t threadID{ util::get_thread_id() }, sizeOfData{ 0 };
