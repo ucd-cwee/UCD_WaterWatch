@@ -259,22 +259,35 @@ namespace GL {
 int main() {
     // pre-warm the thread
     if (1) {
-        while (true){
-            auto LHS_async = GL::parallel::single_threaded::async([](float value, unsigned int lenX, unsigned int lenY) {
-                return GL::GPU::matrix<float>::constant(value, lenX, lenY);
-            }, 5, 100, 100);
-            auto RHS_async = GL::parallel::single_threaded::async([](float value, unsigned int lenX, unsigned int lenY) {
-                return GL::GPU::matrix<float>::constant(value, lenX, lenY);
-            }, 6, 100, 100);
-            LHS_async.then([](GL::GPU::matrix<float>& lhs, GL::GPU::matrix<float>& rhs) {
-                return lhs * rhs;
-            }, RHS_async.get_any()).then([](GL::GPU::matrix<float>& mult, GL::GPU::matrix<float>& add) {
-                return mult + add;
-            }, LHS_async.get_any()).then([](GL::GPU::matrix<float>& matrix){
-                if (auto read = matrix.read()) {
-                    std::cout << read[0] << std::endl;
-                }
-            }).wait();
+#if 0
+        while (false) {
+            GL::matx<float> lhs(GL::GPU::dimensions{ 100, 100, 1 }); // async
+            GL::matx<float> rhs(GL::GPU::dimensions{ 100, 100, 1 }); // async
+            lhs = 5; // async
+            rhs = 6; // async
+            lhs *= rhs; // async
+            lhs += rhs; // async
+            std::cout << lhs[0].get() << std::endl; // spin waits
+
+            //auto LHS_async = GL::parallel::single_threaded::async([](float value, unsigned int lenX, unsigned int lenY) {
+            //    return GL::GPU::matrix<float>::constant(value, lenX, lenY);
+            //}, 5, 100, 100);
+            //auto RHS_async = GL::parallel::single_threaded::async([](float value, unsigned int lenX, unsigned int lenY) {
+            //    return GL::GPU::matrix<float>::constant(value, lenX, lenY);
+            //}, 6, 100, 100);
+            //LHS_async.then([](GL::GPU::matrix<float>& lhs, GL::GPU::matrix<float>& rhs) {
+            //    return lhs * rhs;
+            //}, RHS_async.get_any()).then([](GL::GPU::matrix<float>& mult, GL::GPU::matrix<float>& add) {
+            //    return mult + add;
+            //}, LHS_async.get_any()).then([](GL::GPU::matrix<float>& matrix){
+            //    if (auto read = matrix.read()) {
+            //        std::cout << read[0] << std::endl;
+            //    }
+            //}).wait();
+
+
+
+
 
 
 
@@ -289,7 +302,7 @@ int main() {
             //    }
             //}).wait();
         }
-
+#endif
 
 
 

@@ -8,7 +8,7 @@ namespace GL {
 			struct TaskBase {
 				impl::dispatch_context
 					_ctx; // waitable context for the job
-				GL::atomic_any
+				GL::any
 					_result;
 				void*
 					_function_pointer;
@@ -173,8 +173,8 @@ namespace GL {
 				Task(std::nullptr_t) : iTask(nullptr) {};
 				Task(Task const& rhs) : iTask(rhs.id()) { if (m_uuid > 0) GL::interlocked::increment(id::get_id(m_uuid).count); };
 				Task(Task const& rhs, bool) : iTask(rhs.id() | id::TEMPORARY) {};
-				Task(Task&& rhs) noexcept : iTask(GL::interlocked::exchange(const_cast<unsigned long&>(rhs.id()), 0ul)) {};
-				//template <typename T> Task(Task<T>&& rhs) noexcept : iTask(GL::interlocked::exchange(const_cast<unsigned long&>(rhs.id()), 0ul)) {};
+				//Task(Task&& rhs) noexcept : iTask(GL::interlocked::exchange(const_cast<unsigned long&>(rhs.id()), 0ul)) {};
+				template <typename T> Task(Task<T>&& rhs) noexcept : iTask(GL::interlocked::exchange(const_cast<unsigned long&>(rhs.id()), 0ul)) {};
 
 				Task const& operator=(Task const& rhs) {
 					if ((this->m_uuid & id::TEMPORARY) == 0)
@@ -805,8 +805,8 @@ namespace GL {
 				if (m_uuid > 0) GL::interlocked::increment(id::get_id(m_uuid).count);
 			};
 			Task(Task const& rhs, bool) : iTask(rhs.id() | id::TEMPORARY) {};
-			Task(Task&& rhs) noexcept : iTask(GL::interlocked::exchange(const_cast<unsigned long&>(rhs.id()), 0ul)) {};
-			// template <typename T> Task(Task<T>&& rhs) noexcept : iTask(GL::interlocked::exchange(const_cast<unsigned long&>(rhs.id()), 0ul)) {};
+			//Task(Task&& rhs) noexcept : iTask(GL::interlocked::exchange(const_cast<unsigned long&>(rhs.id()), 0ul)) {};
+			template <typename T> Task(Task<T>&& rhs) noexcept : iTask(GL::interlocked::exchange(const_cast<unsigned long&>(rhs.id()), 0ul)) {};
 			Task const& operator=(Task const& rhs) {
 				if ((this->m_uuid & id::TEMPORARY) == 0)
 					if ((this->m_uuid & id::INV_FLAGS) > 0)

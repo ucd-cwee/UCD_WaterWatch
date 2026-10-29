@@ -4104,10 +4104,10 @@ namespace GL {
 
         }
         void pre_compile() {
-            if (GL::util::get_current_epoch() > 0) return;
+            if (GL::util::get_current_epoch() > 0) return; // guarrantee that this function never calls
             for_each_type([](auto const& with) {
                 do_precompile(with);
-                });
+            });
         };
     };
 

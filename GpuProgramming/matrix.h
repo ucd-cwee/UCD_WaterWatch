@@ -14,7 +14,7 @@
 namespace GL {
     namespace GPU {
         // wrapper for the dimensions of a GPU matrix.
-        struct 
+        struct
             dimensions {
             unsigned int X;
             unsigned int Y;
@@ -36,11 +36,11 @@ namespace GL {
         };
 
         // GPU-accelerated linear algebra wrapper. Should only be used by one thread at a time. 
-        template <typename T> class 
+        template <typename T> class
             matrix;
 
         // a matrix_kernel is a matrix dedicated to the purpose of being a convolution kernel. 
-        template <typename T> class 
+        template <typename T> class
             matrix_kernel {
         public:
             std::unique_ptr<matrix<T>>
@@ -48,12 +48,12 @@ namespace GL {
             T
                 sum;
 
-            matrix_kernel() 
-                : mat{ nullptr }, sum{ T{} } 
+            matrix_kernel()
+                : mat{ nullptr }, sum{ T{} }
             {};
             matrix_kernel(matrix_kernel const&) = delete;
             matrix_kernel& operator=(matrix_kernel const&) = delete;
-            matrix_kernel(matrix_kernel &&) = default;            
+            matrix_kernel(matrix_kernel&&) = default;
             matrix_kernel& operator=(matrix_kernel&& rhs) noexcept {
                 mat = std::move(rhs.mat);
                 rhs.mat = nullptr;
@@ -71,14 +71,16 @@ namespace GL {
         };
 
         // a static_matrix_kernel is a matrix_kernel which promises to never change its value and to out-live any jobs that use it as input. 
-        // This will prevent accumulation of GPU jobs, but risks memory corruption if this is destroyed too early. Best used when static or thead_local. 
+        // This will prevent accumulation of GPU jobs, but risks memory corruption if this is destroyed too early. Best used when static or thread_local. 
         // Leveraged when calling guassian_kernel. 
-        template <typename T> struct 
-            static_matrix_kernel { matrix_kernel<T>* ptr; };
+        template <typename T> struct
+            static_matrix_kernel {
+            matrix_kernel<T>* ptr;
+        };
 
         // GPU-accelerated linear algebra wrapper. Should only be used by one thread at a time.
         // Leverages an arena memory pool and deferred destruction for higher performance. 
-        template <typename T> class 
+        template <typename T> class
             matrix {
         private:
             void* // std::unique_ptr<mem_matrix, mem_matrix::helper< mem_matrix>::array_delete>
@@ -90,7 +92,7 @@ namespace GL {
         public:
             typedef T type;
 
-            void*& 
+            void*&
                 internal_memory() { return memory; };
 
             // normal constructor
@@ -162,7 +164,7 @@ namespace GL {
             matrix& operator-=(matrix const& rhs);
             matrix& operator*=(matrix const& rhs);
             matrix& operator/=(matrix const& rhs);
-        
+
         private:
             matrix Add(matrix const& rhs) const;
             matrix Minus(matrix const& rhs) const;
@@ -285,7 +287,7 @@ namespace GL {
             matrix<unsigned int> operator<=(T rhs) const;
             matrix<unsigned int> operator>(T rhs) const;
             matrix<unsigned int> operator>=(T rhs) const;
-        
+
         private:
             matrix<unsigned int> Equals(matrix const& rhs) const;
             matrix<unsigned int> NotEquals(matrix const& rhs) const;
@@ -434,9 +436,142 @@ namespace GL {
         };
 
         // User should never call this function. It exists to ensure the matrix<T> is correctly compiled at least once from the cpp file. 
-        void 
+        void
             pre_compile();
     };
+};
+
+// #include "../ScriptLanguageTesting/ParallelTasks.h"
+namespace GL{
+#if 0
+    template <typename T>
+    class matx {
+    protected:
+        GL::parallel::single_threaded::Task<GPU::matrix<T>>
+            current_task;
+
+    public:
+        // normal constructor
+        matx(GL::GPU::dimensions&& d) 
+            : current_task(GL::parallel::single_threaded::async([](GL::GPU::dimensions const& d) -> GPU::matrix<T> { return GPU::matrix<T>(d); }, std::forward<GL::GPU::dimensions>(d))) 
+        {};
+        // empty constructor
+        matx() 
+            : current_task(GL::parallel::single_threaded::async([]() -> GPU::matrix<T> { return GPU::matrix<T>(); }))
+        {};
+        // shares a reference to the underlying matrix. Does not copy the data or make a new matrix.
+        matx(matx const& rhs) 
+            : current_task(rhs.current_task)
+        {};
+        // moves a reference to the underlying matrix. Does not copy the data or make a new matrix.
+        matx(matx&& rhs) noexcept
+            : current_task(std::move(rhs.current_task))
+        {};
+        matx& operator=(matx const& rhs) = default;
+        matx& operator=(matx&& rhs) noexcept = default;
+        ~matx() = default;
+
+        // x*y*z
+        GL::parallel::single_threaded::Task<unsigned int> size() const {
+            return current_task.then([](GPU::matrix<T>& rhs) { return rhs.size(); });
+        };
+        // returns x, y, or z, depending on the requested dimension.
+        GL::parallel::single_threaded::Task<unsigned int> size(unsigned int d) const {
+            return current_task.then([](GPU::matrix<T>& rhs, unsigned int d) { return rhs.size(d); }, d);
+        };
+
+        matx& operator=(T rhs) {
+            current_task = current_task.then([](GL::any const& lhs, T const& rhs) -> GL::any { 
+                lhs.cast<GPU::matrix<T>>() = rhs;
+                return lhs;
+            }, std::move(rhs));
+            return *this;
+        };
+        matx& operator+=(T rhs) {
+            current_task = current_task.then([](GL::any const& lhs, T const& rhs) -> GL::any {
+                lhs.cast<GPU::matrix<T>>() += rhs;
+                return lhs;
+            }, std::move(rhs));
+            return *this;
+        };
+        matx& operator-=(T rhs) {
+            current_task = current_task.then([](GL::any const& lhs, T const& rhs) -> GL::any {
+                lhs.cast<GPU::matrix<T>>() -= rhs;
+                return lhs;
+            }, std::move(rhs));
+            return *this;
+        };
+        matx& operator*=(T rhs) {
+            current_task = current_task.then([](GL::any const& lhs, T const& rhs) -> GL::any {
+                lhs.cast<GPU::matrix<T>>() *= rhs;
+                return lhs;
+            }, std::move(rhs));
+            return *this;
+        };
+        matx& operator/=(T rhs) {
+            current_task = current_task.then([](GL::any const& lhs, T const& rhs) -> GL::any {
+                lhs.cast<GPU::matrix<T>>() /= rhs;
+                return lhs;
+            }, std::move(rhs));
+            return *this;
+        };
+        matx& operator+=(matx const& rhs) {
+            current_task = current_task.then([](GL::any const& lhs, GL::parallel::single_threaded::Task<GPU::matrix<T>> const& rhs) {
+                return rhs.then([](GPU::matrix<T> const& rhs, GL::any const& lhs) -> GL::any {
+                    lhs.cast<GPU::matrix<T>>() += rhs;
+                    return lhs;
+                }, (GL::any)lhs);
+            }, (GL::parallel::single_threaded::Task<GPU::matrix<T>>)rhs.current_task).then([](GL::any const& lhs) -> GL::any {
+                return lhs.cast< GL::parallel::single_threaded::Task<GL::any>>().get_any();
+            });
+            return *this;
+        };
+        matx& operator-=(matx const& rhs) {
+            current_task = GL::parallel::single_threaded::Task<GPU::matrix<T>>(current_task.then([](GL::any const& lhs, GL::parallel::single_threaded::Task<GPU::matrix<T>> const& rhs) -> GL::parallel::single_threaded::Task<GPU::matrix<T>> {
+                return GL::parallel::single_threaded::Task<GPU::matrix<T>>(rhs.then([](GPU::matrix<T> const& rhs, GL::any const& lhs) -> GL::any {
+                    lhs.cast<GPU::matrix<T>>() -= rhs;
+                    return lhs;
+                }, (GL::any)lhs));
+            }, (GL::parallel::single_threaded::Task<GPU::matrix<T>>)rhs.current_task).then([](GL::any const& lhs) -> GL::any {
+                return lhs.cast< GL::parallel::single_threaded::Task<GPU::matrix<T>>>().get_any();
+            }));
+            return *this;
+        };
+        matx& operator*=(matx const& rhs) {
+            current_task = current_task.then([](GL::any const& lhs, GL::parallel::single_threaded::Task<GPU::matrix<T>> const& rhs) {
+                return rhs.then([](GPU::matrix<T> const& rhs, GL::any const& lhs) -> GL::any {
+                    lhs.cast<GPU::matrix<T>>() *= rhs;
+                    return lhs;
+                }, (GL::any)lhs);
+            }, (GL::parallel::single_threaded::Task<GPU::matrix<T>>)rhs.current_task).then([](GL::any const& lhs) -> GL::any {
+                return lhs.cast< GL::parallel::single_threaded::Task<GL::any>>().get_any();
+            });
+            return *this;
+        };
+        matx& operator/=(matx const& rhs) {
+            current_task = current_task.then([](GL::any const& lhs, GL::parallel::single_threaded::Task<GPU::matrix<T>> const& rhs) -> GL::parallel::single_threaded::Task<GPU::matrix<T>> {
+                return GL::parallel::single_threaded::Task<GPU::matrix<T>>(rhs.then([](GPU::matrix<T> const& rhs, GL::any const& lhs) -> GL::any {
+                    lhs.cast<GPU::matrix<T>>() /= rhs;
+                    return lhs;
+                }, (GL::any)lhs));
+            }, rhs.current_task).then([](GL::any const& lhs) -> GL::any {
+                return lhs.cast< GL::parallel::single_threaded::Task<GPU::matrix<T>>>().get_any();
+            });
+            return *this;
+        };
+
+
+        GL::parallel::single_threaded::Task<T> operator[](unsigned int n) const {
+            return current_task.then([](GPU::matrix<T>& rhs, unsigned int n) -> T { 
+                if (auto r = rhs.read()) return r[n];                
+                else return {};
+            }, n);
+        };
+
+
+
+    };
+#endif
     
     // shared memory manager, that allows faster allocation/deallocation in multithreaded environments. 
     // Threads allocate in their own TLS without competition, but can (in parallel) deallocate back into other threads. 
