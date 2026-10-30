@@ -16,37 +16,41 @@ namespace GL {
 				ref.data._ctx.callback = nullptr;
 				ref.data._ctx.callback_data = nullptr;
 				ref.data._result = nullptr;
-				ref.data._parent_uuid = 0;
+				ref.data._parent_uuid = {};
 				ref.data._function_pointer = nullptr;
 				ref.data._arguments = {};
 				ref.data._count = 0;
 				ref.data._offset = 0;
 				ref.data._job_completed = false;
 				ref.data._deferred_dispatch = nullptr;
+				ref.data._parent_count = 0;
 				return uuid;
 			};
 			void free_id(unsigned long uuid) noexcept {
 				uuid &= INV_FLAGS;
-				while (uuid > 0) {
+				if (uuid > 0) {
 					auto& ref = slots[uuid];
-					unsigned long parent_uuid_copy = ref.data._parent_uuid;
+					//std::vector<unsigned long> parent_uuid_copy = std::move(ref.data._parent_uuid);
 					ref.data._ctx.counter = 0;
 					ref.data._ctx.e = nullptr;
 					ref.data._ctx.callback = nullptr;
 					ref.data._ctx.callback_data = nullptr;
 					ref.data._result = nullptr;
-					ref.data._parent_uuid = 0;
+					// ref.data._parent_uuid = {};
 					ref.data._function_pointer = nullptr;
 					ref.data._arguments = {};
 					ref.data._count = 0;
 					ref.data._offset = 0;
 					ref.data._job_completed = false;
 					ref.data._deferred_dispatch = nullptr;
+					ref.data._parent_count = 0;
 					tickets.return_ticket(uuid);
-					uuid = 0;
-					if ((parent_uuid_copy & id::INV_FLAGS) > 0)
-						if (GL::interlocked::decrement(id::get_id(parent_uuid_copy & id::INV_FLAGS).count) == 0)
-							uuid = parent_uuid_copy & INV_FLAGS;
+					//uuid = 0;
+
+
+					//if ((parent_uuid_copy & id::INV_FLAGS) > 0)
+						//if (GL::interlocked::decrement(id::get_id(parent_uuid_copy & id::INV_FLAGS).count) == 0)
+							//uuid = parent_uuid_copy & INV_FLAGS;
 				}
 			};
 			id_ticket& get_id(unsigned long uuid) noexcept {

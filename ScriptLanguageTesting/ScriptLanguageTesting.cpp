@@ -306,17 +306,72 @@ int main() {
 
 
 
-        auto LHS = GL::any::instance(GL::GPU::matrix<float>::constant(5, 100, 100));
-        auto RHS = GL::any::instance(GL::GPU::matrix<float>::constant(6, 100, 100));
-        GL::parallel::single_threaded::async([](GL::GPU::matrix<float> const& LHS, GL::GPU::matrix<float> const& RHS) -> GL::GPU::matrix<float> {
-            return LHS * RHS;
-        }, LHS, RHS).wait();
-        LHS = GL::any::instance(GL::foot(100.0f));
-        RHS = GL::any::instance(GL::acre(1.0f));
-        GL::parallel::async([](GL::foot const& LHS, GL::acre const& RHS) -> GL::acre_foot {
-            return LHS * RHS;
-        }, LHS, RHS).wait();
+        //auto LHS = GL::any::instance(GL::GPU::matrix<float>::constant(5, 100, 100));
+        //auto RHS = GL::any::instance(GL::GPU::matrix<float>::constant(6, 100, 100));
+        //GL::parallel::single_threaded::async([](GL::GPU::matrix<float> const& LHS, GL::GPU::matrix<float> const& RHS) -> GL::GPU::matrix<float> {
+        //    return LHS * RHS;
+        //}, LHS, RHS).wait();
+        //LHS = GL::any::instance(GL::foot(100.0f));
+        //RHS = GL::any::instance(GL::acre(1.0f));
+        //GL::parallel::single_threaded::async([](GL::foot const& LHS, GL::acre const& RHS) -> GL::acre_foot {
+        //    return LHS * RHS;
+        //}, LHS, RHS).wait();
+
+
+
+
+        while (true) {
+            auto Task1 = GL::parallel::single_threaded::async([]() /*-> int*/ {
+                //::Sleep(100);
+                std::cout << __LINE__ << std::endl;
+                return GL::string("TEST");
+            });
+            auto Task2 = GL::parallel::single_threaded::async([]() /*-> int*/ {
+                //::Sleep(1000);
+                std::cout << __LINE__ << std::endl;
+                //return 200.0;
+            });
+            auto Task3 = Task1.and_then(Task2, [](GL::string const& t1, /*double const& t2, */int const& t3/*, int t4*/ ) {
+                //::Sleep(100);
+
+                std::cout << __LINE__ << std::endl;
+
+                return 300.0f;
+            }, (int)300/*, (int)400*/);
+            auto Task4 = Task1.and_then(Task2, Task3, [](GL::string const& t1, /*double const& t2, */float const& t3, int t4) {
+                std::cout << t1 << std::endl;
+                // std::cout << t2 << std::endl;
+                std::cout << t3 << std::endl;
+                std::cout << t4 << std::endl;
+                std::cout << __LINE__ << std::endl;
+            }, (int)400);
+            Task4.wait();
+
+
+
+
+
+
+
+
+
+
+
+
+            //auto Task4 = Task1.then([](int parent_result_1) {
+            //    //::Sleep(100);
+            //    std::cout << __LINE__ << std::endl;
+            //});
+            //Task4.wait();
+
+            //auto Task5 = Task1.and_then(Task2, [](int parent_result_1) {
+            //    //::Sleep(100);
+            //    std::cout << __LINE__ << std::endl;
+            //});
+            //Task5.wait();
+        }
     }
+#if 0
     while (true) {
         while (false) {
             auto Task1 = GL::parallel::async([](GL::any const& rhs) -> GL::any {
@@ -783,7 +838,7 @@ int main() {
         //    });
         //}
     }
-
+#endif
 
 
 
