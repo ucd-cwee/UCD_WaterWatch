@@ -335,6 +335,35 @@ namespace GL {
 						return nth_non_void_index_impl<nonVoidParentIndex, ParentReturnType>::value();
 					};
 
+					template <typename from_t, typename to_t>
+					static constexpr bool CanHandleConversion() {
+						if constexpr (std::is_same_v<std::decay_t<from_t>, GL::any> || std::is_same_v<std::decay_t<from_t>, GL::atomic_any>) {
+							// provided an "any", and therefore the type information is already lost.
+							return true;
+						}
+						else if constexpr (std::is_same_v<typename GL::type_erasure::get_type< std::decay_t<from_t> >::type, typename GL::type_erasure::get_type< std::decay_t<to_t> >::type>) {
+							// the "any" casting should be able to handle this conversion automatically, since the underlying types match. 
+							return true;
+						}
+						else if constexpr (std::is_same_v<std::decay_t<to_t>, GL::any> || std::is_same_v<std::decay_t<to_t>, GL::atomic_any>) {
+							// requesting an "any", and therefore the type information will be thrown away. Accept whatever we got.
+							return true;
+						}
+						else if constexpr (std::is_convertible_v<from_t, to_t>) {
+							// requesting an "any", and therefore the type information will be thrown away. Accept whatever we got.
+							return true;
+						}
+						else if constexpr (std::is_convertible_v<from_t, typename GL::type_erasure::get_type< to_t >::type>) {
+							// requesting an "any", and therefore the type information will be thrown away. Accept whatever we got.
+							return true;
+						}
+						else if constexpr (std::is_convertible_v<typename GL::type_erasure::get_type< from_t >::type, to_t>) {
+							// requesting an "any", and therefore the type information will be thrown away. Accept whatever we got.
+							return true;
+						}
+						return false;
+					};
+
 					template <std::size_t... Is>
 					static void do_supplement_caching(impl::job_argument& _args, std::index_sequence<Is...>) {
 						([&](auto i_constant) {
@@ -344,13 +373,17 @@ namespace GL {
 
 							if constexpr (ProcessingState == 0) {
 								// multiple dispatch index
-								//std::cout << GL::printf("%i -> state{ %i }\n", (int)Is_val, (int)ProcessingState);
+								static_assert(CanHandleConversion<
+									size_t,
+									std::tuple_element_t<Is_val, FunctionTraits::argType>
+								>(), "Was unable to handle type conversion");
 								FunctionTraits::supplement_caching<Is_val>(static_cast<id::TaskBase*>(_args.task_memory)->_arguments[Is_val], static_cast<char*>(_args.group_memory));
 							}
 							else if constexpr (ProcessingState > 0) {
 								// _arguments
 								constexpr std::size_t argument_index = (size_t)(ProcessingState - 1); // note that this is the direct argument index. 
 								if constexpr (argument_index == 0) {
+									// But actually do all of the arguments in a single batch. This prevents a bug. 
 									if constexpr (dispatch_multiple && ((FunctionTraits::numArgs - numProvidedArgs) > 0)) {
 										FunctionTraits::perform_caching<Is_val>(&static_cast<id::TaskBase*>(_args.task_memory)->_arguments[1], static_cast<char*>(_args.group_memory));
 									}
@@ -363,7 +396,10 @@ namespace GL {
 								// parents
 								static constexpr std::size_t nonvoid_parent_index = (size_t)(-(ProcessingState + 1)); // note this is not the direct parent index. This is simply the i'th non-void parent.
 								static constexpr std::size_t absolute_parent_index = nonVoidParentIndex_to_parentIndex<nonvoid_parent_index>();
-								//std::cout << GL::printf("%i -> state{ %i }, nonVoidParentIdx{ %i }, absolute_parent_index{ %i }\n", (int)Is_val, (int)ProcessingState, (int)nonvoid_parent_index, (int)absolute_parent_index);
+								static_assert(CanHandleConversion<
+									std::tuple_element_t< absolute_parent_index, ParentReturnType>,
+									std::tuple_element_t<Is_val, FunctionTraits::argType>
+								>(), "Was unable to handle type conversion");
 								FunctionTraits::supplement_caching<Is_val>(id::get_id(static_cast<id::TaskBase*>(_args.task_memory)->_parent_uuid[absolute_parent_index]).data._result, static_cast<char*>(_args.group_memory));
 							}
 						}(std::integral_constant<std::size_t, Is>{}), ...); // Fold expression over the comma operator
@@ -380,7 +416,6 @@ namespace GL {
 							}(std::integral_constant<std::size_t, Is>{}), ...); // Fold expression over the comma operator
 						}
 					}
-
 
 					static void DoTask(impl::job_argument& _args) {
 						if (_args.group_index == 0) {

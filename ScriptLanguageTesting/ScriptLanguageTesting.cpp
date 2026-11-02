@@ -318,9 +318,215 @@ int main() {
         //}, LHS, RHS).wait();
 
 
+        if (1) {
+            using namespace GL;
+            using namespace GL::GPU;
+
+            GL::any framerates = GL::any::instance(GL::make_shared<std::deque<float>>());
+            GL::any frame = GL::any::instance(int{ 1 });
+            GL::any sw = GL::any::instance(GL::stopwatch());
+
+            auto setup_task = GL::parallel::single_threaded::async([]() {
+                std::ios_base::sync_with_stdio(false);
+                std::cin.tie(NULL);
+                CONSOLE_CURSOR_INFO cursorInfo;
+                GetConsoleCursorInfo(GetStdHandle(STD_OUTPUT_HANDLE), &cursorInfo);
+                cursorInfo.bVisible = false;
+                SetConsoleCursorInfo(GetStdHandle(STD_OUTPUT_HANDLE), &cursorInfo);
+            });
+            auto screen_task = setup_task.then([]() {
+                CONSOLE_SCREEN_BUFFER_INFO screen;
+                GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &screen);
+                return screen;
+            });
+            struct screen_dimensions {
+                int w;
+                int h;
+            };
+            auto game_dimension_task = screen_task.then([](CONSOLE_SCREEN_BUFFER_INFO const& screen) {
+                return screen_dimensions{
+                    ((screen.dwSize.X > 1) ? (screen.dwSize.X / 2) : 1), 
+                    ((screen.dwSize.Y > 3) ? screen.dwSize.Y - 3 : 1)
+                };                
+            });
+            auto state_task = game_dimension_task.then([](screen_dimensions const& dimensions) {
+                return (matrix<float>::random(dimensions.h, dimensions.w, 1) > 0.4f).cast<unsigned int>();
+            });
+            auto kernel_task = GL::parallel::single_threaded::async([]() -> matrix_kernel<float> {
+                return matrix<float>::from_vector({
+                    1, 1, 1,
+                    1, 0, 1,
+                    1, 1, 1
+                }, 3);
+            });
+
+            // Run the game of life            
+            for (;;) {
+                sw.cast<GL::stopwatch>().reset();
+
+                screen_task = screen_task.then([]() {
+                    CONSOLE_SCREEN_BUFFER_INFO screen;
+                    GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &screen);
+                    return screen;
+                });
+
+                auto window_update_task = game_dimension_task.and_then(screen_task.then([](CONSOLE_SCREEN_BUFFER_INFO const& screen) {
+                    return screen_dimensions{
+                        ((screen.dwSize.X > 1) ? (screen.dwSize.X / 2) : 1),
+                        ((screen.dwSize.Y > 3) ? screen.dwSize.Y - 3 : 1)
+                    };
+                }), state_task, [](screen_dimensions& old_dimensions, screen_dimensions const& new_dimensions, matrix<unsigned int>& state, std::deque<float>& framerates) -> screen_dimensions {
+                    if ((old_dimensions.w != new_dimensions.w) || (old_dimensions.h != new_dimensions.h)) {
+                        old_dimensions.w = new_dimensions.w;
+                        old_dimensions.h = new_dimensions.h;
+
+                        auto temp = state.resize(old_dimensions.h, old_dimensions.w, 1);
+                        state = temp;
+
+                        framerates.clear();
+                    }
+                    SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
+                    return old_dimensions;
+                }, framerates);
+
+                auto nHood_task = window_update_task.and_then(state_task, kernel_task, [](screen_dimensions const& game_size, matrix<unsigned int>& state, matrix_kernel<float>& kernel) {
+                    return state.convolve(static_matrix_kernel<float>{ &kernel });
+                    // return state.convolve(kernel);
+                });
+
+                // Generate conditions for life
+                // state == 1 && nHood < 2 ->> state = 0
+                // state == 1 && nHood > 3 ->> state = 0
+                // else if state == 1 ->> state = 1
+                // state == 0 && nHood == 3 ->> state = 1
+                auto C0_task = nHood_task.then([](matrix<unsigned int> const& nHood) {
+                    return nHood == 2;
+                });
+                auto C1_task = nHood_task.then([](matrix<unsigned int> const& nHood) {
+                    return nHood == 3;
+                });
+
+                //auto a0 = (state == 1) && (nHood < 2);  // Die of under population
+                //auto a1 = (state > 0) && (C0 || C1);   // Continue to live
+                //auto a2 = (state <= 0) && C1;           // Reproduction
+                //auto a3 = (state == 1) && (nHood > 3);  // Over-population
+                auto update_state_task = state_task.and_then(C0_task, C1_task, [](matrix<unsigned int>& state, matrix<unsigned int> const& C0, matrix<unsigned int> const& C1) {
+                    state *= C0;
+                    state += C1;
+                });
+                //update_state_task.wait();
+
+                class MatrixImage {
+                public:
+                    std::vector<matrix<float>> mip_maps;
+                    MatrixImage() : mip_maps{} {};
+                    MatrixImage(matrix<float>&& srce) : mip_maps{} {
+                        calculate_mip_maps(std::move(srce));
+                    };
+                    MatrixImage(MatrixImage const&) = delete;
+                    MatrixImage(MatrixImage&&) = delete;
+                    MatrixImage& operator=(MatrixImage const&) = delete;
+                    MatrixImage& operator=(MatrixImage&&) = delete;
+                    ~MatrixImage() = default;
+
+                    matrix<float> debug_display() const {
+                        matrix<float> out = mip_maps[0];
+                        for (int i = 1; i < mip_maps.size(); ++i) {
+                            out = out.join(1, mip_maps[i].resize(mip_maps[0].size(0), mip_maps[i].size(1) + 16, 1));
+                        }
+                        return out;
+                    };
+                    matrix<float> sum() const {
+                        std::vector<matrix<float>> mips;
+                        matrix<float> out = mip_maps[0];
+                        for (int i = 1; i < mip_maps.size(); ++i) {
+                            mips.emplace_back(mip_maps[i].resize_stretch(mip_maps[0].size(0), mip_maps[0].size(1), 1));
+                            out += mips[mips.size() - 1];
+                        }
+                        return out;
+                    };
+
+                private:
+                    void calculate_mip_maps(matrix<float>&& srce) {
+                        mip_maps.reserve(32);
+                        mip_maps.push_back(std::move(srce));
+                        const matrix<float>* current = &mip_maps[0];
+                        //auto kernel = matrix<float>::guassian_kernel<13, 13>();
+                        while ((current->size(0) > 1) && (current->size(1) > 1)) {
+                            //auto blurred = current->convolve(kernel);
+                            //mip_maps.push_back(blurred.resize_stretch(std::floorf(((float)blurred.size(0) / 2.0f) + 0.5), std::floorf(((float)blurred.size(1) / 2.0f) + 0.5), 1)); //  current->halfsize<false>());
+
+                            mip_maps.push_back(current->halfsize()); // faster but less accurate
+                            current = &mip_maps[mip_maps.size() - 1];
+                        }
+                    };
+
+                };
+
+                auto print_screen_task = update_state_task.and_then(window_update_task, state_task, [](screen_dimensions const& game_size, matrix<unsigned int>& state) {
+                    MatrixImage img(state.cast<float>());
+                    std::cout << img.sum().resize_stretch(game_size.h, game_size.w, 1).ASCII().to_string({}, true) << std::endl;
+                });
+
+                auto clean_up_task = print_screen_task.then([](GL::stopwatch& sw, std::deque<float>& framerates, int& frame) {
+                    std::cout << "" << std::endl;
+                    auto this_frame = (float)(1.0 / sw.stop());
+                    ++frame;
+
+                    framerates.push_back(this_frame);
+                    if (framerates.size() > 20000) framerates.pop_front();
+
+                    std::deque<float> copy(framerates);
+                    std::sort(copy.begin(), copy.end());
+                    float q0 = 0;
+                    float q1 = 0;
+                    float q2 = 0;
+                    float q3 = 0;
+                    float q4 = 0;
+                    float q5 = 0;
+                    if (copy.size() >= 4) {
+                        q0 = copy.at(0);
+                        q1 = copy.at(copy.size() / 2000);
+                        q2 = copy.at(copy.size() / 200);
+                        q3 = copy.at(copy.size() / 100);
+                        q4 = copy.at(copy.size() / 2);
+                        q5 = copy.at(copy.size() - 1);
+                    }
+                    std::cout << GL::printf("min{ %f }  0.05%%{ %f }  0.5%%{ %f }  1.0%%{ %f }  50%%{ %f }  max{ %f }  ", q0, q1, q2, q3, q4, q5) + GL::arena_memory_pool::debug() + "         \t" << std::endl;
+                    std::cout << std::flush;
+                }, sw, framerates, frame);      
+                clean_up_task.wait();
+
+                //while (sw.cast<GL::stopwatch>().stop() < 1.0 / 60.0) {
+                //    std::this_thread::yield();
+                //}
+            }
 
 
-        while (true) {
+
+        }
+
+        if (false) {
+            auto Task1 = GL::parallel::single_threaded::async([]() {
+                return GL::GPU::matrix<float>::constant((float)GL::util::rand_very_fast(2,30), 100, 100);
+            });
+            auto Task2 = GL::parallel::single_threaded::async([]() {
+                return GL::GPU::matrix<float>::constant((float)GL::util::rand_very_fast(2, 30), 100, 100);
+            });
+            auto mult = Task1.and_then(Task2, [](GL::GPU::matrix<float> const& lhs, GL::GPU::matrix<float> const& rhs) {
+                return lhs * rhs;
+            });
+            auto mad = mult.and_then(Task1, [](GL::GPU::matrix<float> const& lhs, GL::GPU::matrix<float> const& rhs) {
+                return lhs + rhs;
+            });
+            mad.then([](GL::GPU::matrix<float> const& mad) {
+                if (auto r = mad.read()) {
+                    std::cout << GL::printf("%f\n", r[0]);
+                }
+            }).wait();            
+        }
+
+        while (false) {
             auto Task1 = GL::parallel::single_threaded::async([]() /*-> int*/ {
                 //::Sleep(100);
                 std::cout << __LINE__ << std::endl;
@@ -1008,7 +1214,8 @@ int main() {
             auto this_frame = (float)(1.0 / sw.stop());
             framerates.push_back(this_frame);
 
-            if (framerates.size() > 10000) framerates.pop_front();
+            if (framerates.size() > 20000) framerates.pop_front();
+
             std::deque<float> copy(framerates);
             std::sort(copy.begin(), copy.end());
             float q0 = 0;
@@ -1016,15 +1223,16 @@ int main() {
             float q2 = 0;
             float q3 = 0;
             float q4 = 0;
+            float q5 = 0;
             if (copy.size() >= 4) {
                 q0 = copy.at(0);
-                q1 = copy.at(copy.size() / 4);
-                q2 = copy.at(2 * copy.size() / 4);
-                q3 = copy.at(3 * copy.size() / 4);
-                q4 = copy.at(copy.size() - 1);
+                q1 = copy.at(copy.size() / 2000);
+                q2 = copy.at(copy.size() / 200);
+                q3 = copy.at(copy.size() / 100);
+                q4 = copy.at(copy.size() / 2);
+                q5 = copy.at(copy.size() - 1);
             }
-
-            std::cout << GL::printf("min{ %f }  q1{ %f }  median{ %f }  q2{ %f }  max{ %f }  ", q0, q1, q2, q3, q4) + GL::arena_memory_pool::debug() + "         \t" << std::endl;
+            std::cout << GL::printf("min{ %f }  0.05%%{ %f }  0.5%%{ %f }  1.0%%{ %f }  50%%{ %f }  max{ %f }  ", q0, q1, q2, q3, q4, q5) + GL::arena_memory_pool::debug() + "         \t" << std::endl;
             std::cout << std::flush;
 
             //while (sw.stop() < 1.0 / 60.0) {

@@ -940,24 +940,17 @@ namespace GL {
 
 					if (parentCtx) {
 						// work until this job is completed
-						while (parentCtx->is_busy()) {
-							if (try_get_job(internal_state.jobQueue, task)) {
-								do_task(task, args, sizeOfData, data);
-							}
-							else {
-								// there are no jobs available, yet the task is not considered complete.
-								if (parentCtx->counter.load(std::memory_order_relaxed) == std::numeric_limits<size_t>::max()) {
-									throw std::runtime_error("An impossibly large counter was provided to the parallel job system");
-								}
-							}
-						}
+						while (parentCtx->is_busy()) 
+							if (try_get_job(internal_state.jobQueue, task)) 
+								do_task(task, args, sizeOfData, data);							
+							else if (parentCtx->counter.load(std::memory_order_relaxed) == std::numeric_limits<size_t>::max()) 
+								throw std::runtime_error("An impossibly large counter was provided to the parallel job system");						
 						if (sizeOfData > 0) GL::mfree(data);
 					}
 					else {
 						// work until there are no jobs left
-						while (try_get_job(internal_state.jobQueue, task)) {
-							do_task(task, args, sizeOfData, data);
-						}
+						while (try_get_job(internal_state.jobQueue, task)) 
+							do_task(task, args, sizeOfData, data);						
 						if (data && (sizeOfData > 0)) GL::mfree(data);
 					}
 				};
@@ -970,7 +963,7 @@ namespace GL {
 						internal_state.jobQueue.push(job);
 						job.group_job_offset += groupSize;
 					}					
-					internal_state.wakeCondition.notify_all();
+					internal_state.wakeCondition.notify_one();
 				};
 
 				void initialize_if_necessary() {
@@ -992,11 +985,6 @@ namespace GL {
 								internal_state.threads[threadID].thread_hash = std::hash<std::thread::id>{}(std::this_thread::get_id());
 								internal_state.threads[threadID].thread_index = GL::util::get_thread_id();
 								internal_state.threads[threadID].thread_alive = GL::parallel::impl::alive_state::is_booting;
-
-								auto start_time = GL::util::get_current_epoch();
-								volatile std::atomic<long> count{ 0 };
-								for (volatile size_t i = 0; i < 10000000; ++i) ++count;
-								internal_state.threads[threadID].relative_speed = 1.0 / (double)((GL::util::get_current_epoch() - start_time) + 1);
 
 								if (1) {
 									thread_task temp; std::memset(&temp, 0, sizeof(thread_task));
@@ -1072,45 +1060,8 @@ namespace GL {
 						}
 						while (boot_count.load() > 0) {}
 
-#if 0
-						double total = 0;
-						for (size_t threadID = 0; threadID < internal_state.numThreads; ++threadID) {
-							double this_speed = internal_state.threads[threadID].relative_speed;
-							total += this_speed;
-						}
-						for (size_t threadID = 0; threadID < internal_state.numThreads; ++threadID) {
-							internal_state.threads[threadID].relative_speed /= total;
-						}
-						std::sort(internal_state.threads.begin(), internal_state.threads.end(), [](auto& lhs, auto& rhs) -> bool { return lhs.relative_speed > rhs.relative_speed; });
-						prevS = alive_state::is_booting;
-						internal_state.alive.compare_exchange_strong(prevS, alive_state::is_alive);
-
-						// Idea: release threads that are minimally contributing to the actual task of multithreading. Free's those for the UI or other thread tasks, while greedily keeping the stronger/faster threads for us. 
-						if (1) {
-							bool wake_loop = true;
-							std::thread waker([&] {
-								while (wake_loop) internal_state.wakeCondition.notify_all(); // wakes up sleeping worker threads
-								});
-
-							total = 1.0;
-							while ((total > internal_state.target_cpu_utilization) && (internal_state.numThreads > (internal_state.numCores / 2)) && (internal_state.numThreads >= 2)) {
-								total -= internal_state.threads[internal_state.numThreads - 1].relative_speed;
-								internal_state.threads[internal_state.numThreads - 1].thread_alive = alive_state::is_debooting;
-
-								internal_state.threads[internal_state.numThreads - 1].thread.join(); // perform the join
-								internal_state.threads[internal_state.numThreads - 1].thread_alive = alive_state::is_dead; // declare it dead
-
-								--internal_state.numThreads;
-							}
-
-							wake_loop = false;
-							waker.join();
-						}
-#else
 						prevS = GL::parallel::impl::alive_state::is_booting;
 						internal_state.alive.compare_exchange_strong(prevS, GL::parallel::impl::alive_state::is_alive);
-#endif
-
 					}
 					else {
 						while (internal_state.alive.load(std::memory_order_relaxed) != GL::parallel::impl::alive_state::is_alive) {};
@@ -1344,12 +1295,12 @@ namespace GL {
 				};
 
 				void Wait(parallel::impl::dispatch_context& ctx, bool rethrow) {
-					internal_state.wakeCondition.notify_all(); // Wake any threads that might be sleeping. 
+					internal_state.wakeCondition.notify_one(); // Wake any threads that might be sleeping. 
 					if (internal_state.threads[0].thread_index == GL::util::get_thread_id()) {
 						// the single_threaded thread is awaiting for the single_threaded job thread to complete. This is impossible and requires us trying to work on another job. 
 						while (ctx.is_busy()) { // Do work					
 							++wait_depth; // allows detection of when job dispatch may be from within an existing job				
-							internal_state.wakeCondition.notify_all(); // Wake any threads that might be sleeping:
+							internal_state.wakeCondition.notify_one(); // Wake any threads that might be sleeping:
 							single_threaded::impl::work(&ctx);
 							--wait_depth; // allows detection of when job dispatch may be from within an existing job
 						}
@@ -1358,10 +1309,10 @@ namespace GL {
 					}
 					else {
 						// another thread is awaiting for the single_threaded job thread to complete. Nothing to do here but spin-wait. 
-						int i = 0;
+						unsigned char i = 0;
 						while (ctx.is_busy()) { // Do work						
-							if ((++i % 40) == 0)
-								internal_state.wakeCondition.notify_all(); // Wake any threads that might be sleeping. 
+							if (++i == 0) // occassionally wake-up the thread, in case the awaited job was submitted late or is the output of a task cascade. 
+								internal_state.wakeCondition.notify_one(); 
 						}
 						if (rethrow) ctx.try_rethrow_exception();
 						else ctx.clear_exception();
