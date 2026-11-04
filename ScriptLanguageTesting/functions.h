@@ -423,7 +423,7 @@ namespace GL {
         template <std::size_t Is = numArgs>
         static constexpr size_t CacheSize() {
             return sum_indices_impl(std::make_index_sequence<Is>{});
-        }
+        };
         static constexpr bool requires_undo_caching_impl() {
             if constexpr (numArgs > 0) {
                 if constexpr ((numArgs >= 16) && !std::is_pod_v<cache_type<15>>) return true;
@@ -580,8 +580,8 @@ namespace GL {
             }
         };
         template <size_t I> static decltype(auto) get_cache(char* ptr) {            
-            if constexpr (I >= numArgs) return;
-            else {
+            //if constexpr (I > numArgs) return;
+            //else {
                 char(&buffer)[cache_size_total] = *reinterpret_cast<char(*)[cache_size_total]>(ptr);
                 cache_type<I>& val = *static_cast<cache_type<I>*>(static_cast<void*>(&buffer[CacheSize<I>()]));
                 if constexpr (std::is_same_v<std::decay_t<std::tuple_element_t<I, argType>>, GL::any>) return val;
@@ -590,7 +590,7 @@ namespace GL {
                 else if constexpr (std::is_pointer_v<std::tuple_element_t<I, argType>>) return val;
                 else if constexpr (std::is_reference_v<std::tuple_element_t<I, argType>>) return *val;
                 else return *val;
-            }
+            //}
         };
     private:
         template <std::size_t... Is>

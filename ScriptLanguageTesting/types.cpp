@@ -205,7 +205,7 @@ namespace GL {
     };
 
     auto& get_base(type const& from) {
-        if (from.get_hash() == 0) {
+        if ((from.get_hash() /*& uuid::INV_FLAGS*/) == 0) {
             return impl::get_impl(GL::type_of<void>().get_base_hash());
         }
         else if (from.is_cpp_type()) {
@@ -244,7 +244,12 @@ namespace GL {
             if (this->is_cpp_type()) {
                 for (auto& x : get_base(*this).base_classes_ordered) {
                     auto& Base = impl::get_impl(x);
-                    out.push_back(type(Base.base_hash) + GL::type::CppType);
+                    //if (Base.base_hash == 0) {
+                    //    out.push_back(type(Base.base_hash));
+                    //}
+                    //else {
+                        out.push_back(type(Base.base_hash) + GL::type::CppType);
+                    //}
                 }
             }
             else {
@@ -359,9 +364,14 @@ namespace GL {
         GL::type_of<GL::atomic_any>().try_update_name("atomic_any");
         GL::type_of<GL::type>().try_update_name("type");
         GL::type_of<GL::var>().try_update_name("var");
-        GL::type_of<GL::value>().try_update_name("value"); // the implimentations of units (meter, foot, etc) each correct their own name during definition.         
+        GL::type_of<GL::value>().try_update_name("value"); // the implimentations of units (meter, foot, etc) each correct their own name during definition.  
 
         GL::type_of<GL::undefined>().try_update_name("undefined");
+
+        if (GL::type_of<void>().name() != "void") { throw std::runtime_error("Compilation error with GL::types"); }
+        if (GL::type_of<bool>().name() != "bool") { throw std::runtime_error("Compilation error with GL::types"); }
+        if (GL::type_of<char>().name() != "char") { throw std::runtime_error("Compilation error with GL::types"); }
+        if (GL::type_of<int>().name() != "int") { throw std::runtime_error("Compilation error with GL::types"); }
 
         return true;
     }();

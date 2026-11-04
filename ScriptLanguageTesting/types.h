@@ -26,7 +26,6 @@ namespace GL {
 
     namespace util {
         template<typename T> static const auto& type_id() {
-            // static auto const& typeIdOfT{ boost::typeindex::type_id<T>().type_info() };
             static auto typeIdOfT{ GL::util::type_hash<T>() };
             return typeIdOfT;
         };
@@ -130,19 +129,19 @@ namespace GL {
             static GL::type_hash_t out{ util::type_id<any>().hash_code() & impl::cached_type::MAGIC_MASK2 };
             return out;
         };
-        static GL::type_hash_t const& void_hash_code() {
-            static GL::type_hash_t out{ util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2 };
-            return out;
-        };
-    public:
-        static constexpr GL::type_hash_t default_hash_code = (0ull & impl::cached_type::MAGIC_MASK2) | ((GL::type_hash_t)CppType << impl::cached_type::OFFSET);
-        //static GL::type_hash_t const& default_hash_code() {
-        //    static GL::type_hash_t out{ (util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2) | ((GL::type_hash_t)CppType << impl::cached_type::OFFSET) };
-        //    return out;
-        //};
 
     public:
-        type() : hash{ default_hash_code } {};
+        //static constexpr GL::type_hash_t default_hash_code = /*(*/0ull/* & impl::cached_type::MAGIC_MASK2) | ((GL::type_hash_t)CppType << impl::cached_type::OFFSET)*/;
+
+    protected:
+        static GL::type_hash_t const& void_hash_code() {
+            static GL::type_hash_t out{ util::type_id<void>().hash_code() & impl::cached_type::MAGIC_MASK2 };
+            // static GL::type_hash_t out{ default_hash_code };
+            return out;
+        };
+
+    public:
+        type() : hash{ void_hash_code() } {};
         explicit type(GL::type_hash_t _hash) : hash{ _hash } {};
         type(type const&) = default;
         type(type &&) = default;
@@ -188,7 +187,7 @@ namespace GL {
         bool is_template() const noexcept {
             return ((hash & ((GL::type_hash_t)TemplateType << impl::cached_type::OFFSET)) > 0);
         };
-        bool is_cpp_type() const noexcept { return (hash & ((GL::type_hash_t)CppType << impl::cached_type::OFFSET)) > 0; };
+        bool is_cpp_type() const noexcept { return /*(hash == 0) || */((hash & ((GL::type_hash_t)CppType << impl::cached_type::OFFSET)) > 0); };
         bool is_any() const noexcept;
         bool is_var() const noexcept;
         bool is_dynamic_object() const noexcept;
@@ -346,7 +345,7 @@ namespace GL {
     template<typename T> /*__forceinline*//*__declspec(noinline)*/ static GL::type const& type_of() noexcept {
         using BaseType = typename std::remove_const_t<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>; // e.g. int&& -> int, or const int& -> int, or int* const& -> int*        
 
-        static constexpr GL::type_hash_t template_modifier{ 
+        static constexpr GL::type_hash_t template_modifier{
             (std::is_base_of_v< template_t, BaseType> || std::is_same_v< template_t, BaseType>) ? type::Qualifiers::TemplateType : 0
         };
 
@@ -355,9 +354,10 @@ namespace GL {
             return Base;
         }
         else {
+            static constexpr GL::type_hash_t cpp_modifier{ /*std::is_void_v<T> ? 0 : */type::Qualifiers::CppType };
             static constexpr GL::type_hash_t const_modifier{ std::is_const<typename std::remove_pointer_t<typename std::remove_reference_t<T>>>::value ? type::Qualifiers::Const : 0 };
             static constexpr GL::type_hash_t ref_modifier{ std::is_reference<typename std::remove_pointer<T>::type>::value ? type::Qualifiers::Reference : 0 };
-            static GL::type Base((GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((const_modifier | ref_modifier | (GL::type_hash_t)type::Qualifiers::CppType | template_modifier) << impl::cached_type::OFFSET) & impl::cached_type::MAGIC_MASK1));
+            static GL::type Base((GL::impl::get_impl<BaseType>().base_hash & impl::cached_type::MAGIC_MASK2) | (((const_modifier | ref_modifier | cpp_modifier | template_modifier) << impl::cached_type::OFFSET) & impl::cached_type::MAGIC_MASK1));
             return Base;
         }
     };

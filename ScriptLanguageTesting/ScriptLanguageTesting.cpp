@@ -303,28 +303,24 @@ int main() {
             //}).wait();
         }
 #endif
-
-
-
-        //auto LHS = GL::any::instance(GL::GPU::matrix<float>::constant(5, 100, 100));
-        //auto RHS = GL::any::instance(GL::GPU::matrix<float>::constant(6, 100, 100));
-        //GL::parallel::single_threaded::async([](GL::GPU::matrix<float> const& LHS, GL::GPU::matrix<float> const& RHS) -> GL::GPU::matrix<float> {
-        //    return LHS * RHS;
-        //}, LHS, RHS).wait();
-        //LHS = GL::any::instance(GL::foot(100.0f));
-        //RHS = GL::any::instance(GL::acre(1.0f));
-        //GL::parallel::single_threaded::async([](GL::foot const& LHS, GL::acre const& RHS) -> GL::acre_foot {
-        //    return LHS * RHS;
-        //}, LHS, RHS).wait();
-
+        auto LHS = GL::any::instance(GL::foot(10));
+        auto RHS = GL::any::instance(GL::acre(20));
+        if (GL::parallel::async(0, 1'000'000, [](GL::foot const& LHS, GL::acre const& RHS) -> GL::acre_foot {
+            return LHS * RHS;
+        }, LHS, RHS).get() != GL::acre_foot(200)) throw std::runtime_error("MATH AINT MATHIN");
 
         if (1) {
             using namespace GL;
             using namespace GL::GPU;
 
-            GL::any framerates = GL::any::instance(GL::make_shared<std::deque<float>>());
-            GL::any frame = GL::any::instance(int{ 1 });
-            GL::any sw = GL::any::instance(GL::stopwatch());
+            GL::any framerates = 
+                GL::any::instance(GL::make_shared<std::deque<float>>());
+            GL::any frame = 
+                GL::any::instance(GL::make_shared<int>(1));
+            GL::any sw = 
+                GL::any::instance(GL::make_shared<GL::stopwatch>());
+
+            std::cout << GL::any().type().name() << std::endl;
 
             auto setup_task = GL::parallel::single_threaded::async([]() {
                 std::ios_base::sync_with_stdio(false);
@@ -364,13 +360,13 @@ int main() {
             for (;;) {
                 sw.cast<GL::stopwatch>().reset();
 
-                screen_task = screen_task.then([]() {
+                screen_task = screen_task.then(0, 1, [](long long i) {
                     CONSOLE_SCREEN_BUFFER_INFO screen;
                     GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &screen);
                     return screen;
                 });
 
-                auto window_update_task = game_dimension_task.and_then(screen_task.then([](CONSOLE_SCREEN_BUFFER_INFO const& screen) {
+                auto window_update_task = game_dimension_task.and_then(screen_task.then(0, 1, [](long long i, CONSOLE_SCREEN_BUFFER_INFO const& screen) {
                     return screen_dimensions{
                         ((screen.dwSize.X > 1) ? (screen.dwSize.X / 2) : 1),
                         ((screen.dwSize.Y > 3) ? screen.dwSize.Y - 3 : 1)
@@ -390,8 +386,8 @@ int main() {
                 }, framerates);
 
                 auto nHood_task = window_update_task.and_then(state_task, kernel_task, [](screen_dimensions const& game_size, matrix<unsigned int>& state, matrix_kernel<float>& kernel) {
-                    return state.convolve(static_matrix_kernel<float>{ &kernel });
-                    // return state.convolve(kernel);
+                    // return state.convolve(static_matrix_kernel<float>{ &kernel });
+                    return state.convolve(kernel);
                 });
 
                 // Generate conditions for life
@@ -399,10 +395,10 @@ int main() {
                 // state == 1 && nHood > 3 ->> state = 0
                 // else if state == 1 ->> state = 1
                 // state == 0 && nHood == 3 ->> state = 1
-                auto C0_task = nHood_task.then([](matrix<unsigned int> const& nHood) {
+                auto C0_task = nHood_task.then(0, 1, [](long long i, matrix<unsigned int> const& nHood) {
                     return nHood == 2;
                 });
-                auto C1_task = nHood_task.then([](matrix<unsigned int> const& nHood) {
+                auto C1_task = nHood_task.then(0, 1, [](long long i, matrix<unsigned int> const& nHood) {
                     return nHood == 3;
                 });
 
@@ -414,7 +410,7 @@ int main() {
                     state *= C0;
                     state += C1;
                 });
-                //update_state_task.wait();
+                update_state_task.wait();
 
                 class MatrixImage {
                 public:
@@ -467,15 +463,15 @@ int main() {
                     MatrixImage img(state.cast<float>());
                     std::cout << img.sum().resize_stretch(game_size.h, game_size.w, 1).ASCII().to_string({}, true) << std::endl;
                 });
+                print_screen_task.wait();
 
-                auto clean_up_task = print_screen_task.then([](GL::stopwatch& sw, std::deque<float>& framerates, int& frame) {
-                    std::cout << "" << std::endl;
+                auto clean_up_task = print_screen_task.then(0, 1, [](/*long long i, */GL::stopwatch& sw, std::deque<float>& framerates, int& frame) {
+                   // std::cout << "\n" << i << " @ " << frame << ": ";
                     auto this_frame = (float)(1.0 / sw.stop());
                     ++frame;
 
                     framerates.push_back(this_frame);
-                    if (framerates.size() > 20000) framerates.pop_front();
-
+                    if (framerates.size() > (60 * 60)) framerates.pop_front();                    
                     std::deque<float> copy(framerates);
                     std::sort(copy.begin(), copy.end());
                     float q0 = 0;

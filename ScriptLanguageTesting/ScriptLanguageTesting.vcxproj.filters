@@ -45,5 +45,6 @@
     <ClInclude Include="atomic_uint_stack.h" />
     <ClInclude Include="ParallelTasks.h" />
     <ClInclude Include="FunctionWrapper.h" />
+    <ClInclude Include="ParallelTasksImpl.h" />
   </ItemGroup>
 </Project>

@@ -4,21 +4,23 @@ namespace GL {
 	namespace parallel {
 		// Definition
 		namespace id {
-			static GL::ticket_dispensor<false> tickets;
-			static GL::atomic_vector< id_ticket > slots;
+			GL::ticket_dispensor<false>
+				tickets;
+			GL::atomic_vector<id_ticket> 
+				slots;
+
 			unsigned long new_id() noexcept {
 				unsigned long uuid = (unsigned long)tickets.get_ticket();
 				auto& ref = slots.get_or_make(uuid);
-				// std::memset(&ref, 0, sizeof(id_ticket));
 				ref.count = 1;
 				ref.data._ctx.counter = 0;
 				ref.data._ctx.e = nullptr;
 				ref.data._ctx.callback = nullptr;
 				ref.data._ctx.callback_data = nullptr;
 				ref.data._result = nullptr;
-				ref.data._parent_uuid = {};
+				ref.data._parent_uuid.clear();
 				ref.data._function_pointer = nullptr;
-				ref.data._arguments = {};
+				for (auto& x : ref.data._arguments) x = nullptr;
 				ref.data._count = 0;
 				ref.data._offset = 0;
 				ref.data._job_completed = false;
@@ -36,7 +38,6 @@ namespace GL {
 					ref.data._ctx.callback = nullptr;
 					ref.data._ctx.callback_data = nullptr;
 					ref.data._result = nullptr;
-					// ref.data._parent_uuid = {};
 					ref.data._function_pointer = nullptr;
 					ref.data._arguments = {};
 					ref.data._count = 0;
@@ -45,12 +46,6 @@ namespace GL {
 					ref.data._deferred_dispatch = nullptr;
 					ref.data._parent_count = 0;
 					tickets.return_ticket(uuid);
-					//uuid = 0;
-
-
-					//if ((parent_uuid_copy & id::INV_FLAGS) > 0)
-						//if (GL::interlocked::decrement(id::get_id(parent_uuid_copy & id::INV_FLAGS).count) == 0)
-							//uuid = parent_uuid_copy & INV_FLAGS;
 				}
 			};
 			id_ticket& get_id(unsigned long uuid) noexcept {

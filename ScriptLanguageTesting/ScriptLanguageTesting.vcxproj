@@ -217,6 +217,7 @@
     <ClInclude Include="FunctionWrapper.h" />
     <ClInclude Include="Parallel.h" />
     <ClInclude Include="ParallelTasks.h" />
+    <ClInclude Include="ParallelTasksImpl.h" />
     <ClInclude Include="scripting.h" />
     <ClInclude Include="ScriptLanguage_V2.h" />
     <ClInclude Include="shared_ptr.h" />
