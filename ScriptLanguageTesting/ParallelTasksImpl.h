@@ -85,59 +85,6 @@ public:
 				curr_uuid = 0;
 			}
 		}
-
-
-
-
-
-
-
-
-
-
-		//thread_local GL::atomic_uint_stack stack;
-		//unsigned int curr_uuid = m_uuid;
-		//bool downward = true;
-		//while ((curr_uuid & id::INV_FLAGS) > 0) {
-		//	if (downward) {
-		//		auto& Base = id::get_id(curr_uuid).data;
-		//		if (!Base._job_completed && Base._function_pointer) {
-		//			stack.push(curr_uuid);
-		//			if ((Base._parent_uuid & id::INV_FLAGS) > 0) {
-		//				curr_uuid = Base._parent_uuid | id::TEMPORARY;
-		//				continue;
-		//			}
-		//			else {
-		//				do {
-		//					impl::Wait(Base._ctx, true);
-		//				} while (Base._function_pointer && !Base._job_completed);
-		//			}
-		//		}
-		//		downward = false;
-		//	}
-		//	else {
-		//		auto& Base = id::get_id(curr_uuid).data;
-		//		if (!Base._job_completed && Base._function_pointer) {
-		//			do {
-		//				impl::Wait(Base._ctx, true);
-		//			} while (Base._function_pointer && !Base._job_completed);
-		//		}
-		//	}
-		//	if (!stack.try_pop(curr_uuid)) curr_uuid = 0;
-		//}
-
-		//if ((m_uuid & id::INV_FLAGS) > 0) {
-		//	auto& Base = id::get_id(m_uuid).data;
-		//	if (!Base._job_completed) {
-		//		if ((Base._parent_uuid & id::INV_FLAGS) > 0) {
-		//			iTask parentTask(Base._parent_uuid | id::TEMPORARY); // temporary does not invoke the shared counter
-		//			parentTask.wait();
-		//		}
-		//		do {
-		//			impl::Wait(Base._ctx, true);
-		//		} while (Base._function_pointer && !Base._job_completed);
-		//	}
-		//}
 	};
 	auto& get_any() const {
 		auto& i = get_task();
@@ -155,8 +102,8 @@ public:
 	Task(std::nullptr_t) : iTask(nullptr) {};
 	Task(Task const& rhs) : iTask(rhs.id()) { if (m_uuid > 0) GL::interlocked::increment(id::get_id(m_uuid).count); };
 	Task(Task const& rhs, bool) : iTask(rhs.id() | id::TEMPORARY) {};
-	//Task(Task&& rhs) noexcept : iTask(GL::interlocked::exchange(const_cast<unsigned long&>(rhs.id()), 0ul)) {};
-	template <typename T> Task(Task<T>&& rhs) noexcept : iTask(GL::interlocked::exchange(const_cast<unsigned long&>(rhs.id()), 0ul)) {};
+	Task(Task&& rhs) noexcept : iTask(GL::interlocked::exchange(const_cast<unsigned long&>(rhs.id()), 0ul)) {};
+	//template <typename T> Task(Task<T>&& rhs) noexcept : iTask(GL::interlocked::exchange(const_cast<unsigned long&>(rhs.id()), 0ul)) {};
 
 	Task const& operator=(Task const& rhs) {
 		if ((this->m_uuid & id::TEMPORARY) == 0)

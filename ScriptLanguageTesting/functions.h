@@ -710,7 +710,7 @@ namespace GL {
                 return (*p_attr)(
                     );
             }
-        };        
+        };
         static R cached_call(char* ptr, decltype(m_attr) const& p_attr) {
             return cached_call_impl(ptr, std::make_index_sequence<numArgs>{}, p_attr);
         };

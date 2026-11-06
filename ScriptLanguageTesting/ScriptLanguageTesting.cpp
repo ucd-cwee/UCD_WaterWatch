@@ -320,11 +320,9 @@ int main() {
             GL::any sw = 
                 GL::any::instance(GL::make_shared<GL::stopwatch>());
 
-            std::cout << GL::any().type().name() << std::endl;
-
             auto setup_task = GL::parallel::single_threaded::async([]() {
-                std::ios_base::sync_with_stdio(false);
-                std::cin.tie(NULL);
+                //std::ios_base::sync_with_stdio(false);
+                //std::cin.tie(NULL);
                 CONSOLE_CURSOR_INFO cursorInfo;
                 GetConsoleCursorInfo(GetStdHandle(STD_OUTPUT_HANDLE), &cursorInfo);
                 cursorInfo.bVisible = false;
@@ -358,20 +356,33 @@ int main() {
 
             // Run the game of life            
             for (;;) {
+                SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
+                std::cout << sw.cast<GL::stopwatch>().t0 << " b4 reset " << sw.cast<GL::stopwatch>().t1 << "\n";
                 sw.cast<GL::stopwatch>().reset();
+                std::cout << sw.cast<GL::stopwatch>().t0 << " after reset " << sw.cast<GL::stopwatch>().t1 << "\n";
 
-                screen_task = screen_task.then(0, 1, [](long long i) {
+                screen_task = screen_task.then(/*0, 1, */[](/*long long i*/) {
                     CONSOLE_SCREEN_BUFFER_INFO screen;
-                    GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &screen);
+                    GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &screen);                    
                     return screen;
                 });
+                screen_task.wait();
 
-                auto window_update_task = game_dimension_task.and_then(screen_task.then(0, 1, [](long long i, CONSOLE_SCREEN_BUFFER_INFO const& screen) {
+                std::cout << sw.cast<GL::stopwatch>().t0 << " @ " << __LINE__ << ": " << sw.cast<GL::stopwatch>().t1 << "\n";
+
+                auto new_screen_dimensions_task = screen_task.then(/*0, 1, */[](/*long long i, */CONSOLE_SCREEN_BUFFER_INFO const& screen, GL::stopwatch& sw) {
+                    std::cout << sw.t0 << " @ " << __LINE__ << ": " << sw.t1 << "\n";
                     return screen_dimensions{
                         ((screen.dwSize.X > 1) ? (screen.dwSize.X / 2) : 1),
                         ((screen.dwSize.Y > 3) ? screen.dwSize.Y - 3 : 1)
                     };
-                }), state_task, [](screen_dimensions& old_dimensions, screen_dimensions const& new_dimensions, matrix<unsigned int>& state, std::deque<float>& framerates) -> screen_dimensions {
+                }, sw);
+                new_screen_dimensions_task.wait();
+
+                std::cout << sw.cast<GL::stopwatch>().t0 << " @ " << __LINE__ << ": " << sw.cast<GL::stopwatch>().t1 << "\n";
+
+                auto window_update_task = game_dimension_task.and_then(new_screen_dimensions_task, state_task, [](screen_dimensions& old_dimensions, screen_dimensions const& new_dimensions, matrix<unsigned int>& state, GL::stopwatch& sw/*, std::deque<float>& framerates*/) -> screen_dimensions {
+                    std::cout << sw.t0 << " @ " << __LINE__ << ": " << sw.t1 << "\n";
                     if ((old_dimensions.w != new_dimensions.w) || (old_dimensions.h != new_dimensions.h)) {
                         old_dimensions.w = new_dimensions.w;
                         old_dimensions.h = new_dimensions.h;
@@ -379,28 +390,37 @@ int main() {
                         auto temp = state.resize(old_dimensions.h, old_dimensions.w, 1);
                         state = temp;
 
-                        framerates.clear();
-                    }
-                    SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), { 0, 0 });
+                        //framerates.clear();
+                    }                    
                     return old_dimensions;
-                }, framerates);
+                }, sw/*, framerates*/);
+                window_update_task.wait();
+
+                std::cout << sw.cast<GL::stopwatch>().t0 << " @ " << __LINE__ << ": " << sw.cast<GL::stopwatch>().t1 << "\n";
 
                 auto nHood_task = window_update_task.and_then(state_task, kernel_task, [](screen_dimensions const& game_size, matrix<unsigned int>& state, matrix_kernel<float>& kernel) {
                     // return state.convolve(static_matrix_kernel<float>{ &kernel });
                     return state.convolve(kernel);
                 });
+                nHood_task.wait();
+
+                std::cout << sw.cast<GL::stopwatch>().t0 << " @ " << __LINE__ << ": " << sw.cast<GL::stopwatch>().t1 << "\n";
 
                 // Generate conditions for life
                 // state == 1 && nHood < 2 ->> state = 0
                 // state == 1 && nHood > 3 ->> state = 0
                 // else if state == 1 ->> state = 1
                 // state == 0 && nHood == 3 ->> state = 1
-                auto C0_task = nHood_task.then(0, 1, [](long long i, matrix<unsigned int> const& nHood) {
+                auto C0_task = nHood_task.then(/*0, 1, */[](/*long long i, */matrix<unsigned int> const& nHood) {
                     return nHood == 2;
                 });
-                auto C1_task = nHood_task.then(0, 1, [](long long i, matrix<unsigned int> const& nHood) {
+                auto C1_task = nHood_task.then(/*0, 1, */[](/*long long i, */matrix<unsigned int> const& nHood) {
                     return nHood == 3;
                 });
+                C0_task.wait();
+                C1_task.wait();
+
+                std::cout << sw.cast<GL::stopwatch>().t0 << " @ " << __LINE__ << ": " << sw.cast<GL::stopwatch>().t1 << "\n";
 
                 //auto a0 = (state == 1) && (nHood < 2);  // Die of under population
                 //auto a1 = (state > 0) && (C0 || C1);   // Continue to live
@@ -411,6 +431,8 @@ int main() {
                     state += C1;
                 });
                 update_state_task.wait();
+
+                std::cout << sw.cast<GL::stopwatch>().t0 << " @ " << __LINE__ << ": " << sw.cast<GL::stopwatch>().t1 << "\n";
 
                 class MatrixImage {
                 public:
@@ -461,13 +483,17 @@ int main() {
 
                 auto print_screen_task = update_state_task.and_then(window_update_task, state_task, [](screen_dimensions const& game_size, matrix<unsigned int>& state) {
                     MatrixImage img(state.cast<float>());
-                    std::cout << img.sum().resize_stretch(game_size.h, game_size.w, 1).ASCII().to_string({}, true) << std::endl;
+                    //std::cout << img.sum().resize_stretch(game_size.h, game_size.w, 1).ASCII().to_string({}, true) << std::endl;
                 });
                 print_screen_task.wait();
 
-                auto clean_up_task = print_screen_task.then(0, 1, [](/*long long i, */GL::stopwatch& sw, std::deque<float>& framerates, int& frame) {
+                std::cout << sw.cast<GL::stopwatch>().t0 << " @ " << __LINE__ << ": " << sw.cast<GL::stopwatch>().t1 << "\n";
+
+                print_screen_task.then(/*0, 1, */[](/*long long i, */GL::stopwatch& sw, std::deque<float>& framerates, int& frame) {
                    // std::cout << "\n" << i << " @ " << frame << ": ";
+                    std::cout << sw.t0 << " b4 stop 1 " << sw.t1 << "\n";
                     auto this_frame = (float)(1.0 / sw.stop());
+                    std::cout << sw.t0 << " after stop 1 " << sw.t1 << "\n";
                     ++frame;
 
                     framerates.push_back(this_frame);
@@ -488,12 +514,24 @@ int main() {
                         q4 = copy.at(copy.size() / 2);
                         q5 = copy.at(copy.size() - 1);
                     }
-                    std::cout << GL::printf("min{ %f }  0.05%%{ %f }  0.5%%{ %f }  1.0%%{ %f }  50%%{ %f }  max{ %f }  ", q0, q1, q2, q3, q4, q5) + GL::arena_memory_pool::debug() + "         \t" << std::endl;
-                    std::cout << std::flush;
-                }, sw, framerates, frame);      
-                clean_up_task.wait();
+                    //std::cout << GL::printf("min{ %f }  0.05%%{ %f }  0.5%%{ %f }  1.0%%{ %f }  50%%{ %f }  max{ %f }  ", q0, q1, q2, q3, q4, q5) + GL::arena_memory_pool::debug() + "         \t" << std::endl;
+                    //std::cout << std::flush;
+                }, sw, framerates, frame).wait();
 
-                //while (sw.cast<GL::stopwatch>().stop() < 1.0 / 60.0) {
+                auto& SW = sw.cast<GL::stopwatch>();
+                std::cout << SW.t0 << " b4 stop 2 " << SW.t1 << "\n";
+                while (true) {
+                    if (SW.stop() < (1.0 / 60.0)) {
+                        // std::cout << SW.t0 << " < " << SW.t1 << "\n";
+                    }
+                    else {
+                        std::cout << SW.t0 << " after stop 2 " << SW.t1 << "\n";
+                        break;
+                    }
+                }
+
+
+                //while (sw.cast<GL::stopwatch>().stop() < (1.0 / 60.0)) {
                 //    std::this_thread::yield();
                 //}
             }

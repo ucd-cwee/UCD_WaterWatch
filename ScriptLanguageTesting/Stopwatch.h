@@ -22,21 +22,52 @@ namespace GL {
 	};
 	class stopwatch {
 	public:
-		stopwatch() : t0(clock::ns()), t1(0) {};
+		stopwatch() : t0{ clock::ns() }, t1{ 0 } {};
+		stopwatch(stopwatch const& rhs) : t0{ rhs.t0 }, t1{ rhs.t1 } {};
+		stopwatch(stopwatch && rhs) noexcept : t0{ rhs.t0 }, t1{ rhs.t1 } {};
+		stopwatch& operator=(stopwatch const& rhs) {
+			t0 = rhs.t0;
+			t1 = rhs.t1;
+			return *this;
+		};
+		stopwatch& operator=(stopwatch && rhs) noexcept {
+			t0 = rhs.t0;
+			t1 = rhs.t1;
+			return *this;
+		};
+		~stopwatch() {
+			std::cout << "UNLOADING\n";
+			t0 = 0;
+			t1 = 0;
+		};
+
 		// resets the timer to start "now"
-		long long reset() { 
-			InterlockedExchange64(reinterpret_cast<volatile long long*>(&t0), clock::ns());
+		__forceinline long long reset() { 
+			GL::interlocked::exchange(t0, clock::ns());
+			//if (((((t0 / 1000000000.0l) / 3600.0l) / 24.0l) / 365.0l) > 70) {
+			//	std::cout << "BAD DATA 2!\n";
+			//}
+			// InterlockedExchange64(reinterpret_cast<volatile long long*>(&t0), clock::ns());
 			return t0;
 		};
 		// stops the timer and returns the time passed since in seconds
 		long double stop() { 
-			InterlockedExchange64(reinterpret_cast<volatile long long*>(&t1), clock::ns());
-			return static_cast<long double>(t1 - t0) / 1000000000.0; 
+			GL::interlocked::exchange(t1, clock::ns());
+			//if (((((t1 / 1000000000.0l) / 3600.0l) / 24.0l) / 365.0l) > 70) {
+			//	std::cout << "BAD DATA 3!\n";
+			//}
+			// InterlockedExchange64(reinterpret_cast<volatile long long*>(&t1), clock::ns());
+			if (t0 >= t1) 
+				return 0.0l;
+			else 
+				return static_cast<long double>(t1 - t0) / 1000000000.0; 
 		};
 		// does not stop the timer, but does return the time passed since in seconds
 		long double check() const { 
 			// if (t1 < t0) InterlockedExchange64(reinterpret_cast<volatile long long*>(&const_cast<stopwatch*>(this)->t1), clock::ns()); // const_cast<stopwatch*>(this)->t1 = clock::ns();
-			return static_cast<long double>(clock::ns() - t0) / 1000000000.0;
+			long long c = clock::ns();
+			if (t0 >= c) return 0.0l;
+			else return static_cast<long double>(c - t0) / 1000000000.0;
 		};
 
 		static auto debug_timer() {
@@ -130,7 +161,7 @@ namespace GL {
 			return wrapper(additional_message_content);
 		};
 
-	private:
+	// private:
 		long long t0;
 		long long t1;
 	};
