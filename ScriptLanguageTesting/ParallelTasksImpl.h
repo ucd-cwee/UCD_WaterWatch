@@ -310,7 +310,7 @@ protected:
 					constexpr std::size_t Is_val = decltype(i_constant)::value;
 					constexpr long ProcessingState = DetermineProcessingState<Is_val>();
 					if constexpr (ProcessingState == 0)
-						static_cast<id::TaskBase*>(_args.task_memory)->_arguments[Is_val].cast<std::decay_t<std::tuple_element_t<0, typename FunctionTraits::argType>>>() = _args.job_index;
+						static_cast<id::TaskBase*>(_args.task_memory)->_arguments[Is_val].cast<std::decay_t<std::tuple_element_t<0, typename FunctionTraits::argType>>>() = _args.job_index + static_cast<id::TaskBase*>(_args.task_memory)->_offset;
 					}(std::integral_constant<std::size_t, Is>{}), ...); // Fold expression over the comma operator
 			}
 		}

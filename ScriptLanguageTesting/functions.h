@@ -445,7 +445,7 @@ namespace GL {
                 else return false;
             }   else return false;
         };
-
+#if 1
         static constexpr bool requires_undo_caching = requires_undo_caching_impl();
         static constexpr auto cache_size_total = CacheSize();
         template<size_t skipFirstN = 0> static void perform_caching(const any* begin, char* ptr) {
@@ -554,8 +554,8 @@ namespace GL {
                 char(&buffer)[cache_size_total] = *reinterpret_cast<char(*)[cache_size_total]>(ptr);
                 if constexpr (std::is_same_v<cache_type<which>, GL::any> || std::is_same_v<cache_type<which>, GL::atomic_any>)
                     new (static_cast<void*>(&buffer[CacheSize<which>()])) cache_type<which>(item.cast<cache_type<which>>(), true);
-                else 
-                    new (static_cast<void*>(&buffer[CacheSize<which>()])) cache_type<which>(item.cast<cache_type<which>>());                
+                else
+                    new (static_cast<void*>(&buffer[CacheSize<which>()])) cache_type<which>(item.cast<cache_type<which>>());
             }
         };
         static void undo_caching(char* ptr) {
@@ -579,17 +579,17 @@ namespace GL {
                 if constexpr (numArgs >= 1) if constexpr (!std::is_pod_v<cache_type<0>>) static_cast<cache_type<0>*>(static_cast<void*>(&buffer[CacheSize<0>()]))->~cache_type<0>();
             }
         };
-        template <size_t I> static decltype(auto) get_cache(char* ptr) {            
+        template <size_t I> static decltype(auto) get_cache(char* ptr) {
             //if constexpr (I > numArgs) return;
             //else {
-                char(&buffer)[cache_size_total] = *reinterpret_cast<char(*)[cache_size_total]>(ptr);
-                cache_type<I>& val = *static_cast<cache_type<I>*>(static_cast<void*>(&buffer[CacheSize<I>()]));
-                if constexpr (std::is_same_v<std::decay_t<std::tuple_element_t<I, argType>>, GL::any>) return val;
-                else if constexpr (std::is_same_v<std::decay_t<std::tuple_element_t<I, argType>>, GL::atomic_any>) return val;
-                else if constexpr (GL::any::DataCaster::is_SharedPtr_class<std::tuple_element_t<I, argType>>::value || GL::any::DataCaster::is_stdSharedPtr_class<std::tuple_element_t<I, argType>>::value) return val;
-                else if constexpr (std::is_pointer_v<std::tuple_element_t<I, argType>>) return val;
-                else if constexpr (std::is_reference_v<std::tuple_element_t<I, argType>>) return *val;
-                else return *val;
+            char(&buffer)[cache_size_total] = *reinterpret_cast<char(*)[cache_size_total]>(ptr);
+            cache_type<I>& val = *static_cast<cache_type<I>*>(static_cast<void*>(&buffer[CacheSize<I>()]));
+            if constexpr (std::is_same_v<std::decay_t<std::tuple_element_t<I, argType>>, GL::any>) return val;
+            else if constexpr (std::is_same_v<std::decay_t<std::tuple_element_t<I, argType>>, GL::atomic_any>) return val;
+            else if constexpr (GL::any::DataCaster::is_SharedPtr_class<std::tuple_element_t<I, argType>>::value || GL::any::DataCaster::is_stdSharedPtr_class<std::tuple_element_t<I, argType>>::value) return val;
+            else if constexpr (std::is_pointer_v<std::tuple_element_t<I, argType>>) return val;
+            else if constexpr (std::is_reference_v<std::tuple_element_t<I, argType>>) return *val;
+            else return *val;
             //}
         };
     private:
@@ -597,6 +597,191 @@ namespace GL {
         static R cached_call_impl(char* ptr, std::index_sequence<Is...>, decltype(m_attr) const& p_attr) {
             return (*p_attr)(get_cache<Is>(ptr)...);
         }
+    public:
+        static R call(const any* begin, decltype(m_attr) const& p_attr) {
+            if constexpr (numArgs >= 16) {
+                return (*p_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13 - 1].cast<std::tuple_element_t<12, argType>>(), begin[14 - 1].cast<std::tuple_element_t<13, argType>>(), begin[15 - 1].cast<std::tuple_element_t<14, argType>>(), begin[16 - 1].cast<std::tuple_element_t<15, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 15) {
+                return (*p_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13 - 1].cast<std::tuple_element_t<12, argType>>(), begin[14 - 1].cast<std::tuple_element_t<13, argType>>(), begin[15 - 1].cast<std::tuple_element_t<14, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 14) {
+                return (*p_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13 - 1].cast<std::tuple_element_t<12, argType>>(), begin[14 - 1].cast<std::tuple_element_t<13, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 13) {
+                return (*p_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>(),
+                    begin[13 - 1].cast<std::tuple_element_t<12, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 12) {
+                return (*p_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>(), begin[12 - 1].cast<std::tuple_element_t<11, argType>>()
+                    );
+            }
+
+            else if constexpr (numArgs == 11) {
+                return (*p_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>(), begin[11 - 1].cast<std::tuple_element_t<10, argType>>()
+                    );
+    }
+            else if constexpr (numArgs == 10) {
+                return (*p_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>(), begin[10 - 1].cast<std::tuple_element_t<9, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 9) {
+                return (*p_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>(),
+                    begin[9 - 1].cast<std::tuple_element_t<8, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 8) {
+                return (*p_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>(), begin[8 - 1].cast<std::tuple_element_t<7, argType>>()
+                    );
+            }
+
+            else if constexpr (numArgs == 7) {
+                return (*p_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>(), begin[7 - 1].cast<std::tuple_element_t<6, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 6) {
+                return (*p_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>(), begin[6 - 1].cast<std::tuple_element_t<5, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 5) {
+                return (*p_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>(),
+                    begin[5 - 1].cast<std::tuple_element_t<4, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 4) {
+                return (*p_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>(), begin[4 - 1].cast<std::tuple_element_t<3, argType>>()
+                    );
+            }
+
+            else if constexpr (numArgs == 3) {
+                return (*p_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>(), begin[3 - 1].cast<std::tuple_element_t<2, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 2) {
+                return (*p_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>(), begin[2 - 1].cast<std::tuple_element_t<1, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 1) {
+                return (*p_attr)(
+                    begin[1 - 1].cast<std::tuple_element_t<0, argType>>()
+                    );
+            }
+            else if constexpr (numArgs == 0) {
+                return (*p_attr)(
+                    );
+            }
+        };
+        static R cached_call(char* ptr, decltype(m_attr) const& p_attr) {
+            return cached_call_impl(ptr, std::make_index_sequence<numArgs>{}, p_attr);
+        };
+#else
+        static constexpr bool requires_undo_caching = false; // requires_undo_caching_impl();
+        static constexpr auto cache_size_total = sizeof(std::array<GL::any, 16>); // CacheSize();
+        template<size_t skipFirstN = 0> static void perform_caching(const any* begin, char* ptr) {
+            if constexpr (numArgs > 0) {
+                std::array<GL::any, 16>& buffer = *reinterpret_cast<std::array<GL::any, 16>*>(ptr);
+                if constexpr (numArgs >= 16 && skipFirstN < 16) {
+                    buffer[15] = GL::any(begin[15], true);
+                }
+                if constexpr (numArgs >= 15 && skipFirstN < 15) {
+                    buffer[14] = GL::any(begin[14], true);
+                }
+                if constexpr (numArgs >= 14 && skipFirstN < 14) {
+                    buffer[13] = GL::any(begin[13], true);
+                }
+                if constexpr (numArgs >= 13 && skipFirstN < 13) {
+                    buffer[12] = GL::any(begin[12], true);
+                }
+                if constexpr (numArgs >= 12 && skipFirstN < 12) {
+                    buffer[11] = GL::any(begin[11], true);
+                }
+                if constexpr (numArgs >= 11 && skipFirstN < 11) {
+                    buffer[10] = GL::any(begin[10], true);
+                }
+                if constexpr (numArgs >= 10 && skipFirstN < 10) {
+                    buffer[9] = GL::any(begin[9], true);
+                }
+                if constexpr (numArgs >= 9 && skipFirstN < 9) {
+                    buffer[8] = GL::any(begin[8], true);
+                }
+                if constexpr (numArgs >= 8 && skipFirstN < 8) {
+                    buffer[7] = GL::any(begin[7], true);
+                }
+                if constexpr (numArgs >= 7 && skipFirstN < 7) {
+                    buffer[6] = GL::any(begin[6], true);
+                }
+                if constexpr (numArgs >= 6 && skipFirstN < 6) {
+                    buffer[5] = GL::any(begin[5], true);
+                }
+                if constexpr (numArgs >= 5 && skipFirstN < 5) {
+                    buffer[4] = GL::any(begin[4], true);
+                }
+                if constexpr (numArgs >= 4 && skipFirstN < 4) {
+                    buffer[3] = GL::any(begin[3], true);
+                }
+                if constexpr (numArgs >= 3 && skipFirstN < 3) {
+                    buffer[2] = GL::any(begin[2], true);
+                }
+                if constexpr (numArgs >= 2 && skipFirstN < 2) {
+                    buffer[1] = GL::any(begin[1], true);
+                }
+                if constexpr (numArgs >= 1 && skipFirstN < 1) {
+                    buffer[0] = GL::any(begin[0], true);
+                }
+            }
+        };
+        template<size_t which = 0> static void supplement_caching(GL::any const& item, char* ptr) {
+            if constexpr (numArgs > 0) {
+                std::array<GL::any, 16>& buffer = *reinterpret_cast<std::array<GL::any, 16>*>(ptr);
+                buffer[which] = GL::any(item, true);
+            }
+        };
+        static void undo_caching(char* ptr) {
+            //if constexpr (numArgs > 0) {
+            //    std::array<GL::any, 16>* buffer = reinterpret_cast<std::array<GL::any, 16>*>(ptr);
+            //    std::destroy_at(buffer);
+            //}
+        };
     public:
         static R call(const any* begin, decltype(m_attr) const& p_attr) {
             if constexpr (numArgs >= 16) {
@@ -712,8 +897,11 @@ namespace GL {
             }
         };
         static R cached_call(char* ptr, decltype(m_attr) const& p_attr) {
-            return cached_call_impl(ptr, std::make_index_sequence<numArgs>{}, p_attr);
+            std::array<GL::any, 16>& buffer = *reinterpret_cast<std::array<GL::any, 16>*>(ptr);
+            return call(&buffer[0], p_attr);
+            // return cached_call_impl(ptr, std::make_index_sequence<numArgs>{}, p_attr);
         };
+#endif
     };
     template <typename LambdaFunction> class Lambda_Function_Traits {
     private:

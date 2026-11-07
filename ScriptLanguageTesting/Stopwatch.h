@@ -36,7 +36,6 @@ namespace GL {
 			return *this;
 		};
 		~stopwatch() {
-			std::cout << "UNLOADING\n";
 			t0 = 0;
 			t1 = 0;
 		};
@@ -44,19 +43,11 @@ namespace GL {
 		// resets the timer to start "now"
 		__forceinline long long reset() { 
 			GL::interlocked::exchange(t0, clock::ns());
-			//if (((((t0 / 1000000000.0l) / 3600.0l) / 24.0l) / 365.0l) > 70) {
-			//	std::cout << "BAD DATA 2!\n";
-			//}
-			// InterlockedExchange64(reinterpret_cast<volatile long long*>(&t0), clock::ns());
 			return t0;
 		};
 		// stops the timer and returns the time passed since in seconds
 		long double stop() { 
 			GL::interlocked::exchange(t1, clock::ns());
-			//if (((((t1 / 1000000000.0l) / 3600.0l) / 24.0l) / 365.0l) > 70) {
-			//	std::cout << "BAD DATA 3!\n";
-			//}
-			// InterlockedExchange64(reinterpret_cast<volatile long long*>(&t1), clock::ns());
 			if (t0 >= t1) 
 				return 0.0l;
 			else 

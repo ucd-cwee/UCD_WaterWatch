@@ -59,11 +59,7 @@ namespace GL {
 #ifdef _WIN32
 			LARGE_INTEGER li; std::memset(&li, 0, sizeof(li));
 			while (!QueryPerformanceCounter(&li)) {}
-			auto len = (long long)(long double(li.QuadPart - CounterStart) * invPCFreqNS);
-/*			if (((((len / 1000000000.0l) / 3600.0l) / 24.0l) / 365.0l) > 70) {
-				std::cout << "BAD DATA!\n";
-			}*/			
-			return len;
+			return (long long)(long double(li.QuadPart - CounterStart) * invPCFreqNS);
 #else
 			return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
 #endif
