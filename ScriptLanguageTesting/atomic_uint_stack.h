@@ -286,8 +286,8 @@ namespace GL {
                     for (size_t i = 0; i < count; ++i)
                         self->Stack_Push(*self->free_head, (unsigned int)(starting_position + i));
                 },
-                this
-            )
+                    this
+                    )
         {
             const_cast<TaggedIndex&>(free_head._default).m_n64 = 0;
             const_cast<TaggedIndex&>(head._default).m_n64 = 0;
@@ -303,7 +303,7 @@ namespace GL {
             nodes.get_or_make(i).next = INVALID;
             head->Node(INVALID);
             free_head->Node(0);
-        }
+        };
 
                 // Push a value onto the stack
                 bool push(unsigned int value) {

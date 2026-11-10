@@ -308,6 +308,20 @@ int main() {
         if (GL::parallel::async(0, 1'000'000, [](GL::foot const& LHS, GL::acre const& RHS) -> GL::acre_foot {
             return LHS * RHS;
         }, LHS, RHS).get() != GL::acre_foot(200)) throw std::runtime_error("MATH AINT MATHIN");
+        auto t0 = GL::clock::ns();
+        if (GL::parallel::async(0, 1'000'000'000, [](size_t i, GL::foot const& LHS, GL::acre const& RHS) -> GL::acre_foot {
+            switch (i % 3) {
+            case 0:
+                return LHS * RHS;
+            case 1:
+                return GL::meter(LHS) * RHS;
+            case 2:
+                return GL::meter(LHS) * GL::square_foot(RHS);
+            }            
+        }, LHS, RHS).get() != GL::acre_foot(200)) throw std::runtime_error("MATH AINT MATHIN");
+        auto t1 = GL::clock::ns();
+        std::cout << GL::second(GL::nanosecond(t1) - GL::nanosecond(t0)) << std::endl;
+        return 0;
 
         if (1) {
             using namespace GL;

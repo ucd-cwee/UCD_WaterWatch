@@ -445,7 +445,7 @@ namespace GL {
                 else return false;
             }   else return false;
         };
-#if 1
+#if 1 // the "cache" is a collection of previously-casted pointers. Should perform better when using multi-dispatch jobs (e.g. 0..1'000'000)
         static constexpr bool requires_undo_caching = requires_undo_caching_impl();
         static constexpr auto cache_size_total = CacheSize();
         template<size_t skipFirstN = 0> static void perform_caching(const any* begin, char* ptr) {
@@ -714,12 +714,12 @@ namespace GL {
         static R cached_call(char* ptr, decltype(m_attr) const& p_attr) {
             return cached_call_impl(ptr, std::make_index_sequence<numArgs>{}, p_attr);
         };
-#else
+#else // the "cache" is a literal array of GL::any which use the temporary flag to prevent incrementing or decrementing the use count.
         static constexpr bool requires_undo_caching = false; // requires_undo_caching_impl();
-        static constexpr auto cache_size_total = sizeof(std::array<GL::any, 16>); // CacheSize();
+        static constexpr auto cache_size_total = sizeof(std::array<GL::any, numArgs == 0 ? 1 : numArgs>); // CacheSize();
         template<size_t skipFirstN = 0> static void perform_caching(const any* begin, char* ptr) {
             if constexpr (numArgs > 0) {
-                std::array<GL::any, 16>& buffer = *reinterpret_cast<std::array<GL::any, 16>*>(ptr);
+                std::array<GL::any, numArgs == 0 ? 1 : numArgs>& buffer = *reinterpret_cast<std::array<GL::any, numArgs == 0 ? 1 : numArgs>*>(ptr);
                 if constexpr (numArgs >= 16 && skipFirstN < 16) {
                     buffer[15] = GL::any(begin[15], true);
                 }
@@ -772,13 +772,13 @@ namespace GL {
         };
         template<size_t which = 0> static void supplement_caching(GL::any const& item, char* ptr) {
             if constexpr (numArgs > 0) {
-                std::array<GL::any, 16>& buffer = *reinterpret_cast<std::array<GL::any, 16>*>(ptr);
+                std::array<GL::any, numArgs == 0 ? 1 : numArgs>& buffer = *reinterpret_cast<std::array<GL::any, numArgs == 0 ? 1 : numArgs>*>(ptr);
                 buffer[which] = GL::any(item, true);
             }
         };
         static void undo_caching(char* ptr) {
             //if constexpr (numArgs > 0) {
-            //    std::array<GL::any, 16>* buffer = reinterpret_cast<std::array<GL::any, 16>*>(ptr);
+            //    std::array<GL::any, numArgs == 0 ? 1 : numArgs>* buffer = reinterpret_cast<std::array<GL::any, numArgs == 0 ? 1 : numArgs>*>(ptr);
             //    std::destroy_at(buffer);
             //}
         };
@@ -897,7 +897,7 @@ namespace GL {
             }
         };
         static R cached_call(char* ptr, decltype(m_attr) const& p_attr) {
-            std::array<GL::any, 16>& buffer = *reinterpret_cast<std::array<GL::any, 16>*>(ptr);
+            std::array<GL::any, numArgs == 0 ? 1 : numArgs>& buffer = *reinterpret_cast<std::array<GL::any, numArgs == 0 ? 1 : numArgs>*>(ptr);
             return call(&buffer[0], p_attr);
             // return cached_call_impl(ptr, std::make_index_sequence<numArgs>{}, p_attr);
         };

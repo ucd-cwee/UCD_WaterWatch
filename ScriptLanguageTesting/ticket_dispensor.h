@@ -164,14 +164,14 @@ namespace GL {
         };
 
     public:
-        // GL::atomic_uint_stack
-        GL::parallel_atomic_uint_stack
-        //aba_problem::stack<unsigned int>
-            queue{};
+        GL::atomic_uint_stack // 
+        //GL::parallel_atomic_uint_stack
+            queue;
         std::atomic<size_t>
             indexes{ 0 };
         std::atomic<size_t>
             count{ 0 };
+
 
     public:
         size_t num_tickets() const {

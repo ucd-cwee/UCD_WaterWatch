@@ -5,13 +5,58 @@
 
 #define CalculateMetricPrefixV(metric) ((long double)std::metric::num / (long double)std::metric::den)
 namespace GL {
+	template <typename Key, typename Value, short max_length>
+	class fixed_map {
+	private:
+		Key keys[max_length]{ 0 };
+		Value values[max_length]{ 0 };
+		short current_length{ 0 };
+		Value(*make_value)(Key const&);
+
+		static_assert(std::is_pod_v<Key>, "Key type mus tbe POD");
+		static_assert(std::is_pod_v<Value>, "Value type mus tbe POD");
+		static_assert(max_length > 1, "Length of fixed map must be at least 2");
+		
+	public:	
+		fixed_map(Value(*make_value_f)(Key const&)) : make_value{ make_value_f }  {};
+
+		short find(Key const& key) {
+			for (short i = current_length - 1; i >= 0; --i)
+				if (keys[i] == key) 
+					return i;				
+			return -1;
+		};
+		Value& insert(Key const& key, Value && value) {
+			if (current_length >= max_length) {
+				for (short i = 0; i < (max_length - 1); ++i) {
+					keys[i] = keys[i + 1];
+					values[i] = values[i + 1];
+				}
+				keys[max_length - 1] = key;
+				return values[max_length - 1] = std::forward<Value>(value);
+			}
+			else {
+				keys[current_length] = key;
+				return values[current_length++] = std::forward<Value>(value);
+			}
+		};
+		Value& find_or_insert(Key const& key) {
+			if (short i = find(key); i >= 0) return values[i];
+			else return insert(key, make_value(key));
+		};
+	};
+
 	// static std::map<uint16_t, value::si_unit> si_unit_types;
 	// static GL::epoch_map< value::si_unit, uint16_t> si_unit_types;
 	static concurrency::concurrent_unordered_map<uint16_t, value::si_unit> si_unit_types;
-	
 	// get the cached si unit for this type
 	value::si_unit& value::get_si_unit(uint16_t hash) {
+#if 1
+		static thread_local fixed_map< uint16_t, value::si_unit*, 4> si_unit_type_cache(+[](uint16_t const& hash) -> value::si_unit* { return &si_unit_types[hash]; });
+		return *si_unit_type_cache.find_or_insert(hash);
+#else
 		return si_unit_types[hash];
+#endif
 	};
 	const concurrency::concurrent_unordered_map<uint16_t, value::si_unit>& 
  //   const GL::epoch_map< value::si_unit, uint16_t>&
