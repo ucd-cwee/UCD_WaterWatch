@@ -18,7 +18,12 @@ namespace GL {
 		static_assert(max_length > 1, "Length of fixed map must be at least 2");
 		
 	public:	
-		fixed_map(Value(*make_value_f)(Key const&)) : make_value{ make_value_f }  {};
+		fixed_map(Value(*make_value_f)(Key const&) = +[](Key const&) -> Value { return {}; }) : make_value{ make_value_f } {};
+		fixed_map(fixed_map const&) = delete;
+		fixed_map(fixed_map &&) noexcept = delete;
+		fixed_map& operator=(fixed_map const&) = delete;
+		fixed_map& operator=(fixed_map&&) noexcept = delete;
+		~fixed_map() = default;
 
 		short find(Key const& key) {
 			for (short i = current_length - 1; i >= 0; --i)
@@ -49,6 +54,7 @@ namespace GL {
 	// static std::map<uint16_t, value::si_unit> si_unit_types;
 	// static GL::epoch_map< value::si_unit, uint16_t> si_unit_types;
 	static concurrency::concurrent_unordered_map<uint16_t, value::si_unit> si_unit_types;
+
 	// get the cached si unit for this type
 	value::si_unit& value::get_si_unit(uint16_t hash) {
 #if 1
